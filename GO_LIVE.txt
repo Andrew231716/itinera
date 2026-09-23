@@ -1,26 +1,37 @@
 # GO LIVE — Itinera
 ==================
 
-Per uscire dalla modalità demo servono chiavi API reali.
-Questo ambiente NON può creare account Google/OpenAI/Supabase al posto tuo.
+Progetto Google Cloud già indicato: itinera-509522
+URL: https://console.cloud.google.com/google/maps-apis/home?project=itinera-509522
 
-## Minimo per mappa + routing reale
+Questo ambiente NON può accedere al tuo account Google, creare API key,
+abilitare billing o attivare abbonamenti. Serve il tuo login Console.
 
-1. Google Cloud Console → nuovo progetto (o esistente) con billing attivo
-2. Abilita API:
-   - Maps JavaScript API
-   - Places API (New)
-   - Routes API
-3. Crea DUE chiavi:
-   A) Server key → restrizione IP o nessuna (solo server) → GOOGLE_MAPS_API_KEY
-   B) Browser key → restrizione HTTP referrer (localhost:3000/*, tuo dominio) → NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
-4. Nel progetto:
-   cp .env.example .env.local
-   # incolla le chiavi
-   npm run dev
-5. Apri tab "Live" in Itinera → "Verifica connettività"
-6. Test: Partenza Milano, Arrivo Roma → Calcola percorso
-   Devi vedere distanza/durata reali e polyline sulla mappa.
+## Stato codice (già pronto)
+
+- .env.example + .env.local (placeholder vuoti)
+- Tab "Live" (SetupPanel) + GET /api/health e /api/health?probe=1
+- Demo attiva finché le chiavi restano vuote
+
+## Azioni umane residue (3–5 click) — da Maps home del progetto
+
+Prerequisito una tantum (se non già fatto): billing attivo + abilita
+Maps JavaScript API, Places API (New), Routes API.
+
+Poi, dalla home Maps del progetto itinera-509522:
+
+1. Menu sinistro → "Keys & Credentials" (o Credenziali)
+2. "+ Create credentials" → "API key" → copia → rinomina "Itinera server"
+   → Application restrictions: None (o IP) → API restrictions: Places API (New) + Routes API → Save
+   → incolla in GOOGLE_MAPS_API_KEY in .env.local
+3. Di nuovo "+ Create credentials" → "API key" → copia → rinomina "Itinera browser"
+   → Application restrictions: HTTP referrers → aggiungi http://localhost:3000/* (e il tuo dominio)
+   → API restrictions: Maps JavaScript API → Save
+   → incolla in NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY in .env.local
+4. Riavvia: npm run dev
+5. Tab "Live" → "Verifica connettività" → testa Milano → Roma
+
+Minimo click dopo APIs/billing già ok: 2× Create API key + 2× Save restrizioni + incolla in .env.local.
 
 ## Assistente (opzionale)
 
@@ -43,5 +54,5 @@ OPENAI_MODEL=gpt-4o-mini   # opzionale
 
 ## Verifica automatica
 
-GET /api/health          → readiness
+GET /api/health          → readiness (isLiveCapable)
 GET /api/health?probe=1  → ping Places / OpenAI / Supabase se configurati
