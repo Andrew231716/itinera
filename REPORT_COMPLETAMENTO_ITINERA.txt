@@ -1,0 +1,198 @@
+REPORT COMPLETAMENTO — Itinera (Intelligent Route Planner)
+==========================================================
+Data: 2026-09-23
+Branch: cursor/intelligent-route-planner-7e13
+Commit principale: e004f04
+Ambiente: Cloud Agent senza remote Git (push non disponibile)
+
+--------------------------------------------------------------------------------
+1. OBIETTIVO
+--------------------------------------------------------------------------------
+Completare Itinera senza ricostruire l’app: routing reale (quando configurato),
+demo onesta, preferenze/esclusioni, engine estensibile, condivisione Maps,
+Supabase, assistente OpenAI, test automatici, documentazione.
+
+--------------------------------------------------------------------------------
+2. AUDIT (FASE ZERO) — ESITO
+--------------------------------------------------------------------------------
+Base Fasi 1–4 già operativa (UI, mappa, Places, tappe DnD, preferenze,
+esclusioni, Routes API, maps links, localStorage).
+
+Gap individuati e poi chiusi:
+- Supabase stub throw-only
+- OpenAI stub anche con chiave
+- Nessun test automatico
+- Preferenze senza stati di applicabilità
+- Engine alternativo assente
+- Share nativo / preview / pagina share token assenti
+- Documentazione incompleta
+
+File audit: AUDIT_TECNICO.txt
+
+--------------------------------------------------------------------------------
+3. COSA È STATO IMPLEMENTATO
+--------------------------------------------------------------------------------
+
+A) Preferenze stradali
+- Pannello con toggle esistenti preservati
+- Stati per preferenza: engine_direct | preferential | post_verified |
+  unsupported | unverifiable
+- Documentazione UI: non si dichiara “rispettata” senza evidenza
+- Tunnel / panoramiche = unsupported; maxExtraMinutes = post-filtro
+
+B) Esclusioni
+- Edit hard/soft, raggio (punto), buffer (segmento)
+- Validazione poligono (≥3 punti distinti, area non nulla)
+- Densificazione polyline per ridurre falsi negativi
+- Punti sul bordo poligono trattati come inside (conservativo)
+- Conformità: true solo se nessuna violazione hard e nessun hard non verificabile
+- UI: badge vincolo violato / non verificabile / conforme
+
+C) Motore di routing estensibile
+- Interfaccia RoutingEngine comune
+- GoogleRoutesEngine: operativo con GOOGLE_MAPS_API_KEY
+- OpenRouteServiceEngine: adapter predisposto; NON inventa percorsi
+- Selezione via ROUTING_ENGINE (default google_routes)
+- Valutazione documentata ORS / GraphHopper / OSRM in README
+
+D) Condivisione Google Maps
+- Preview riepilogo prima dell’apertura
+- Conferma esplicita (esclusioni non trasferite)
+- Native Web Share API con fallback copia
+- Segmentazione etichettata se >8 waypoint (nessuna tappa eliminata in silenzio)
+- Link pubblico locale + cloud (token)
+
+E) Supabase
+- Schema SQL: trips + shared_trips + RLS + RPC get_shared_trip
+  → supabase/migrations/001_itinera_trips.sql
+- Client anon only (mai service role in NEXT_PUBLIC_*)
+- HybridTripRepository: localStorage sempre; sync best-effort se configurato
+- Pagina /share/[token] + API GET /api/share/[token]
+- Senza Supabase: locale continua a funzionare
+
+F) Assistente OpenAI
+- Structured Outputs (json_schema strict) + validazione Zod
+- Località risolte SOLO via Places API (mai coordinate inventate)
+- Flusso: interpreta → preview → conferma utente → aggiorna store → calcola
+- Annullamento preview supportato
+- Senza OPENAI_API_KEY: status unavailable, messaggio chiaro
+
+G) UX / stati
+- StatusBanner: demo, live, calcolo, nessun percorso, vincolo violato,
+  non verificabile, errore
+- Brand preservato (Itinera, teal #2C5F7C, oro #D4A017, Fraunces/Manrope)
+
+H) Test
+- Vitest: 15 test, tutti pass
+- geometria/vincoli, maps links, preferenze, demo routing, schema assistant,
+  repository locale
+- Nessuna chiamata a servizi a pagamento nei test
+
+I) Documentazione
+- README.md aggiornato (IT)
+- .env.example aggiornato
+- LIMITAZIONI.txt
+- Tabella funzionalità operative vs config-required
+
+--------------------------------------------------------------------------------
+4. VERIFICHE ESEGUITE
+--------------------------------------------------------------------------------
+Comando              Esito
+-------------------- -------------------
+npm test             15/15 pass
+npm run lint         OK (0 error)
+npm run build        OK
+Smoke API demo       precedente OK
+
+NON eseguiti:
+- Test live Google/OpenAI/Supabase (chiavi assenti in ambiente)
+- Test su dispositivi fisici reali
+- Push su remote Git (origin assente)
+
+--------------------------------------------------------------------------------
+5. TABELLA FUNZIONALITÀ
+--------------------------------------------------------------------------------
+Funzionalità                         Stato
+------------------------------------ ----------------------------------
+UI + mappa + tappe DnD               Operativa
+Places/Routes demo                   Operativa (senza chiavi)
+Places/Routes live                   Richiede GOOGLE_MAPS_* keys
+Preferenze + stati                   Operativa
+Esclusioni + verifica geometrica     Operativa
+Condivisione Maps + segmenti         Operativa
+Share nativo / link locale           Operativa
+Share cloud Supabase                 Richiede Supabase + migration
+Persistenza locale                   Operativa
+Persistenza hybrid Supabase          Richiede config
+Assistente NL + conferma             Richiede OPENAI_API_KEY
+Motore ORS completo                  Non implementato (solo adapter)
+Auth UI multi-utente                 Non implementata (RLS predisposta)
+
+--------------------------------------------------------------------------------
+6. VARIABILI D’AMBIENTE
+--------------------------------------------------------------------------------
+GOOGLE_MAPS_API_KEY                  server Places+Routes
+NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY  Maps JS (referrer-restricted)
+OPENAI_API_KEY                       assistente
+OPENAI_MODEL                         default gpt-4o-mini
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+ROUTING_ENGINE                       opzionale (google_routes)
+OPENROUTESERVICE_API_KEY             adapter non completo
+
+--------------------------------------------------------------------------------
+7. LIMITAZIONI RESIDUE (PRIORITÀ CORRETTEZZA)
+--------------------------------------------------------------------------------
+1. Senza chiave Google: demo onesta, routes=[] — nessun path inventato.
+2. Google non forza avoid-area nativi: post-check geometrico (possibili
+   falsi negativi su zone strettissime).
+3. Tunnel/scenic non applicati dal motore.
+4. Link Maps non trasferisce esclusioni custom.
+5. ORS non attivo end-to-end.
+6. Supabase richiede migration manuale + env.
+7. Nessuna UI login: sync cloud autenticato dipende da sessione Supabase.
+8. Assistente inutilizzabile senza OPENAI_API_KEY.
+9. Nessun remote Git in questo VM.
+
+--------------------------------------------------------------------------------
+8. FILE CHIAVE AGGIUNTI/MODIFICATI
+--------------------------------------------------------------------------------
+src/lib/routing/preference-mapper.ts
+src/lib/routing/constraint-checker.ts
+src/lib/routing/engines/*
+src/lib/storage/trip-repository.ts
+src/lib/storage/supabase-client.ts
+src/lib/ai/assistant.ts
+src/lib/google/maps-links.ts
+src/components/trip/* (prefs, exclusions, assistant, summary)
+src/components/status/StatusBanner.tsx
+src/app/share/[token]/page.tsx
+src/app/api/share/[token]/route.ts
+supabase/migrations/001_itinera_trips.sql
+tests/unit/*.test.ts
+README.md, .env.example, LIMITAZIONI.txt, AUDIT_TECNICO.txt
+
+--------------------------------------------------------------------------------
+9. COME RIPARTIRE
+--------------------------------------------------------------------------------
+npm install
+cp .env.example .env.local   # inserire chiavi
+# applicare supabase/migrations/001_itinera_trips.sql se cloud
+npm run dev
+npm test && npm run lint && npm run build
+
+Test live consigliato:
+Rozzano → Firenze → Roma, evita pedaggi, esclusione hard Bologna,
+assistente NL con conferma, share link, salvataggio.
+
+--------------------------------------------------------------------------------
+10. VERDETTO
+--------------------------------------------------------------------------------
+Itinera è completa per quanto tecnicamente possibile senza chiavi esterne
+e senza servizi a pagamento attivati in questo ambiente.
+
+Operativa in demo; live/assistente/cloud pronti dietro configurazione.
+Correttezza e trasparenza prioritarie: nessuna funzionalità simulata
+viene dichiarata reale.
+
+Fine report.

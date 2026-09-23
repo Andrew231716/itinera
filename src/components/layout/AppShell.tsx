@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   Sparkles,
   SlidersHorizontal,
+  Settings2,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -19,6 +20,7 @@ import { PreferencesPanel } from "@/components/trip/PreferencesPanel";
 import { ExclusionsPanel } from "@/components/trip/ExclusionsPanel";
 import { RouteSummary } from "@/components/trip/RouteSummary";
 import { NaturalLanguageAssistant } from "@/components/trip/NaturalLanguageAssistant";
+import { SetupPanel } from "@/components/trip/SetupPanel";
 import { MapCanvas } from "@/components/map/MapCanvas";
 import { StatusBanner } from "@/components/status/StatusBanner";
 
@@ -28,6 +30,7 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "exclusions", label: "Esclusioni", icon: ShieldAlert },
   { id: "summary", label: "Riepilogo", icon: Layers3 },
   { id: "assistant", label: "Assistente", icon: Sparkles },
+  { id: "setup", label: "Live", icon: Settings2 },
 ];
 
 export function AppShell() {
@@ -162,6 +165,7 @@ export function AppShell() {
           {activePanel === "exclusions" ? <ExclusionsPanel /> : null}
           {activePanel === "summary" ? <RouteSummary /> : null}
           {activePanel === "assistant" ? <NaturalLanguageAssistant /> : null}
+          {activePanel === "setup" ? <SetupPanel /> : null}
 
           {savedTrips.length > 0 && activePanel === "itinerary" ? (
             <div className="mt-6 border-t border-[var(--line)] pt-4">

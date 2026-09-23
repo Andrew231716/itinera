@@ -1,39 +1,14 @@
 import { NextResponse } from "next/server";
-import {
-  getOpenAiKey,
-  getServerGoogleMapsKey,
-  getBrowserGoogleMapsKey,
-  getSupabaseConfig,
-  resolveMapsMode,
-  resolveRoutingMode,
-} from "@/lib/config/env";
-import { listRoutingEngines } from "@/lib/routing/engines/types";
+import { getPublicConfigPayload } from "@/lib/config/readiness";
+import { apiErrorResponse } from "@/lib/utils/errors";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const browserKey = getBrowserGoogleMapsKey() ?? null;
-  const hasServerKey = Boolean(getServerGoogleMapsKey());
-  const supabase = Boolean(getSupabaseConfig());
-  const openai = Boolean(getOpenAiKey());
-
-  return NextResponse.json({
-    mapsMode: resolveMapsMode(),
-    routingMode: resolveRoutingMode(),
-    browserKey,
-    hasServerKey,
-    features: {
-      places: hasServerKey || resolveMapsMode() === "demo",
-      routing: hasServerKey || resolveRoutingMode() === "demo",
-      mapDisplay: Boolean(browserKey),
-      supabase,
-      openai,
-    },
-    engines: listRoutingEngines().map((e) => ({
-      id: e.id,
-      displayName: e.displayName,
-      supportsNativeAvoidAreas: e.supportsNativeAvoidAreas,
-      maxIntermediates: e.maxIntermediates,
-    })),
-  });
+  try {
+    return NextResponse.json(getPublicConfigPayload());
+  } catch (error) {
+    const body = apiErrorResponse(error);
+    return NextResponse.json(body, { status: body.status });
+  }
 }

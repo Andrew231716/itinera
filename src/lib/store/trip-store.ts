@@ -30,7 +30,8 @@ export type PanelTab =
   | "preferences"
   | "exclusions"
   | "summary"
-  | "assistant";
+  | "assistant"
+  | "setup";
 
 interface TripState {
   trip: TripDraft;

@@ -1,0 +1,47 @@
+# GO LIVE — Itinera
+==================
+
+Per uscire dalla modalità demo servono chiavi API reali.
+Questo ambiente NON può creare account Google/OpenAI/Supabase al posto tuo.
+
+## Minimo per mappa + routing reale
+
+1. Google Cloud Console → nuovo progetto (o esistente) con billing attivo
+2. Abilita API:
+   - Maps JavaScript API
+   - Places API (New)
+   - Routes API
+3. Crea DUE chiavi:
+   A) Server key → restrizione IP o nessuna (solo server) → GOOGLE_MAPS_API_KEY
+   B) Browser key → restrizione HTTP referrer (localhost:3000/*, tuo dominio) → NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+4. Nel progetto:
+   cp .env.example .env.local
+   # incolla le chiavi
+   npm run dev
+5. Apri tab "Live" in Itinera → "Verifica connettività"
+6. Test: Partenza Milano, Arrivo Roma → Calcola percorso
+   Devi vedere distanza/durata reali e polyline sulla mappa.
+
+## Assistente (opzionale)
+
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini   # opzionale
+
+## Cloud save/share (opzionale)
+
+1. Crea progetto Supabase
+2. SQL Editor → esegui supabase/migrations/001_itinera_trips.sql
+3. Settings → API → Project URL + anon public key
+4. NEXT_PUBLIC_SUPABASE_URL=...
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+
+## Sicurezza
+
+- Mai committare .env.local
+- Mai mettere service_role in NEXT_PUBLIC_*
+- Restringi sempre la browser key per referrer
+
+## Verifica automatica
+
+GET /api/health          → readiness
+GET /api/health?probe=1  → ping Places / OpenAI / Supabase se configurati
