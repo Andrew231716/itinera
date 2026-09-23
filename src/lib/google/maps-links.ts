@@ -17,16 +17,26 @@ function encodePlace(place: PlaceRef): string {
 
 export interface MapsLinkResult {
   url: string;
-  /** Preferences actually represented in the URL */
   includedPreferences: string[];
-  /** Features that could not be transferred */
   omitted: string[];
-  /** True when waypoints exceed Maps URL practical limits */
   requiresSegmentation: boolean;
-  segments?: string[];
+  segments?: Array<{
+    index: number;
+    label: string;
+    url: string;
+    from: string;
+    to: string;
+  }>;
+  preview: {
+    origin: string;
+    destination: string;
+    stops: string[];
+    travelMode: string;
+    note: string;
+  };
 }
 
-const MAX_WAYPOINTS_IN_URL = 8;
+export const MAX_WAYPOINTS_IN_URL = 8;
 
 /**
  * Builds a Google Maps Directions URL.
@@ -79,7 +89,7 @@ export function buildGoogleMapsDirectionsLink(params: {
 
   if (requiresSegmentation) {
     omitted.push(
-      `Troppe tappe (${stops.length}): il link include solo le prime ${MAX_WAYPOINTS_IN_URL}. Usa i segmenti per navigare il resto.`,
+      `Troppe tappe (${stops.length}): il link principale include solo le prime ${MAX_WAYPOINTS_IN_URL}. Usa i segmenti per navigare il resto — nessuna tappa viene eliminata silenziosamente.`,
     );
   }
 
@@ -99,27 +109,43 @@ export function buildGoogleMapsDirectionsLink(params: {
 
   const url = `https://www.google.com/maps/dir/?${search.toString()}`;
 
-  const segments: string[] = [];
-  if (requiresSegmentation || stops.length > 0) {
-    const chain = [origin, ...stops, destination];
-    for (let i = 0; i < chain.length - 1; i++) {
-      const s = new URLSearchParams({
-        api: "1",
-        origin: encodePlace(chain[i]),
-        destination: encodePlace(chain[i + 1]),
-        travelmode: MODE_MAP[travelMode],
-      });
-      if (avoidParts.length > 0) s.set("avoid", avoidParts.join("|"));
-      segments.push(`https://www.google.com/maps/dir/?${s.toString()}`);
-    }
-  }
+  const chain = [origin, ...stops, destination];
+  const segments =
+    chain.length > 1
+      ? chain.slice(0, -1).map((from, i) => {
+          const to = chain[i + 1];
+          const s = new URLSearchParams({
+            api: "1",
+            origin: encodePlace(from),
+            destination: encodePlace(to),
+            travelmode: MODE_MAP[travelMode],
+          });
+          if (avoidParts.length > 0) s.set("avoid", avoidParts.join("|"));
+          return {
+            index: i + 1,
+            label: `Tratta ${i + 1}`,
+            from: from.label,
+            to: to.label,
+            url: `https://www.google.com/maps/dir/?${s.toString()}`,
+          };
+        })
+      : undefined;
 
   return {
     url,
     includedPreferences,
     omitted,
     requiresSegmentation,
-    segments: segments.length > 0 ? segments : undefined,
+    segments,
+    preview: {
+      origin: origin.label,
+      destination: destination.label,
+      stops: stops.map((s) => s.label),
+      travelMode: MODE_MAP[travelMode],
+      note: requiresSegmentation
+        ? "Il viaggio richiede navigazione a segmenti."
+        : "Il link include l’itinerario completo supportato da Maps.",
+    },
   };
 }
 
@@ -128,6 +154,13 @@ export function buildShareTripUrl(tripId: string, origin?: string): string {
     origin ??
     (typeof window !== "undefined" ? window.location.origin : "");
   return `${base}/?trip=${encodeURIComponent(tripId)}`;
+}
+
+export function buildPublicShareUrl(token: string, origin?: string): string {
+  const base =
+    origin ??
+    (typeof window !== "undefined" ? window.location.origin : "");
+  return `${base}/share/${encodeURIComponent(token)}`;
 }
 
 export function exportStopsList(params: {
@@ -164,4 +197,24 @@ export function exportDirectionsText(
     parts.push("");
   });
   return parts.join("\n");
+}
+
+export async function nativeShare(payload: {
+  title: string;
+  text: string;
+  url: string;
+}): Promise<"shared" | "copied" | "unsupported"> {
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    try {
+      await navigator.share(payload);
+      return "shared";
+    } catch {
+      // user cancelled or share failed — fall through
+    }
+  }
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(payload.url);
+    return "copied";
+  }
+  return "unsupported";
 }

@@ -13,13 +13,14 @@ import { useEffect } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { useTripStore, type PanelTab } from "@/lib/store/trip-store";
-import { Badge, Button, cn } from "@/components/ui/primitives";
+import { Button, cn } from "@/components/ui/primitives";
 import { TripForm } from "@/components/trip/TripForm";
 import { PreferencesPanel } from "@/components/trip/PreferencesPanel";
 import { ExclusionsPanel } from "@/components/trip/ExclusionsPanel";
 import { RouteSummary } from "@/components/trip/RouteSummary";
 import { NaturalLanguageAssistant } from "@/components/trip/NaturalLanguageAssistant";
 import { MapCanvas } from "@/components/map/MapCanvas";
+import { StatusBanner } from "@/components/status/StatusBanner";
 
 const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "itinerary", label: "Itinerario", icon: MapIcon },
@@ -35,7 +36,6 @@ export function AppShell() {
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const mobilePanelOpen = useTripStore((s) => s.mobilePanelOpen);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
-  const mapsMode = useTripStore((s) => s.mapsMode);
   const routeMode = useTripStore((s) => s.routeMode);
   const setMapsConfig = useTripStore((s) => s.setMapsConfig);
   const persistTrip = useTripStore((s) => s.persistTrip);
@@ -77,13 +77,10 @@ export function AppShell() {
     <div className="relative flex h-[100dvh] w-full overflow-hidden bg-[var(--mist)]">
       <div className="absolute inset-0 lg:left-[min(420px,38vw)]">
         <MapCanvas />
+        <StatusBanner />
       </div>
 
-      {(mapsMode === "demo" || routeMode === "demo") && (
-        <div className="pointer-events-none absolute top-3 right-3 z-20 animate-[fadeSlide_240ms_ease]">
-          <Badge tone="demo">Modalità demo</Badge>
-        </div>
-      )}
+      {/* badges moved to StatusBanner */}
 
       <aside
         className={cn(

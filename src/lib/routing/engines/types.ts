@@ -3,64 +3,44 @@ import type {
   RouteComputeResponse,
 } from "@/lib/types/route";
 import type { RoadPreferences } from "@/lib/types/trip";
-import {
-  buildDemoRouteResponse,
-  computeRoutesWithGoogle,
-} from "@/lib/google/routes-client";
-import { rankRoutesByConstraints } from "@/lib/routing/constraint-checker";
-import { getServerGoogleMapsKey } from "@/lib/config/env";
+import { GoogleRoutesEngine } from "./google-routes-engine";
+import { OpenRouteServiceEngine } from "./openrouteservice-engine";
 
 /**
- * Routing engine abstraction.
- * Today: Google Routes (+ post-check for custom exclusions).
- * Future: alternative engines can plug in for hard constraints Google cannot enforce.
+ * Common routing engine contract.
+ * Engines must never invent distances/paths when unavailable.
  */
 export interface RoutingEngine {
   readonly id: string;
+  readonly displayName: string;
   readonly supportsNativeAvoidAreas: boolean;
+  readonly supportsAlternatives: boolean;
+  readonly supportsWaypoints: boolean;
+  readonly maxIntermediates: number;
   compute(
     request: RouteComputeRequest,
     preferences: RoadPreferences,
   ): Promise<RouteComputeResponse>;
 }
 
-export class GoogleRoutesEngine implements RoutingEngine {
-  readonly id = "google_routes";
-  readonly supportsNativeAvoidAreas = false;
+export function listRoutingEngines(): RoutingEngine[] {
+  return [new GoogleRoutesEngine(), new OpenRouteServiceEngine()];
+}
 
-  async compute(
-    request: RouteComputeRequest,
-    preferences: RoadPreferences,
-  ): Promise<RouteComputeResponse> {
-    const apiKey = getServerGoogleMapsKey();
-    if (!apiKey) {
-      return buildDemoRouteResponse(request);
-    }
-
-    const result = await computeRoutesWithGoogle(
-      request,
-      apiKey,
-      preferences,
-    );
-
-    result.routes = rankRoutesByConstraints(result.routes);
-
-    if (
-      result.routes.length > 0 &&
-      result.routes.every((r) =>
-        r.violations.some((v) => v.severity === "hard"),
-      )
-    ) {
-      result.limitations = [
-        ...result.limitations,
-        "Nessuna alternativa verificabile rispetta tutti i vincoli obbligatori. Modifica le esclusioni o accetta un percorso con avvisi.",
-      ];
-    }
-
-    return result;
+export function getRoutingEngine(id?: string): RoutingEngine {
+  const engines = listRoutingEngines();
+  if (id) {
+    const found = engines.find((e) => e.id === id);
+    if (found) return found;
   }
+  return new GoogleRoutesEngine();
 }
 
 export function getDefaultRoutingEngine(): RoutingEngine {
-  return new GoogleRoutesEngine();
+  return getRoutingEngine(process.env.ROUTING_ENGINE?.trim() || "google_routes");
 }
+
+export type {
+  RouteComputeRequest,
+  RouteComputeResponse,
+} from "@/lib/types/route";

@@ -17,7 +17,9 @@ import {
   buildShareTripUrl,
   exportDirectionsText,
   exportStopsList,
+  nativeShare,
 } from "@/lib/google/maps-links";
+import { getTripRepository } from "@/lib/storage/trip-repository";
 import { formatDistance, formatDuration, formatCurrency } from "@/lib/utils/format";
 import {
   Badge,
@@ -164,6 +166,30 @@ export function RouteSummary() {
             </div>
           ) : null}
 
+          {selected.unverifiableConstraints &&
+          selected.unverifiableConstraints.length > 0 ? (
+            <div className="space-y-1.5">
+              {selected.unverifiableConstraints.map((u) => (
+                <div
+                  key={`${u.exclusionId}-${u.reason}`}
+                  className="rounded-lg bg-sky-50 px-2.5 py-2 text-xs text-sky-900"
+                >
+                  Non verificabile — {u.exclusionLabel}: {u.reason}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {selected.isConformant === false ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+              Percorso non dichiarato conforme ai vincoli obbligatori.
+            </div>
+          ) : selected.isConformant === true ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900">
+              Nessuna violazione hard verificata su questo percorso.
+            </div>
+          ) : null}
+
           <div>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
               Tratte
@@ -259,6 +285,9 @@ function ShareActions({
   selected: ReturnType<typeof useTripStore.getState>["routes"][number] | null;
 }) {
   const trip = useTripStore((s) => s.trip);
+  const persistTrip = useTripStore((s) => s.persistTrip);
+  const [showPreview, setShowPreview] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
 
   if (!trip.origin || !trip.destination) {
     return (
@@ -288,15 +317,52 @@ function ShareActions({
         subtitle="Google Maps non riceve le esclusioni personalizzate"
       />
 
-      <a
-        href={mapsLink.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] text-sm font-semibold text-[var(--accent-ink)] shadow-sm transition hover:brightness-105"
-      >
-        <ExternalLink className="h-4 w-4" />
-        Apri in Google Maps
-      </a>
+      <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
+        <p className="font-medium text-[var(--ink)]">Riepilogo link Maps</p>
+        <p>
+          {mapsLink.preview.origin} → {mapsLink.preview.destination}
+        </p>
+        {mapsLink.preview.stops.length > 0 ? (
+          <p>Tappe: {mapsLink.preview.stops.join(" · ")}</p>
+        ) : null}
+        <p>{mapsLink.preview.note}</p>
+      </div>
+
+      {!showPreview ? (
+        <Button
+          type="button"
+          className="w-full"
+          onClick={() => setShowPreview(true)}
+        >
+          <ExternalLink className="h-4 w-4" />
+          Rivedi e apri in Google Maps
+        </Button>
+      ) : (
+        <div className="space-y-2 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3">
+          <p className="text-xs text-[var(--accent-ink)]">
+            Confermi l’apertura? Le esclusioni personalizzate non saranno
+            trasferite.
+          </p>
+          <div className="flex gap-2">
+            <a
+              href={mapsLink.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] text-sm font-semibold text-[var(--accent-ink)]"
+            >
+              Apri ora
+            </a>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowPreview(false)}
+            >
+              Annulla
+            </Button>
+          </div>
+        </div>
+      )}
 
       {mapsLink.includedPreferences.length > 0 ? (
         <p className="text-[11px] text-[var(--ink-muted)]">
@@ -314,7 +380,8 @@ function ShareActions({
 
       {mapsLink.requiresSegmentation ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Il percorso completo richiede più segmenti di navigazione.
+          Il percorso completo richiede più segmenti di navigazione. Nessuna
+          tappa viene eliminata: usa l’elenco tratte qui sotto.
         </div>
       ) : null}
 
@@ -325,7 +392,11 @@ function ShareActions({
           size="sm"
           onClick={() => onCopy("link", mapsLink.url)}
         >
-          {copied === "link" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied === "link" ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
           Copia link
         </Button>
         <Button
@@ -333,8 +404,23 @@ function ShareActions({
           variant="outline"
           size="sm"
           onClick={() =>
-            onCopy("share", buildShareTripUrl(trip.meta.id))
+            void nativeShare({
+              title: trip.meta.title,
+              text: `Itinerario Itinera: ${trip.origin?.label} → ${trip.destination?.label}`,
+              url: mapsLink.url,
+            }).then((r) => {
+              if (r === "copied") onCopy("native", mapsLink.url);
+            })
           }
+        >
+          <Share2 className="h-3.5 w-3.5" />
+          Condividi
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onCopy("share", buildShareTripUrl(trip.meta.id))}
         >
           <Share2 className="h-3.5 w-3.5" />
           URL viaggio
@@ -357,23 +443,50 @@ function ShareActions({
           <Route className="h-3.5 w-3.5" />
           Copia indicazioni
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void (async () => {
+              await persistTrip();
+              const repo = getTripRepository();
+              if (!repo.createShare) return;
+              const share = await repo.createShare(trip.meta.id);
+              setShareToken(share.token);
+              const url = `${window.location.origin}${share.urlPath}`;
+              onCopy("public", url);
+            })();
+          }}
+        >
+          Link pubblico
+        </Button>
       </div>
+
+      {shareToken ? (
+        <p className="text-[11px] text-[var(--ink-muted)]">
+          Link pubblico creato (sola lettura):{" "}
+          <code className="rounded bg-[var(--surface-2)] px-1">
+            /share/{shareToken}
+          </code>
+        </p>
+      ) : null}
 
       {mapsLink.segments && mapsLink.segments.length > 1 ? (
         <div className="space-y-1.5">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
             Navigazione per tratta
           </p>
-          {mapsLink.segments.map((url, i) => (
+          {mapsLink.segments.map((seg) => (
             <a
-              key={url}
-              href={url}
+              key={seg.url}
+              href={seg.url}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--brand)] hover:bg-[var(--brand-soft)]"
             >
               <Navigation className="h-3.5 w-3.5" />
-              Tratta {i + 1}
+              {seg.label}: {seg.from} → {seg.to}
             </a>
           ))}
         </div>

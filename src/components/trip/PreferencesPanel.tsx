@@ -1,22 +1,44 @@
 "use client";
 
 import { useTripStore } from "@/lib/store/trip-store";
+import { describePreferenceStatuses } from "@/lib/routing/preference-mapper";
 import {
+  Badge,
   Input,
   Label,
   SectionTitle,
   ToggleRow,
 } from "@/components/ui/primitives";
 
+const STATUS_TONE: Record<
+  string,
+  "neutral" | "brand" | "warn" | "demo" | "ok"
+> = {
+  engine_direct: "ok",
+  preferential: "brand",
+  post_verified: "ok",
+  unsupported: "warn",
+  unverifiable: "demo",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  engine_direct: "Motore",
+  preferential: "Preferenziale",
+  post_verified: "Post-verifica",
+  unsupported: "Non supportata",
+  unverifiable: "Non verificabile",
+};
+
 export function PreferencesPanel() {
   const preferences = useTripStore((s) => s.trip.preferences);
   const setPreferences = useTripStore((s) => s.setPreferences);
+  const statuses = describePreferenceStatuses(preferences);
 
   return (
     <div className="space-y-2">
       <SectionTitle
         title="Personalizza il percorso"
-        subtitle="Indicazioni preferenziali per il motore di routing — non garanzie assolute"
+        subtitle="Soft vs indicazioni motore — non garanzie assolute"
       />
 
       <ToggleRow
@@ -36,7 +58,7 @@ export function PreferencesPanel() {
       />
       <ToggleRow
         label="Evita tunnel"
-        description="Non supportato nativamente da Google Routes: resta una preferenza soft."
+        description="Non supportato nativamente da Google Routes."
         checked={preferences.avoidTunnels}
         onChange={(avoidTunnels) => setPreferences({ avoidTunnels })}
         soft
@@ -48,14 +70,14 @@ export function PreferencesPanel() {
       />
       <ToggleRow
         label="Preferisci il percorso più breve"
-        description="Mappato su un’indicazione preferenziale del motore, non su distanza minima garantita."
+        description="Indicazione preferenziale (fuel-efficient), non distanza minima garantita."
         checked={preferences.preferShortest}
         onChange={(preferShortest) => setPreferences({ preferShortest })}
         soft
       />
       <ToggleRow
         label="Preferisci strade panoramiche"
-        description="Preferenza soft: non esiste un flag nativo nelle Routes API."
+        description="Preferenza soft non applicabile automaticamente."
         checked={preferences.preferScenic}
         onChange={(preferScenic) => setPreferences({ preferScenic })}
         soft
@@ -76,10 +98,35 @@ export function PreferencesPanel() {
             });
           }}
         />
-        <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-          Usato per filtrare le alternative dopo il calcolo, non come vincolo
-          nativo del motore.
+      </div>
+
+      <div className="mt-4 space-y-2 border-t border-[var(--line)] pt-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+          Stato applicazione
         </p>
+        {statuses.map((s) => (
+          <div
+            key={s.key}
+            className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2"
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-sm font-medium text-[var(--ink)]">
+                {s.label}
+              </span>
+              <Badge tone={STATUS_TONE[s.status] ?? "neutral"}>
+                {STATUS_LABEL[s.status] ?? s.status}
+              </Badge>
+              {s.enabled ? (
+                <Badge tone="brand">attiva</Badge>
+              ) : (
+                <Badge>off</Badge>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--ink-muted)]">
+              {s.explanation}
+            </p>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import {
-  getBrowserGoogleMapsKey,
+  getOpenAiKey,
   getServerGoogleMapsKey,
+  getBrowserGoogleMapsKey,
+  getSupabaseConfig,
   resolveMapsMode,
   resolveRoutingMode,
 } from "@/lib/config/env";
+import { listRoutingEngines } from "@/lib/routing/engines/types";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   const browserKey = getBrowserGoogleMapsKey() ?? null;
-  // Never expose the server-only key to the client.
   const hasServerKey = Boolean(getServerGoogleMapsKey());
+  const supabase = Boolean(getSupabaseConfig());
+  const openai = Boolean(getOpenAiKey());
 
   return NextResponse.json({
     mapsMode: resolveMapsMode(),
@@ -22,6 +26,14 @@ export async function GET() {
       places: hasServerKey || resolveMapsMode() === "demo",
       routing: hasServerKey || resolveRoutingMode() === "demo",
       mapDisplay: Boolean(browserKey),
+      supabase,
+      openai,
     },
+    engines: listRoutingEngines().map((e) => ({
+      id: e.id,
+      displayName: e.displayName,
+      supportsNativeAvoidAreas: e.supportsNativeAvoidAreas,
+      maxIntermediates: e.maxIntermediates,
+    })),
   });
 }

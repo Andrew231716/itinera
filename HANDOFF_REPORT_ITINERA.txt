@@ -1,0 +1,231 @@
+HANDOFF REPORT — Itinera (Intelligent Route Planner)
+====================================================
+
+1. CONTESTO
+-----------
+Applicazione web full-stack per creare, personalizzare, visualizzare e
+condividere itinerari di viaggio con tappe multiple, preferenze stradali
+ed esclusioni geografiche personalizzate.
+
+- Nome prodotto UI: Itinera
+- Package: intelligent-route-planner
+- Branch git: cursor/intelligent-route-planner-7e13
+- Repo remoto: assente in questo ambiente (push non disponibile)
+- Lingua UI: italiano
+- Stato runtime attuale: modalità DEMO (nessuna chiave Google configurata)
+
+
+2. STACK TECNICO
+----------------
+- Next.js 15.5.26 (App Router) + React 19 + TypeScript
+- Tailwind CSS 4
+- Zustand (stato viaggio)
+- @dnd-kit (riordino tappe drag-and-drop)
+- Lucide React (icone)
+- Google Maps JavaScript API (mappa, client-side con browser key)
+- Google Places API (autocomplete + details, solo via API Routes server)
+- Google Routes API computeRoutes (solo via API Routes server)
+- Supabase: non integrato (scaffold repository)
+- OpenAI: non integrato (scaffold assistant)
+
+
+3. PRINCIPI DI DESIGN / VINCOLI DI PRODOTTO
+-------------------------------------------
+1. Non inventare percorsi, distanze, tempi, pedaggi o coordinate.
+2. Chiavi segrete solo backend (GOOGLE_MAPS_API_KEY).
+3. Preferenze Google = indicazioni preferenziali, non garanzie.
+4. Esclusioni personalizzate = vincoli hard, separate dalle preferenze soft.
+5. Link Google Maps non deve dichiarare trasferite le esclusioni se non supportate.
+6. Senza API key → modalità demo chiara e onesta.
+
+
+4. ARCHITETTURA CARTELLE
+------------------------
+src/
+  app/
+    page.tsx                    # client shell
+    layout.tsx                  # font Fraunces + Manrope, metadata IT
+    api/
+      maps/config/              # espone mode + browserKey (mai server key)
+      places/autocomplete/
+      places/details/
+      routes/compute/
+      assistant/parse/          # Fase 6 scaffold
+  components/
+    layout/AppShell.tsx         # mappa + pannello + tabs + mobile sheet
+    map/MapCanvas.tsx           # Google Maps o DemoMap illustrativa
+    trip/                       # form, stops, prefs, exclusions, summary, NL
+    ui/primitives.tsx
+  hooks/                        # usePlaceSearch, useRouteCompute, useMediaQuery
+  lib/
+    types/trip.ts, route.ts
+    store/trip-store.ts         # Zustand
+    google/                     # places-client, routes-client, maps-links
+    routing/                    # preference-mapper, constraint-checker, engine
+    storage/trip-repository.ts  # LocalTripRepository + SupabaseTripRepository stub
+    ai/assistant.ts             # parse NL stub
+    config/env.ts
+    utils/                      # format, geometry, errors
+
+
+5. MODELLO DATI PRINCIPALI
+--------------------------
+TripDraft
+- meta: id, title, createdAt, updatedAt
+- origin / destination: PlaceRef | null
+- stops[]: { id, place, dwellMinutes?, notes? }
+- departureAt, travelMode (DRIVE|WALK|BICYCLE|TRANSIT|TWO_WHEELER)
+- preferences (RoadPreferences)
+- exclusions[] (CustomExclusion)
+- optimizeStopOrder (boolean, solo con consenso utente)
+- selectedRouteId
+
+RoadPreferences
+- avoidTolls, avoidHighways, avoidFerries
+- avoidTunnels (soft, non nativo Google)
+- preferFastest, preferShortest (shortest → FUEL_EFFICIENT + limitation)
+- preferScenic (soft)
+- maxExtraMinutes (post-filtro sulle alternative)
+
+CustomExclusion (hard di default)
+- city | address | road → punto + radiusMeters
+- road_segment → path + buffer
+- geo_zone → polygon
+- strength: hard | soft
+
+ComputedRoute
+- distance/duration, polyline decoded, legs/steps, tolls, warnings,
+  violations, engine
+
+
+6. API ROUTES
+-------------
+GET  /api/maps/config
+     → { mapsMode, routingMode, browserKey, hasServerKey, features }
+     NON espone la server key.
+
+GET  /api/places/autocomplete?q=
+     → Google Places Autocomplete oppure demo IT
+
+GET  /api/places/details?placeId=
+     → Place details oppure demo
+
+POST /api/routes/compute
+     → Routing engine; validazione input; max 25 intermediates
+
+POST /api/assistant/parse
+     → Stub: senza OPENAI_API_KEY → status: unavailable
+
+Body tipico /api/routes/compute:
+{
+  "origin": PlaceRef,
+  "destination": PlaceRef,
+  "intermediates": PlaceRef[],
+  "travelMode": "DRIVE",
+  "departureAt": "ISO|null",
+  "preferences": RoadPreferences,
+  "optimizeWaypointOrder": false,
+  "exclusions": CustomExclusion[]
+}
+
+Demo routing response (importante):
+Con nessuna server key: mode "demo", routes [], limitations esplicite.
+NESSUN path inventato.
+
+
+7. FLUSSO UX
+------------
+1. Pannello tabs: Itinerario | Percorso (preferenze) | Esclusioni |
+   Riepilogo | Assistente
+2. Desktop: sidebar sinistra + mappa full-bleed
+3. Mobile: bottom sheet trascabile
+4. Ricerca Places con debounce ~280ms
+5. Pick da mappa per origin/destination/stop/exclusion point/zone
+6. Zone: click ≥3 punti → conferma poligono
+7. "Calcola percorso" → summary + alternative + violations
+8. "Apri in Google Maps" genera Directions URL; omitte esclusioni custom;
+   segmenta se troppe tappe (>8 waypoint in URL)
+
+
+8. PERSISTENZA
+--------------
+- Oggi: LocalTripRepository su localStorage key "itinera.trips.v1"
+- Azioni: salva, lista, carica, duplica, nuovo
+- Share URL: /?trip=<id> carica viaggio locale
+- Supabase: classe stub che throw se usata senza env
+
+
+9. ENV VARS (da .env.example)
+-----------------------------
+GOOGLE_MAPS_API_KEY=                    # server Places+Routes
+NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=    # Maps JS
+OPENAI_API_KEY=                         # Fase 6
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+
+
+10. STATO FASI
+--------------
+Fase 1 — UI, mappa, Places, tappe CRUD+DnD     → OPERATIVA
+Fase 2 — Google Routes compute                 → OPERATIVA (live/demo)
+Fase 3 — Preferenze + esclusioni + check       → OPERATIVA
+Fase 4 — Share Google Maps + export            → OPERATIVA
+Fase 5 — Supabase save/share                   → SCAFFOLD
+Fase 6 — OpenAI NL → parametri strutturati     → SCAFFOLD
+
+
+11. LIMITAZIONI NOTE / DEBITI TECNICI
+-------------------------------------
+1. Google Routes non supporta nativamente avoid areas/tunnel/scenic:
+   astrazione engine + post-check geometrico sul polyline.
+2. Se tutte le alternative violano vincoli hard → messaggio
+   "nessuna alternativa verificabile".
+3. avoidTunnels / preferScenic / maxExtraMinutes documentati come
+   soft/limitation.
+4. Demo map = proiezione illustrativa Italia, non OSM/Google.
+5. Assistente non applica ancora parametri al trip store
+   (solo interpretazione futura).
+6. Nessuna auth (voluto).
+7. Nessun remote Git configurato in questo VM.
+8. Build: next build --turbopack OK all'ultimo check.
+
+
+12. COMANDI
+-----------
+npm install
+cp .env.example .env.local   # inserire chiavi
+npm run dev                  # http://localhost:3000
+npm run build
+npm run lint
+
+
+13. COSA FARE DOPO (SUGGERITO)
+------------------------------
+1. Configurare chiavi Google (billing + Places, Routes, Maps JS abilitati).
+2. Test live: Rozzano → Firenze → Roma con avoid tolls + exclusion Bologna.
+3. Fase 5: implementare SupabaseTripRepository reale + schema trips.
+4. Fase 6: completare parseNaturalLanguageRequest con structured output
+   OpenAI, poi resolve Places e populate store —
+   SENZA far inventare coordinate all'IA.
+5. Eventuale engine alternativo se servono avoid-area native
+   (astrazione già in lib/routing/engines/types.ts).
+
+
+14. DESIGN UI
+-------------
+- Brand: Itinera, teal #2C5F7C, accent oro #D4A017, mist background
+- Font: Fraunces (display) + Manrope (body)
+- Non dark-mode-first; non purple-gradient AI-cliché
+
+
+15. VERIFICHE FATTE
+-------------------
+- npm run build OK
+- API demo smoke-test OK
+  (/api/maps/config, places autocomplete "roma",
+   routes compute → routes vuote + limitations)
+- UI caricata in browser: brand, pannello, autocomplete demo "Rozzano",
+  badge modalità demo
+
+
+Fine report.

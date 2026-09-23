@@ -52,9 +52,34 @@ export function decodePolyline(encoded: string): LatLng[] {
   return coordinates;
 }
 
-/** Ray-casting point-in-polygon. */
+/** Densify polyline so thin exclusion zones are less likely to be missed. */
+export function densifyPath(path: LatLng[], maxStepMeters = 80): LatLng[] {
+  if (path.length < 2) return [...path];
+  const out: LatLng[] = [path[0]];
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    const dist = haversineMeters(a, b);
+    const steps = Math.max(1, Math.ceil(dist / maxStepMeters));
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      out.push({
+        lat: a.lat + (b.lat - a.lat) * t,
+        lng: a.lng + (b.lng - a.lng) * t,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Ray-casting point-in-polygon.
+ * Points exactly on an edge are treated as inside (conservative for hard exclusions).
+ */
 export function pointInPolygon(point: LatLng, polygon: LatLng[]): boolean {
   if (polygon.length < 3) return false;
+  if (pointOnPolygonEdge(point, polygon)) return true;
+
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
     const xi = polygon[i].lng;
@@ -63,10 +88,46 @@ export function pointInPolygon(point: LatLng, polygon: LatLng[]): boolean {
     const yj = polygon[j].lat;
     const intersect =
       yi > point.lat !== yj > point.lat &&
-      point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi + Number.EPSILON) + xi;
+      point.lng <
+        ((xj - xi) * (point.lat - yi)) / (yj - yi + Number.EPSILON) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+function pointOnPolygonEdge(point: LatLng, polygon: LatLng[]): boolean {
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    if (distancePointToSegmentMeters(point, a, b) <= 1) return true;
+  }
+  return false;
+}
+
+export function distancePointToSegmentMeters(
+  p: LatLng,
+  a: LatLng,
+  b: LatLng,
+): number {
+  const ab = haversineMeters(a, b);
+  if (ab < 1e-6) return haversineMeters(p, a);
+  // Local equirectangular projection around segment midpoint
+  const lat0 = toRad((a.lat + b.lat) / 2);
+  const ax = toRad(a.lng) * Math.cos(lat0) * EARTH_RADIUS_M;
+  const ay = toRad(a.lat) * EARTH_RADIUS_M;
+  const bx = toRad(b.lng) * Math.cos(lat0) * EARTH_RADIUS_M;
+  const by = toRad(b.lat) * EARTH_RADIUS_M;
+  const px = toRad(p.lng) * Math.cos(lat0) * EARTH_RADIUS_M;
+  const py = toRad(p.lat) * EARTH_RADIUS_M;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const t = Math.max(
+    0,
+    Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)),
+  );
+  const qx = ax + t * dx;
+  const qy = ay + t * dy;
+  return Math.hypot(px - qx, py - qy);
 }
 
 export function pathIntersectsPolygon(
@@ -74,7 +135,8 @@ export function pathIntersectsPolygon(
   polygon: LatLng[],
 ): boolean {
   if (path.length === 0 || polygon.length < 3) return false;
-  return path.some((p) => pointInPolygon(p, polygon));
+  const dense = densifyPath(path);
+  return dense.some((p) => pointInPolygon(p, polygon));
 }
 
 export function pathNearPoint(
@@ -82,7 +144,8 @@ export function pathNearPoint(
   center: LatLng,
   radiusMeters: number,
 ): boolean {
-  return path.some((p) => haversineMeters(p, center) <= radiusMeters);
+  const dense = densifyPath(path);
+  return dense.some((p) => haversineMeters(p, center) <= radiusMeters);
 }
 
 export function pathNearSegment(
@@ -91,12 +154,42 @@ export function pathNearSegment(
   bufferMeters: number,
 ): boolean {
   if (segment.length === 0) return false;
-  for (const p of path) {
-    for (const s of segment) {
+  const densePath = densifyPath(path);
+  const denseSeg = densifyPath(segment);
+  for (const p of densePath) {
+    for (let i = 1; i < denseSeg.length; i++) {
+      if (distancePointToSegmentMeters(p, denseSeg[i - 1], denseSeg[i]) <= bufferMeters) {
+        return true;
+      }
+    }
+    for (const s of denseSeg) {
       if (haversineMeters(p, s) <= bufferMeters) return true;
     }
   }
   return false;
+}
+
+export function isValidPolygon(polygon: LatLng[]): {
+  valid: boolean;
+  reason?: string;
+} {
+  if (polygon.length < 3) {
+    return { valid: false, reason: "Servono almeno 3 punti distinti." };
+  }
+  const unique = new Set(polygon.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`));
+  if (unique.size < 3) {
+    return { valid: false, reason: "I punti del poligono non sono abbastanza distinti." };
+  }
+  // Reject degenerate near-zero area (shoelace in degrees — rough)
+  let area = 0;
+  for (let i = 0; i < polygon.length; i++) {
+    const j = (i + 1) % polygon.length;
+    area += polygon[i].lng * polygon[j].lat - polygon[j].lng * polygon[i].lat;
+  }
+  if (Math.abs(area) < 1e-10) {
+    return { valid: false, reason: "Il poligono ha area quasi nulla." };
+  }
+  return { valid: true };
 }
 
 export function boundsFromPoints(points: LatLng[]): {

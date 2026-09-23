@@ -45,8 +45,16 @@ export interface ComputedRoute {
   tolls?: TollInfo;
   warnings: string[];
   violations: ConstraintViolation[];
+  /** Hard exclusions that could not be verified on this geometry */
+  unverifiableConstraints?: Array<{
+    exclusionId: string;
+    exclusionLabel: string;
+    reason: string;
+  }>;
+  /** True only when hard exclusions are verified with no hard violations */
+  isConformant?: boolean;
   /** Engine that produced this route */
-  engine: "google_routes" | "demo" | "alternative";
+  engine: "google_routes" | "demo" | "openrouteservice" | "alternative";
   rawDescription?: string;
 }
 
@@ -72,6 +80,8 @@ export interface RouteComputeResponse {
   routes: ComputedRoute[];
   optimizedIntermediateOrder?: number[];
   limitations: string[];
+  preferenceStatuses?: import("@/lib/routing/preference-mapper").PreferenceStatusItem[];
+  engineId?: string;
   error?: string;
 }
 

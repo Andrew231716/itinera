@@ -15,6 +15,7 @@ import {
 } from "@/lib/types/trip";
 import type { ComputedRoute } from "@/lib/types/route";
 import { getTripRepository } from "@/lib/storage/trip-repository";
+import { isValidPolygon } from "@/lib/utils/geometry";
 
 export type MapPickTarget =
   | "origin"
@@ -55,6 +56,7 @@ interface TripState {
   addStop: (place: PlaceRef) => void;
   updateStop: (id: string, place: PlaceRef) => void;
   removeStop: (id: string) => void;
+  clearStops: () => void;
   reorderStops: (fromIndex: number, toIndex: number) => void;
   setDepartureAt: (iso: string | null) => void;
   setTravelMode: (mode: TravelMode) => void;
@@ -182,6 +184,13 @@ export const useTripStore = create<TripState>((set, get) => ({
       routeMode: "idle",
     })),
 
+  clearStops: () =>
+    set((s) => ({
+      trip: touch({ ...s.trip, stops: [] }),
+      routes: [],
+      routeMode: "idle",
+    })),
+
   reorderStops: (fromIndex, toIndex) =>
     set((s) => {
       if (
@@ -271,6 +280,8 @@ export const useTripStore = create<TripState>((set, get) => ({
   finalizeGeoZone: (label) => {
     const points = get().exclusionDraftPoints;
     if (points.length < 3) return;
+    const validity = isValidPolygon(points);
+    if (!validity.valid) return;
     const zone: GeoZoneExclusion = {
       id: nanoid(),
       kind: "geo_zone",

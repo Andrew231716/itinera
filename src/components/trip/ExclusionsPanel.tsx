@@ -33,6 +33,7 @@ function exclusionKindLabel(kind: CustomExclusion["kind"]): string {
 export function ExclusionsPanel() {
   const exclusions = useTripStore((s) => s.trip.exclusions);
   const addExclusion = useTripStore((s) => s.addExclusion);
+  const updateExclusion = useTripStore((s) => s.updateExclusion);
   const removeExclusion = useTripStore((s) => s.removeExclusion);
   const mapPickTarget = useTripStore((s) => s.mapPickTarget);
   const setMapPickTarget = useTripStore((s) => s.setMapPickTarget);
@@ -174,41 +175,87 @@ export function ExclusionsPanel() {
           exclusions.map((ex) => (
             <div
               key={ex.id}
-              className="flex items-start gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5"
+              className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5"
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <p className="text-sm font-medium text-[var(--ink)]">
-                    {ex.label}
-                  </p>
-                  <Badge>{exclusionKindLabel(ex.kind)}</Badge>
-                  <Badge tone={ex.strength === "hard" ? "warn" : "neutral"}>
-                    {ex.strength}
-                  </Badge>
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-sm font-medium text-[var(--ink)]">
+                      {ex.label}
+                    </p>
+                    <Badge>{exclusionKindLabel(ex.kind)}</Badge>
+                    <Badge tone={ex.strength === "hard" ? "warn" : "neutral"}>
+                      {ex.strength}
+                    </Badge>
+                  </div>
                 </div>
-                {ex.kind === "geo_zone" ? (
-                  <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-                    Poligono con {ex.polygon.length} punti
-                  </p>
-                ) : ex.kind === "road_segment" ? (
-                  <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-                    Tratto con {ex.path.length} punti · buffer {ex.bufferMeters}{" "}
-                    m
-                  </p>
-                ) : (
-                  <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-                    Raggio circa {ex.radiusMeters} m
-                  </p>
-                )}
+                <button
+                  type="button"
+                  aria-label="Elimina esclusione"
+                  className="rounded-lg p-1.5 text-[var(--ink-faint)] hover:bg-red-50 hover:text-red-600"
+                  onClick={() => removeExclusion(ex.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                aria-label="Elimina esclusione"
-                className="rounded-lg p-1.5 text-[var(--ink-faint)] hover:bg-red-50 hover:text-red-600"
-                onClick={() => removeExclusion(ex.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]">
+                  Forza
+                  <select
+                    className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
+                    value={ex.strength}
+                    onChange={(e) =>
+                      updateExclusion(ex.id, {
+                        strength: e.target.value as "hard" | "soft",
+                      })
+                    }
+                  >
+                    <option value="hard">hard</option>
+                    <option value="soft">soft</option>
+                  </select>
+                </label>
+                {ex.kind === "city" ||
+                ex.kind === "address" ||
+                ex.kind === "road" ? (
+                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]">
+                    Raggio (m)
+                    <input
+                      type="number"
+                      min={50}
+                      max={50000}
+                      className="w-24 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
+                      value={ex.radiusMeters}
+                      onChange={(e) =>
+                        updateExclusion(ex.id, {
+                          radiusMeters: Math.max(50, Number(e.target.value) || 50),
+                        } as Partial<PointExclusion>)
+                      }
+                    />
+                  </label>
+                ) : null}
+                {ex.kind === "road_segment" ? (
+                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]">
+                    Buffer (m)
+                    <input
+                      type="number"
+                      min={10}
+                      max={5000}
+                      className="w-24 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
+                      value={ex.bufferMeters}
+                      onChange={(e) =>
+                        updateExclusion(ex.id, {
+                          bufferMeters: Math.max(10, Number(e.target.value) || 10),
+                        })
+                      }
+                    />
+                  </label>
+                ) : null}
+                {ex.kind === "geo_zone" ? (
+                  <p className="text-[11px] text-[var(--ink-muted)]">
+                    Poligono · {ex.polygon.length} punti
+                  </p>
+                ) : null}
+              </div>
             </div>
           ))
         )}

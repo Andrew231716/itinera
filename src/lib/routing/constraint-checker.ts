@@ -1,29 +1,71 @@
 import type { ConstraintViolation } from "@/lib/types/route";
 import type { CustomExclusion, LatLng } from "@/lib/types/trip";
 import {
+  isValidPolygon,
   pathIntersectsPolygon,
   pathNearPoint,
   pathNearSegment,
 } from "@/lib/utils/geometry";
 
+export type ConstraintCheckability = "verified" | "unverifiable";
+
+export interface ConstraintCheckResult {
+  violations: ConstraintViolation[];
+  unverifiable: Array<{
+    exclusionId: string;
+    exclusionLabel: string;
+    reason: string;
+  }>;
+}
+
 /**
  * Verifies whether a decoded route path violates custom exclusions.
  * Hard constraints produce violations; soft ones are advisory.
+ * Empty path → unverifiable (cannot claim conformity).
  */
 export function checkRouteConstraints(
   path: LatLng[],
   exclusions: CustomExclusion[],
 ): ConstraintViolation[] {
+  return checkRouteConstraintsDetailed(path, exclusions).violations;
+}
+
+export function checkRouteConstraintsDetailed(
+  path: LatLng[],
+  exclusions: CustomExclusion[],
+): ConstraintCheckResult {
   const violations: ConstraintViolation[] = [];
+  const unverifiable: ConstraintCheckResult["unverifiable"] = [];
+
+  if (path.length === 0 && exclusions.length > 0) {
+    for (const exclusion of exclusions) {
+      unverifiable.push({
+        exclusionId: exclusion.id,
+        exclusionLabel: exclusion.label,
+        reason:
+          "Geometria del percorso assente: impossibile verificare l’esclusione.",
+      });
+    }
+    return { violations, unverifiable };
+  }
 
   for (const exclusion of exclusions) {
     let intersects = false;
+    let checkable = true;
 
     switch (exclusion.kind) {
       case "city":
       case "address":
       case "road": {
-        if (!exclusion.place) break;
+        if (!exclusion.place) {
+          checkable = false;
+          unverifiable.push({
+            exclusionId: exclusion.id,
+            exclusionLabel: exclusion.label,
+            reason: "Esclusione senza coordinate utilizzabili.",
+          });
+          break;
+        }
         intersects = pathNearPoint(
           path,
           exclusion.place.location,
@@ -32,6 +74,15 @@ export function checkRouteConstraints(
         break;
       }
       case "road_segment": {
+        if (exclusion.path.length < 2) {
+          checkable = false;
+          unverifiable.push({
+            exclusionId: exclusion.id,
+            exclusionLabel: exclusion.label,
+            reason: "Segmento stradale incompleto (servono almeno 2 punti).",
+          });
+          break;
+        }
         intersects = pathNearSegment(
           path,
           exclusion.path,
@@ -40,12 +91,22 @@ export function checkRouteConstraints(
         break;
       }
       case "geo_zone": {
+        const validity = isValidPolygon(exclusion.polygon);
+        if (!validity.valid) {
+          checkable = false;
+          unverifiable.push({
+            exclusionId: exclusion.id,
+            exclusionLabel: exclusion.label,
+            reason: validity.reason ?? "Poligono non valido.",
+          });
+          break;
+        }
         intersects = pathIntersectsPolygon(path, exclusion.polygon);
         break;
       }
     }
 
-    if (!intersects) continue;
+    if (!checkable || !intersects) continue;
 
     violations.push({
       exclusionId: exclusion.id,
@@ -58,7 +119,7 @@ export function checkRouteConstraints(
     });
   }
 
-  return violations;
+  return { violations, unverifiable };
 }
 
 /**
@@ -80,4 +141,18 @@ export function rankRoutesByConstraints<
     if (softA !== softB) return softA - softB;
     return a.durationSeconds - b.durationSeconds;
   });
+}
+
+/** A route is "conforme" only if no hard violations and no unverifiable hard exclusions. */
+export function isRouteConformant(
+  violations: ConstraintViolation[],
+  unverifiable: ConstraintCheckResult["unverifiable"],
+  exclusions: CustomExclusion[],
+): boolean {
+  if (violations.some((v) => v.severity === "hard")) return false;
+  const hardIds = new Set(
+    exclusions.filter((e) => e.strength === "hard").map((e) => e.id),
+  );
+  if (unverifiable.some((u) => hardIds.has(u.exclusionId))) return false;
+  return true;
 }
