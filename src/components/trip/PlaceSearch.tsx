@@ -41,7 +41,9 @@ export function PlaceSearch({
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (value) setQuery(value.label);
+    if (value) {
+      setQuery(value.label);
+    }
   }, [value, setQuery]);
 
   useEffect(() => {
