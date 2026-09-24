@@ -87,6 +87,13 @@ export interface AssistantParseResult {
 export interface AssistantParseRequest {
   utterance: string;
   locale?: string;
+  /** Snapshot of the trip already on screen — for «percorso attuale» edits */
+  tripContext?: {
+    originLabel?: string | null;
+    destinationLabel?: string | null;
+    stopLabels?: string[];
+    exclusionLabels?: string[];
+  };
 }
 
 const OPENAI_JSON_SCHEMA = {
@@ -251,9 +258,11 @@ NON calcolare percorsi.
 Se una località è ambigua, status=needs_clarification e poni domande.
 Se la richiesta è impossibile (es. destinazione assente e non deducibile), status=impossible.
 Se chiede funzioni non supportate (es. evitare tunnel in modo garantito), elenca in unsupportedRequests e usa status=unsupported o ok con caveat.
-Distingui hardExclusions (obbligatorie, es. "non attraversare Bologna") da preferences (soft).
+Distingui hardExclusions (obbligatorie, es. "non attraversare Bologna", "evita Chiasso", "evita Lugano") da preferences (soft).
+Se l'utente parla del "percorso attuale" / "itinerario attuale" e nel contesto sono già presenti partenza e arrivo, lascia originText e destinationText a null e applica solo le modifiche richieste (esclusioni, preferenze, tappe aggiuntive).
 maxExtraMinutes: converti "un'ora" in 60, "mezz'ora" in 30, ecc.
-travelMode default null se non specificato.`;
+travelMode default null se non specificato.
+Per dogane/valichi: usa hardExclusions kind=city o address con il nome del luogo (es. "Chiasso", "dogana di Chiasso").`;
 
 type StructuredFetch =
   | { ok: true; structured: AssistantStructured; provider: AssistantProviderId }
@@ -343,10 +352,15 @@ async function fetchFromOpenAi(
   });
 
   if (!res.ok) {
+    let detail = `OpenAI HTTP ${res.status}.`;
+    if (res.status === 429) {
+      detail =
+        "OpenAI senza credito o in rate-limit (HTTP 429). Gemini resta il provider gratuito principale.";
+    }
     return {
       ok: false,
       provider: "openai",
-      detail: `OpenAI HTTP ${res.status}. Verifica chiave e credito.`,
+      detail,
     };
   }
 
@@ -363,21 +377,52 @@ async function fetchFromOpenAi(
 /** Skip Gemini for a while after project-level 403 (API not enabled). */
 let geminiSkippedUntil = 0;
 
-async function fetchFromGemini(
+function geminiModelCandidates(): string[] {
+  const preferred = process.env.GEMINI_MODEL?.trim();
+  const defaults = [
+    "gemini-3.6-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest",
+  ];
+  const ordered = preferred
+    ? [preferred, ...defaults.filter((m) => m !== preferred)]
+    : defaults;
+  return [...new Set(ordered)];
+}
+
+function isGeminiCapacityError(status: number, detail: string): boolean {
+  if (status === 429) return true;
+  return /high demand|try again later|resource.?exhausted|unavailable|overloaded|quota/i.test(
+    detail,
+  );
+}
+
+function buildUserPrompt(
+  utterance: string,
+  tripContext?: AssistantParseRequest["tripContext"],
+): string {
+  if (!tripContext) return utterance;
+  const lines = [
+    "Contesto viaggio già impostato nell'app (non inventare altro):",
+    `- Partenza: ${tripContext.originLabel ?? "(non impostata)"}`,
+    `- Arrivo: ${tripContext.destinationLabel ?? "(non impostata)"}`,
+    `- Tappe: ${(tripContext.stopLabels ?? []).join(", ") || "(nessuna)"}`,
+    `- Esclusioni già presenti: ${(tripContext.exclusionLabels ?? []).join(", ") || "(nessuna)"}`,
+    "",
+    "Richiesta utente:",
+    utterance,
+  ];
+  return lines.join("\n");
+}
+
+async function fetchFromGeminiModel(
   utterance: string,
   geminiKey: string,
+  model: string,
 ): Promise<StructuredFetch> {
-  if (geminiSkippedUntil > Date.now()) {
-    return {
-      ok: false,
-      provider: "gemini",
-      detail:
-        "Gemini temporaneamente saltato (API non abilitata o chiave non autorizzata). Riprovo più tardi.",
-    };
-  }
-
-  const model =
-    process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
 
   const res = await fetch(url, {
@@ -395,35 +440,17 @@ async function fetchFromGemini(
   });
 
   if (!res.ok) {
-    let detail = `Gemini HTTP ${res.status}.`;
+    let detail = `Gemini (${model}) HTTP ${res.status}.`;
     try {
       const errBody = (await res.json()) as {
         error?: { message?: string };
       };
-      if (errBody.error?.message) detail = `Gemini: ${errBody.error.message}`;
+      if (errBody.error?.message) {
+        detail = `Gemini (${model}): ${errBody.error.message}`;
+      }
     } catch {
       /* keep status detail */
     }
-
-    const needsEnable =
-      res.status === 403 &&
-      /not been used|disabled|not enabled|PERMISSION_DENIED|API key not valid|blocked|API_KEY_SERVICE_BLOCKED/i.test(
-        detail,
-      );
-    if (needsEnable) {
-      // Avoid hammering Gemini on every parse when the project API is off.
-      geminiSkippedUntil = Date.now() + 10 * 60 * 1000;
-      const source = getGeminiKeySource();
-      if (source === "maps_server") {
-        detail =
-          /blocked|API_KEY_SERVICE_BLOCKED/i.test(detail)
-            ? "Gemini: la chiave server blocca Generative Language API. Google Cloud → Credentials → chiave Itinera server → API restrictions → aggiungi «Generative Language API» → Save. Nessuna nuova chiave."
-            : `Gemini non ancora attivo sul progetto Google già usato per Maps. Abilita Generative Language API (gratis): ${GEMINI_ENABLE_API_URL} — poi, se la chiave server ha restrizioni API, aggiungi anche «Generative Language API». Nessuna nuova chiave da creare.`;
-      } else {
-        detail = `Gemini rifiutato (API disabilitata o chiave non valida). ${detail}`;
-      }
-    }
-
     return { ok: false, provider: "gemini", detail };
   }
 
@@ -437,11 +464,79 @@ async function fetchFromGemini(
     .join("")
     .trim();
   if (!content) {
-    return { ok: false, provider: "gemini", detail: "Risposta Gemini vuota." };
+    return {
+      ok: false,
+      provider: "gemini",
+      detail: `Gemini (${model}): risposta vuota.`,
+    };
   }
-  // Success — clear any previous skip window
-  geminiSkippedUntil = 0;
   return parseStructuredJson(content, "gemini");
+}
+
+async function fetchFromGemini(
+  utterance: string,
+  geminiKey: string,
+): Promise<StructuredFetch> {
+  if (geminiSkippedUntil > Date.now()) {
+    return {
+      ok: false,
+      provider: "gemini",
+      detail:
+        "Gemini temporaneamente saltato (API non abilitata o chiave non autorizzata). Riprovo più tardi.",
+    };
+  }
+
+  const models = geminiModelCandidates();
+  const attempts: string[] = [];
+
+  for (const model of models) {
+    const result = await fetchFromGeminiModel(utterance, geminiKey, model);
+    if (result.ok) {
+      geminiSkippedUntil = 0;
+      return result;
+    }
+
+    attempts.push(result.detail);
+    const capacity = isGeminiCapacityError(0, result.detail) ||
+      /HTTP 429|high demand|try again later|resource.?exhausted|overloaded/i.test(
+        result.detail,
+      );
+
+    const needsEnable =
+      /not been used|disabled|not enabled|PERMISSION_DENIED|API key not valid|blocked|API_KEY_SERVICE_BLOCKED/i.test(
+        result.detail,
+      );
+    if (needsEnable) {
+      geminiSkippedUntil = Date.now() + 10 * 60 * 1000;
+      const source = getGeminiKeySource();
+      const detail =
+        source === "maps_server"
+          ? /blocked|API_KEY_SERVICE_BLOCKED/i.test(result.detail)
+            ? "Gemini: la chiave server blocca Generative Language API. Google Cloud → Credentials → chiave Itinera server → API restrictions → aggiungi «Generative Language API» → Save. Nessuna nuova chiave."
+            : `Gemini non ancora attivo sul progetto Google già usato per Maps. Abilita Generative Language API (gratis): ${GEMINI_ENABLE_API_URL} — poi, se la chiave server ha restrizioni API, aggiungi anche «Generative Language API». Nessuna nuova chiave da creare.`
+          : `Gemini rifiutato (API disabilitata o chiave non valida). ${result.detail}`;
+      return { ok: false, provider: "gemini", detail };
+    }
+
+    // Capacity / model unavailable → try next model
+    if (
+      capacity ||
+      /no longer available|not found|is not found|NOT_FOUND/i.test(result.detail)
+    ) {
+      continue;
+    }
+
+    // Other hard errors: stop the chain
+    return result;
+  }
+
+  return {
+    ok: false,
+    provider: "gemini",
+    detail:
+      attempts[attempts.length - 1] ??
+      "Gemini non disponibile (tutti i modelli in coda o saturi). Riprova tra poco.",
+  };
 }
 
 function providerOrder(): AssistantProviderId[] {
@@ -454,7 +549,7 @@ function providerOrder(): AssistantProviderId[] {
 }
 
 async function fetchStructuredFromProviders(
-  utterance: string,
+  prompt: string,
 ): Promise<StructuredFetch | { ok: false; detail: string; attempts: string[] }> {
   const openAiKey = getOpenAiKey();
   const geminiKey = getGeminiKey();
@@ -475,15 +570,15 @@ async function fetchStructuredFromProviders(
   for (const id of order) {
     const result =
       id === "openai"
-        ? await fetchFromOpenAi(utterance, openAiKey!)
-        : await fetchFromGemini(utterance, geminiKey!);
+        ? await fetchFromOpenAi(prompt, openAiKey!)
+        : await fetchFromGemini(prompt, geminiKey!);
     if (result.ok) return result;
     attempts.push(result.detail);
   }
 
   return {
     ok: false,
-    detail: "Nessun provider IA disponibile.",
+    detail: "Nessun provider IA disponibile al momento.",
     attempts,
   };
 }
@@ -602,22 +697,33 @@ export async function parseNaturalLanguageRequest(
     };
   }
 
-  const fetched = await fetchStructuredFromProviders(utterance);
+  const prompt = buildUserPrompt(utterance, request.tripContext);
+  const fetched = await fetchStructuredFromProviders(prompt);
   if (!fetched.ok) {
     const attempts =
       "attempts" in fetched && fetched.attempts.length > 0
         ? fetched.attempts
         : [];
+    const keysMissing = !getGeminiKey() && !getOpenAiKey();
+    const capacity =
+      attempts.some((a) =>
+        /high demand|try again later|429|rate-limit|senza credito/i.test(a),
+      ) || /non disponibile al momento/i.test(fetched.detail);
+
     return {
       status: "unavailable",
       limitations: [
         fetched.detail,
-        ...attempts,
+        ...attempts.slice(0, 4),
         "L’IA interpreterà solo la richiesta; il motore di routing calcolerà il percorso.",
         "Nessuna strada, coordinata o distanza viene inventata da questo modulo.",
       ],
       clarificationQuestions: [
-        "Configura GEMINI_API_KEY (gratuita) e/o OPENAI_API_KEY, oppure usa i campi del pannello.",
+        keysMissing
+          ? "Configura GEMINI_API_KEY (gratuita) e/o OPENAI_API_KEY, oppure usa i campi del pannello."
+          : capacity
+            ? "I provider IA sono momentaneamente saturi o senza credito. Riprova tra poco, oppure imposta esclusione/preferenze dal pannello Itinerario."
+            : "Riprova tra poco oppure usa i campi del pannello per partenza, arrivo ed esclusioni.",
       ],
     };
   }

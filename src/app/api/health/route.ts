@@ -84,6 +84,7 @@ export async function GET(request: Request) {
     } else {
       try {
         const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
+        // Probe preferred model; capacity on one model is not a hard failure for the app
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}?key=${encodeURIComponent(geminiKey)}`,
         );
