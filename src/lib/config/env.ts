@@ -21,6 +21,19 @@ export function getOpenAiKey(): string | undefined {
   return process.env.OPENAI_API_KEY?.trim() || undefined;
 }
 
+/** Free-tier Gemini key from Google AI Studio (or GOOGLE_AI_API_KEY alias). */
+export function getGeminiKey(): string | undefined {
+  return (
+    process.env.GEMINI_API_KEY?.trim() ||
+    process.env.GOOGLE_AI_API_KEY?.trim() ||
+    undefined
+  );
+}
+
+export function hasAnyAssistantKey(): boolean {
+  return Boolean(getOpenAiKey() || getGeminiKey());
+}
+
 export function getSupabaseConfig():
   | { url: string; anonKey: string }
   | undefined {

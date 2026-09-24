@@ -104,13 +104,17 @@ Imposta almeno per **Production** (consigliato anche **Preview**):
 | `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | Sì (mappa JS) | Esposta al browser. Restringi per referrer (vedi B5). |
 | `NEXT_PUBLIC_SUPABASE_URL` | Per cloud save/share | Da Supabase Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Per cloud save/share | Solo chiave **anon** |
-| `OPENAI_API_KEY` | No (opzionale) | Assistente NL. Se credito esaurito, deploy ok ma assistente fallisce. |
+| `GEMINI_API_KEY` | No (consigliata) | Assistente NL **gratuito** (AI Studio). Preferito di default. |
+| `GEMINI_MODEL` | No | Default codice: `gemini-2.0-flash` |
+| `OPENAI_API_KEY` | No (opzionale) | Fallback. Se credito esaurito, Gemini continua a fungere. |
 | `OPENAI_MODEL` | No | Default codice: `gpt-4o-mini` |
+| `AI_PROVIDER` | No | `auto` (default) \| `gemini` \| `openai` |
 
 Opzionali (di solito non servono al go-live):
 
 | Nome | Note |
 |------|------|
+| `GOOGLE_AI_API_KEY` | Alias di `GEMINI_API_KEY` |
 | `GOOGLE_ROUTES_API_KEY` | Alias opzionale della key Routes |
 | `ROUTING_ENGINE` | Default `google_routes` |
 | `OPENROUTESERVICE_API_KEY` | Adapter non completo end-to-end |
@@ -164,7 +168,7 @@ Propagazione restrizioni: a volte 1–5 minuti.
    - `https://<tuo-dominio>/api/health`
    - `https://<tuo-dominio>/api/health?probe=1`
 3. Test rapido: partenza/arrivo (es. Milano → Roma) con route reale.
-4. Se OpenAI è senza credito: l’assistente segnala errore; il resto resta usable.
+4. Se OpenAI è senza credito: con `GEMINI_API_KEY` l’assistente resta usable; altrimenti segnala errore e il resto dell’app funziona.
 
 ---
 
@@ -176,7 +180,7 @@ Propagazione restrizioni: a volte 1–5 minuti.
 | Mappa grigia / `RefererNotAllowedMapError` | Referrer browser key | Aggiungi dominio Vercel (B5) |
 | Places/Routes in demo | Manca `GOOGLE_MAPS_API_KEY` su Vercel | Aggiungi env + Redeploy |
 | Supabase «non configurato» | Mancano URL/anon o no Redeploy dopo `NEXT_PUBLIC_*` | Imposta env e Redeploy |
-| Assistente KO | Credito OpenAI esaurito o key assente | Opzionale: ricarica billing OpenAI |
+| Assistente KO | Nessuna chiave IA, o entrambe falliscono | Aggiungi `GEMINI_API_KEY` (gratuita) o ricarica OpenAI |
 | Share 404 / vuoto | SQL non eseguito o token revocato | Riesegui migration; controlla `shared_trips` |
 
 ---

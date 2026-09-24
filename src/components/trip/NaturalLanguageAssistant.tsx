@@ -164,23 +164,32 @@ export function NaturalLanguageAssistant() {
 
       {!result ? (
         <EmptyHint>
-          Con <code>OPENAI_API_KEY</code> l’assistente traduce la richiesta in
-          parametri strutturati. Le località sono risolte via Places. Il trip
-          store si aggiorna solo dopo la tua conferma.
+          Con <code>GEMINI_API_KEY</code> (gratuita) o{" "}
+          <code>OPENAI_API_KEY</code> l’assistente traduce la richiesta in
+          parametri strutturati. Preferisce Gemini quando disponibile; OpenAI è
+          fallback. Le località sono risolte via Places. Il trip store si
+          aggiorna solo dopo la tua conferma.
         </EmptyHint>
       ) : (
         <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
-          <Badge
-            tone={
-              result.status === "ok"
-                ? "ok"
-                : result.status === "needs_clarification"
-                  ? "warn"
-                  : "demo"
-            }
-          >
-            {result.status}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge
+              tone={
+                result.status === "ok"
+                  ? "ok"
+                  : result.status === "needs_clarification"
+                    ? "warn"
+                    : "demo"
+              }
+            >
+              {result.status}
+            </Badge>
+            {result.provider ? (
+              <Badge tone="neutral">
+                {result.provider === "gemini" ? "Gemini" : "OpenAI"}
+              </Badge>
+            ) : null}
+          </div>
           {result.clarificationQuestions?.map((q) => (
             <p key={q} className="text-sm text-[var(--ink)]">
               {q}

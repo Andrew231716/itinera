@@ -33,8 +33,11 @@ Checklist breve: `GO_LIVE.txt` · template env: `.env.example`
 |-----------|--------|--------|
 | `GOOGLE_MAPS_API_KEY` | server | Places + Routes (segreta) |
 | `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | browser | Maps JavaScript API (restringi per HTTP referrer) |
-| `OPENAI_API_KEY` | server | Assistente NL |
+| `GEMINI_API_KEY` | server | Assistente NL gratuito (preferito) |
+| `GEMINI_MODEL` | server | Default `gemini-2.0-flash` |
+| `OPENAI_API_KEY` | server | Assistente NL (fallback) |
 | `OPENAI_MODEL` | server | Default `gpt-4o-mini` |
+| `AI_PROVIDER` | server | `auto` (default) \| `gemini` \| `openai` |
 | `NEXT_PUBLIC_SUPABASE_URL` | client/server | Persistenza cloud |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client/server | Chiave anon (con RLS) |
 | `ROUTING_ENGINE` | server | `google_routes` (default) |
@@ -59,12 +62,14 @@ Checklist breve: `GO_LIVE.txt` · template env: `.env.example`
 5. Condivisione pubblica: RPC `get_shared_trip(token)` (sola lettura, revocabile, scadenza opzionale).
 6. Senza Supabase: funziona comunque il repository **locale** (`localStorage`).
 
-## Configurazione OpenAI
+## Configurazione assistente IA
 
-1. Imposta `OPENAI_API_KEY`.
-2. L’endpoint `/api/assistant/parse` usa Structured Outputs.
-3. Le località sono risolte solo via Places API.
-4. L’UI mostra un’**anteprima**; il trip store si aggiorna solo dopo conferma.
+1. **Consigliato (gratuito):** crea una chiave su [Google AI Studio](https://aistudio.google.com/apikey) → `GEMINI_API_KEY` (alias `GOOGLE_AI_API_KEY`).
+2. **Opzionale (fallback):** `OPENAI_API_KEY`.
+3. Con entrambi: Gemini è preferito (`AI_PROVIDER=auto`); se fallisce si prova OpenAI.
+4. L’endpoint `/api/assistant/parse` usa output strutturato JSON.
+5. Le località sono risolte solo via Places API.
+6. L’UI mostra un’**anteprima**; il trip store si aggiorna solo dopo conferma.
 
 ## Modalità demo
 
@@ -83,7 +88,7 @@ src/components/       UI mappa, pannelli, stati
 src/lib/google/       Clients + Maps links
 src/lib/routing/      Preferenze, vincoli, engines (Google + ORS adapter)
 src/lib/storage/      Local + Supabase + Hybrid
-src/lib/ai/           Parser OpenAI strutturato
+src/lib/ai/           Parser NL (Gemini gratuito + OpenAI fallback)
 supabase/migrations/  Schema SQL + RLS
 tests/unit/           Vitest + mock (nessun servizio a pagamento)
 ```
@@ -117,7 +122,7 @@ Valutazione sintetica: ORS adatto a `avoid_polygons`; GraphHopper forte su custo
 | Share cloud Supabase | Richiede config + migration |
 | Persistenza locale | Operativa |
 | Persistenza Supabase hybrid | Richiede config |
-| Assistente OpenAI + conferma | Richiede `OPENAI_API_KEY` |
+| Assistente NL + conferma | Richiede `GEMINI_API_KEY` e/o `OPENAI_API_KEY` |
 | Motore ORS completo | Non implementato (solo adapter) |
 | Auth completa multi-utente UI | Non implementata (RLS predisposta) |
 

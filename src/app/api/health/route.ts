@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getLiveReadiness } from "@/lib/config/readiness";
-import { getServerGoogleMapsKey, getOpenAiKey, getSupabaseConfig } from "@/lib/config/env";
+import {
+  getServerGoogleMapsKey,
+  getOpenAiKey,
+  getGeminiKey,
+  getSupabaseConfig,
+} from "@/lib/config/env";
 import { apiErrorResponse } from "@/lib/utils/errors";
 
 export const runtime = "nodejs";
@@ -26,7 +31,7 @@ export async function GET(request: Request) {
         probed: false,
         isLiveCapable: readiness.isLiveCapable,
         readiness,
-        hint: "Aggiungi ?probe=1 per verificare connettività verso Google/OpenAI/Supabase (solo se configurati).",
+        hint: "Aggiungi ?probe=1 per verificare connettività verso Google/Gemini/OpenAI/Supabase (solo se configurati).",
       });
     }
 
@@ -64,6 +69,34 @@ export async function GET(request: Request) {
         probes.google = {
           ok: false,
           detail: "Errore di rete verso Places API.",
+        };
+      }
+    }
+
+    // Gemini probe (free tier Generative Language API)
+    const geminiKey = getGeminiKey();
+    if (!geminiKey) {
+      probes.gemini = {
+        ok: false,
+        skipped: true,
+        detail: "GEMINI_API_KEY assente.",
+      };
+    } else {
+      try {
+        const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}?key=${encodeURIComponent(geminiKey)}`,
+        );
+        probes.gemini = {
+          ok: res.ok,
+          detail: res.ok
+            ? `Gemini (${model}) raggiungibile.`
+            : `Gemini HTTP ${res.status}. Verifica chiave AI Studio.`,
+        };
+      } catch {
+        probes.gemini = {
+          ok: false,
+          detail: "Errore di rete verso Gemini.",
         };
       }
     }

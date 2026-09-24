@@ -115,13 +115,14 @@ export function SetupPanel() {
             <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
               {s.envVars.join(" · ")}
             </p>
-            {data?.probes?.[s.id === "google_server" ? "google" : s.id] ? (
+            {data?.probes?.[
+              s.id === "google_server" ? "google" : s.id
+            ] ? (
               <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
                 Probe:{" "}
                 {
-                  data.probes[
-                    s.id === "google_server" ? "google" : s.id
-                  ]?.detail
+                  data.probes[s.id === "google_server" ? "google" : s.id]
+                    ?.detail
                 }
               </p>
             ) : null}

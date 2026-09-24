@@ -7,6 +7,6 @@
 5. OpenRouteService è solo un adapter documentato: non restituisce percorsi finché l’integrazione non è completata.
 6. Supabase richiede migration SQL + env; senza di essi resta localStorage.
 7. Auth UI multi-utente non è stata costruita: RLS è predisposta per owner_id autenticato.
-8. Assistente OpenAI richiede OPENAI_API_KEY; senza di essa resta unavailable.
+8. Assistente richiede GEMINI_API_KEY (gratuita) e/o OPENAI_API_KEY; senza alcuna chiave resta unavailable.
 9. Non sono stati eseguiti test su dispositivi fisici reali; verificati build, lint, vitest e smoke API locali.
 10. Nessun remote Git push in questo ambiente.
