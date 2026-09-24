@@ -13,7 +13,7 @@ export interface PlaceRef {
   address?: string;
   placeId?: string;
   location: LatLng;
-  source: "places" | "map_click" | "manual" | "demo" | "assistant";
+  source: "places" | "map_click" | "manual" | "demo" | "assistant" | "gps";
 }
 
 export interface TripStop {

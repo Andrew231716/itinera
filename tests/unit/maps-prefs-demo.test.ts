@@ -3,6 +3,10 @@ import {
   buildGoogleMapsDirectionsLink,
   MAX_WAYPOINTS_IN_URL,
 } from "@/lib/google/maps-links";
+import {
+  placeFromCoordinates,
+  reverseGeocode,
+} from "@/lib/google/places-client";
 import { describePreferenceStatuses } from "@/lib/routing/preference-mapper";
 import { DEFAULT_ROAD_PREFERENCES, type PlaceRef } from "@/lib/types/trip";
 import { buildDemoRouteResponse } from "@/lib/google/routes-client";
@@ -116,5 +120,21 @@ describe("demo routing", () => {
     expect(res.mode).toBe("demo");
     expect(res.routes).toEqual([]);
     expect(res.limitations.length).toBeGreaterThan(0);
+  });
+});
+
+describe("gps place helpers", () => {
+  it("builds a gps PlaceRef from coordinates", () => {
+    const p = placeFromCoordinates(45.4642, 9.19);
+    expect(p.source).toBe("gps");
+    expect(p.label).toBe("Posizione attuale");
+    expect(p.location.lat).toBeCloseTo(45.4642, 5);
+  });
+
+  it("reverseGeocode without API key returns demo gps place", async () => {
+    const res = await reverseGeocode(45.46, 9.19, undefined);
+    expect(res.mode).toBe("demo");
+    expect(res.place.source).toBe("gps");
+    expect(res.place.location.lat).toBeCloseTo(45.46, 4);
   });
 });
