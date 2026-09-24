@@ -48,8 +48,9 @@ export function RouteSummary() {
       stops: trip.stops.map((s) => s.place),
       travelMode: trip.travelMode,
       preferences: trip.preferences,
+      routePath: selected?.decodedPath,
     });
-  }, [trip]);
+  }, [trip, selected]);
 
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -140,11 +141,16 @@ export function RouteSummary() {
                   {route.tolls?.hasTolls ? (
                     <span>
                       {route.tolls.estimatedPrice != null
-                        ? formatCurrency(
+                        ? `Pedaggi ${formatCurrency(
                             route.tolls.estimatedPrice,
                             route.tolls.currencyCode ?? "EUR",
-                          )
+                          )}`
                         : "Pedaggi"}
+                    </span>
+                  ) : null}
+                  {route.zoneAdvisories && route.zoneAdvisories.length > 0 ? (
+                    <span>
+                      {route.zoneAdvisories.map((z) => z.label).join(" · ")}
                     </span>
                   ) : null}
                 </div>
@@ -163,7 +169,75 @@ export function RouteSummary() {
           <div className="grid grid-cols-2 gap-2">
             <Stat label="Distanza" value={formatDistance(selected.distanceMeters)} />
             <Stat label="Durata" value={formatDuration(selected.durationSeconds)} />
+            {selected.tolls?.hasTolls ? (
+              <Stat
+                label="Pedaggi"
+                value={
+                  selected.tolls.estimatedPrice != null
+                    ? formatCurrency(
+                        selected.tolls.estimatedPrice,
+                        selected.tolls.currencyCode ?? "EUR",
+                      )
+                    : "Presenti"
+                }
+              />
+            ) : (
+              <Stat label="Pedaggi" value="Nessuno" />
+            )}
+            <Stat
+              label="Zone MI"
+              value={
+                selected.zoneAdvisories && selected.zoneAdvisories.length > 0
+                  ? selected.zoneAdvisories.map((z) =>
+                      z.id === "area_c" ? "Area C" : z.id === "area_b" ? "Area B" : z.label,
+                    ).join(" + ")
+                  : "—"
+              }
+            />
           </div>
+
+          {selected.tolls?.hasTolls ? (
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
+              {selected.tolls.estimatedPrice != null ? (
+                <p>
+                  Costo pedaggi stimato dal motore Google Routes:{" "}
+                  <span className="font-semibold text-[var(--ink)]">
+                    {formatCurrency(
+                      selected.tolls.estimatedPrice,
+                      selected.tolls.currencyCode ?? "EUR",
+                    )}
+                  </span>
+                  . È la stima ufficiale restituita dall’API quando disponibile
+                  (può variare per classe veicolo / Telepass).
+                </p>
+              ) : (
+                <p>
+                  Il percorso include pedaggi, ma Google non ha restituito
+                  l’importo. Verifica su Autostrade per l’Italia / Telepass.
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {selected.zoneAdvisories && selected.zoneAdvisories.length > 0 ? (
+            <div className="space-y-1.5">
+              {selected.zoneAdvisories.map((z) => (
+                <div
+                  key={z.id}
+                  className={`rounded-lg px-2.5 py-2 text-xs ${
+                    z.kind === "ztl"
+                      ? "bg-red-50 text-red-900"
+                      : "bg-orange-50 text-orange-950"
+                  }`}
+                >
+                  <p className="font-semibold">
+                    {z.kind === "ztl" ? "ZTL" : "Limitazione"} — {z.label}
+                  </p>
+                  <p className="mt-0.5 leading-relaxed">{z.message}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {selected.violations.length > 0 ? (
             <div className="space-y-1.5">
@@ -326,7 +400,7 @@ function ShareActions({
     <div className="space-y-3 border-t border-[var(--line)] pt-4">
       <SectionTitle
         title="Condivisione"
-        subtitle="Google Maps non riceve le esclusioni personalizzate"
+        subtitle="Apri in Maps il percorso selezionato in Itinera (non un ricalcolo generico)"
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">

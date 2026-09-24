@@ -13,6 +13,7 @@ import {
   isRouteConformant,
 } from "@/lib/routing/constraint-checker";
 import { mapPreferencesToGoogle } from "@/lib/routing/preference-mapper";
+import { detectMilanTrafficZones } from "@/lib/geo/milan-traffic-zones";
 
 function parseDurationSeconds(value: unknown): number {
   if (typeof value === "number") return value;
@@ -79,24 +80,41 @@ function mapGoogleRoute(
         tollInfo?: {
           estimatedPrice?: Array<{
             currencyCode?: string;
-            units?: string;
+            units?: string | number;
             nanos?: number;
           }>;
         };
       }
     | undefined;
 
-  const priceEntry = travelAdvisory?.tollInfo?.estimatedPrice?.[0];
+  const priceEntries = travelAdvisory?.tollInfo?.estimatedPrice ?? [];
   let tolls: ComputedRoute["tolls"];
   if (travelAdvisory?.tollInfo) {
-    const units = priceEntry?.units ? Number(priceEntry.units) : undefined;
-    const nanos = priceEntry?.nanos ? priceEntry.nanos / 1e9 : 0;
+    // Sum amounts in the same currency when Google returns multiple Money values.
+    const byCurrency = new Map<string, number>();
+    for (const entry of priceEntries) {
+      const unitsRaw = entry.units;
+      const units =
+        unitsRaw === undefined || unitsRaw === null || unitsRaw === ""
+          ? undefined
+          : Number(unitsRaw);
+      if (units === undefined || Number.isNaN(units)) continue;
+      const nanos = entry.nanos ? entry.nanos / 1e9 : 0;
+      const code = entry.currencyCode ?? "EUR";
+      byCurrency.set(code, (byCurrency.get(code) ?? 0) + units + nanos);
+    }
+    const firstCurrency = [...byCurrency.keys()][0];
+    const total =
+      firstCurrency !== undefined ? byCurrency.get(firstCurrency) : undefined;
     tolls = {
       hasTolls: true,
-      currencyCode: priceEntry?.currencyCode,
-      estimatedPrice:
-        units !== undefined && !Number.isNaN(units) ? units + nanos : undefined,
-      notes: units === undefined ? "Pedaggi segnalati senza importo stimato." : undefined,
+      currencyCode: firstCurrency,
+      estimatedPrice: total,
+      source: "google_routes",
+      notes:
+        total != null
+          ? "Importo pedaggi da Google Routes (stima ufficiale del motore quando disponibile)."
+          : "Pedaggi presenti sul percorso, ma Google non ha restituito l’importo. Controlla Autostrade per l’Italia / Telepass.",
     };
   }
 
@@ -110,6 +128,7 @@ function mapGoogleRoute(
     detailed.unverifiable,
     exclusions,
   );
+  const zoneAdvisories = detectMilanTrafficZones(decodedPath);
 
   return {
     id: `google-${index}`,
@@ -125,6 +144,7 @@ function mapGoogleRoute(
     violations: detailed.violations,
     unverifiableConstraints: detailed.unverifiable,
     isConformant,
+    zoneAdvisories,
     engine: "google_routes",
     rawDescription: (route.description as string | undefined) ?? undefined,
   };
