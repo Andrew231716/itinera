@@ -112,6 +112,7 @@ Valutazione sintetica: ORS adatto a `avoid_polygons`; GraphHopper forte su custo
 | Funzionalità | Stato |
 |--------------|--------|
 | UI + tappe + DnD + mappa | Operativa |
+| Posizione attuale (GPS) | Operativa (permesso browser + HTTPS) |
 | Places / Routes live | Richiede config Google |
 | Places / Routes demo | Operativa senza chiavi |
 | Preferenze + stati | Operativa |
