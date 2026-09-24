@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Itinera">
+  <defs>
+    <style>
+      .bg { fill: #F5F7F8; }
+      .pin { fill: #2C5F7C; }
+      .route { fill: none; stroke: #D4A017; stroke-width: 56; stroke-linecap: round; stroke-linejoin: round; }
+      .dot { fill: #D4A017; }
+    </style>
+  </defs>
+  <!-- Soft mist rounded-square background -->
+  <rect class="bg" x="0" y="0" width="1024" height="1024" rx="220" ry="220"/>
+  <!-- Gold route path -->
+  <path class="route" d="M180 470 C 320 520, 420 620, 512 640 C 620 665, 720 620, 820 540"/>
+  <!-- Destination dot -->
+  <circle class="dot" cx="820" cy="540" r="42"/>
+  <!-- Teal map pin -->
+  <path class="pin" d="M512 210
+    C 410 210, 330 290, 330 392
+    C 330 500, 512 700, 512 700
+    C 512 700, 694 500, 694 392
+    C 694 290, 614 210, 512 210 Z"/>
+  <!-- Pin center cutout -->
+  <circle cx="512" cy="380" r="72" fill="#F5F7F8"/>
+</svg>
