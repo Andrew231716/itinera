@@ -79,7 +79,7 @@ export async function GET(request: Request) {
       probes.gemini = {
         ok: false,
         skipped: true,
-        detail: "GEMINI_API_KEY assente.",
+        detail: "Nessuna chiave Google disponibile per Gemini.",
       };
     } else {
       try {
@@ -87,12 +87,34 @@ export async function GET(request: Request) {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}?key=${encodeURIComponent(geminiKey)}`,
         );
-        probes.gemini = {
-          ok: res.ok,
-          detail: res.ok
-            ? `Gemini (${model}) raggiungibile.`
-            : `Gemini HTTP ${res.status}. Verifica chiave AI Studio.`,
-        };
+        if (res.ok) {
+          probes.gemini = {
+            ok: true,
+            detail: `Gemini (${model}) raggiungibile.`,
+          };
+        } else {
+          let errMsg = "";
+          try {
+            const body = (await res.json()) as {
+              error?: { message?: string; details?: Array<{ reason?: string }> };
+            };
+            errMsg = body.error?.message ?? "";
+            const reason = body.error?.details?.find((d) => d.reason)?.reason;
+            if (reason === "API_KEY_SERVICE_BLOCKED" || /blocked/i.test(errMsg)) {
+              errMsg =
+                "API abilitata sul progetto, ma la chiave server la blocca: in Google Cloud → Credentials → chiave Itinera server → API restrictions → aggiungi «Generative Language API» → Save.";
+            } else if (/not been used|disabled|not enabled/i.test(errMsg)) {
+              errMsg =
+                "Abilita Generative Language API sul progetto itinera-509522 (Enable), poi riprova.";
+            }
+          } catch {
+            /* ignore */
+          }
+          probes.gemini = {
+            ok: false,
+            detail: errMsg || `Gemini HTTP ${res.status}.`,
+          };
+        }
       } catch {
         probes.gemini = {
           ok: false,
