@@ -16,6 +16,7 @@ import {
 import type { ComputedRoute } from "@/lib/types/route";
 import { getTripRepository } from "@/lib/storage/trip-repository";
 import { isValidPolygon } from "@/lib/utils/geometry";
+import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
 
 export type MapPickTarget =
   | "origin"
@@ -31,7 +32,8 @@ export type PanelTab =
   | "exclusions"
   | "summary"
   | "assistant"
-  | "setup";
+  | "setup"
+  | "saved";
 
 interface TripState {
   trip: TripDraft;
@@ -85,6 +87,7 @@ interface TripState {
   persistTrip: () => Promise<void>;
   refreshSavedTrips: () => Promise<void>;
   duplicateCurrentTrip: () => Promise<void>;
+  removeSavedTrip: (id: string) => Promise<void>;
 }
 
 function touch(trip: TripDraft): TripDraft {
@@ -311,16 +314,14 @@ export const useTripStore = create<TripState>((set, get) => ({
         get().addStop(place);
         break;
       case "exclusion_point": {
-        const exclusion: PointExclusion = {
-          id: nanoid(),
-          kind: "address",
-          label: place.label,
-          strength: "hard",
-          place,
-          radiusMeters: 800,
-          createdAt: new Date().toISOString(),
-        };
-        get().addExclusion(exclusion);
+        get().addExclusion(
+          createPointExclusion({
+            id: nanoid(),
+            kind: "address",
+            label: place.label,
+            place,
+          }),
+        );
         break;
       }
       case "exclusion_zone":
@@ -335,16 +336,20 @@ export const useTripStore = create<TripState>((set, get) => ({
     })),
 
   setRoutesResult: ({ routes, limitations, mode }) =>
-    set((s) => ({
-      routes,
-      routeLimitations: limitations,
-      routeMode: mode,
-      routeError: null,
-      trip: touch({
-        ...s.trip,
-        selectedRouteId: routes[0]?.id ?? null,
-      }),
-    })),
+    set((s) => {
+      const preferred =
+        routes.find((r) => r.isConformant === true) ?? routes[0] ?? null;
+      return {
+        routes,
+        routeLimitations: limitations,
+        routeMode: mode,
+        routeError: null,
+        trip: touch({
+          ...s.trip,
+          selectedRouteId: preferred?.id ?? null,
+        }),
+      };
+    }),
 
   setRouteLoading: () =>
     set({ routeMode: "loading", routeError: null }),
@@ -405,5 +410,14 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({ trip: copy, routes: [], routeMode: "idle" });
       await get().refreshSavedTrips();
     }
+  },
+
+  removeSavedTrip: async (id) => {
+    const repo = getTripRepository();
+    await repo.remove(id);
+    if (get().trip.meta.id === id) {
+      get().resetTrip();
+    }
+    await get().refreshSavedTrips();
   },
 }));

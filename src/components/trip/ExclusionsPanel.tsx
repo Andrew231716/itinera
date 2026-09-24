@@ -14,6 +14,7 @@ import {
   SectionTitle,
 } from "@/components/ui/primitives";
 import { PlaceSearch, MapPickHint } from "@/components/trip/PlaceSearch";
+import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
 
 function exclusionKindLabel(kind: CustomExclusion["kind"]): string {
   switch (kind) {
@@ -79,16 +80,14 @@ export function ExclusionsPanel() {
           label="Località da escludere"
           value={null}
           onSelect={(place) => {
-            const exclusion: PointExclusion = {
-              id: nanoid(),
-              kind,
-              label: place.label,
-              strength: "hard",
-              place,
-              radiusMeters: kind === "city" ? 5000 : kind === "road" ? 120 : 600,
-              createdAt: new Date().toISOString(),
-            };
-            addExclusion(exclusion);
+            addExclusion(
+              createPointExclusion({
+                id: nanoid(),
+                kind,
+                label: place.label,
+                place,
+              }),
+            );
           }}
         />
       </div>
