@@ -138,14 +138,26 @@ export function RouteSummary() {
                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-[var(--ink-muted)]">
                   <span>{formatDistance(route.distanceMeters)}</span>
                   <span>{formatDuration(route.durationSeconds)}</span>
-                  {route.tolls?.hasTolls ? (
+                  {route.tolls?.hasTolls || route.tolls?.michelin ? (
                     <span>
                       {route.tolls.estimatedPrice != null
                         ? `Pedaggi ${formatCurrency(
                             route.tolls.estimatedPrice,
                             route.tolls.currencyCode ?? "EUR",
                           )}`
-                        : "Pedaggi"}
+                        : route.tolls.michelin?.estimatedPrice != null
+                          ? `Pedaggi VM ${formatCurrency(
+                              route.tolls.michelin.estimatedPrice,
+                              route.tolls.michelin.currencyCode ?? "EUR",
+                            )}`
+                          : "Pedaggi"}
+                      {route.tolls.estimatedPrice != null &&
+                      route.tolls.michelin?.estimatedPrice != null
+                        ? ` · VM ${formatCurrency(
+                            route.tolls.michelin.estimatedPrice,
+                            route.tolls.michelin.currencyCode ?? "EUR",
+                          )}`
+                        : ""}
                     </span>
                   ) : null}
                   {route.zoneAdvisories && route.zoneAdvisories.length > 0 ? (
@@ -169,7 +181,7 @@ export function RouteSummary() {
           <div className="grid grid-cols-2 gap-2">
             <Stat label="Distanza" value={formatDistance(selected.distanceMeters)} />
             <Stat label="Durata" value={formatDuration(selected.durationSeconds)} />
-            {selected.tolls?.hasTolls ? (
+            {selected.tolls?.hasTolls || selected.tolls?.michelin ? (
               <Stat
                 label="Pedaggi"
                 value={
@@ -178,7 +190,12 @@ export function RouteSummary() {
                         selected.tolls.estimatedPrice,
                         selected.tolls.currencyCode ?? "EUR",
                       )
-                    : "Presenti"
+                    : selected.tolls.michelin?.estimatedPrice != null
+                      ? formatCurrency(
+                          selected.tolls.michelin.estimatedPrice,
+                          selected.tolls.michelin.currencyCode ?? "EUR",
+                        )
+                      : "Presenti"
                 }
               />
             ) : (
@@ -196,26 +213,87 @@ export function RouteSummary() {
             />
           </div>
 
-          {selected.tolls?.hasTolls ? (
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
-              {selected.tolls.estimatedPrice != null ? (
+          {selected.tolls?.hasTolls || selected.tolls?.michelin ? (
+            <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
+              {selected.tolls?.estimatedPrice != null ? (
                 <p>
-                  Costo pedaggi stimato dal motore Google Routes:{" "}
+                  Google Routes:{" "}
                   <span className="font-semibold text-[var(--ink)]">
                     {formatCurrency(
                       selected.tolls.estimatedPrice,
                       selected.tolls.currencyCode ?? "EUR",
                     )}
                   </span>
-                  . È la stima ufficiale restituita dall’API quando disponibile
-                  (può variare per classe veicolo / Telepass).
+                  {" "}
+                  (stima ufficiale API; può variare per classe veicolo / Telepass).
                 </p>
-              ) : (
+              ) : selected.tolls?.hasTolls ? (
                 <p>
-                  Il percorso include pedaggi, ma Google non ha restituito
-                  l’importo. Verifica su Autostrade per l’Italia / Telepass.
+                  Google indica pedaggi sul percorso ma non ha restituito
+                  l’importo.
                 </p>
-              )}
+              ) : null}
+
+              {selected.tolls?.michelin ? (
+                <div className="space-y-1 border-t border-[var(--line)] pt-2">
+                  <p>
+                    ViaMichelin
+                    {selected.tolls.michelin.matchedSummary
+                      ? ` (${selected.tolls.michelin.matchedSummary})`
+                      : ""}
+                    :{" "}
+                    <span className="font-semibold text-[var(--ink)]">
+                      {selected.tolls.michelin.estimatedPrice != null
+                        ? formatCurrency(
+                            selected.tolls.michelin.estimatedPrice,
+                            selected.tolls.michelin.currencyCode ?? "EUR",
+                          )
+                        : "n/d"}
+                    </span>
+                    {selected.tolls.michelin.estimatedPrice != null
+                      ? " di pedaggi autostradali"
+                      : ""}
+                    .
+                  </p>
+                  {selected.tolls.michelin.barriers &&
+                  selected.tolls.michelin.barriers.length > 0 ? (
+                    <p>
+                      Caselli:{" "}
+                      {selected.tolls.michelin.barriers
+                        .map((b) =>
+                          b.amount != null
+                            ? `${b.name} (${formatCurrency(
+                                b.amount,
+                                b.currencyCode ?? "EUR",
+                              )})`
+                            : b.name,
+                        )
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                  {selected.tolls.michelin.vignettes &&
+                  selected.tolls.michelin.vignettes.length > 0 ? (
+                    <ul className="list-disc space-y-0.5 pl-4">
+                      {selected.tolls.michelin.vignettes.map((v) => (
+                        <li key={`${v.name}-${v.amount ?? 0}`}>
+                          {v.name}
+                          {v.amount != null
+                            ? ` — ${formatCurrency(
+                                v.amount,
+                                v.currencyCode ?? "EUR",
+                              )}`
+                            : ""}
+                          {v.message ? ` (${v.message})` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p className="text-[10px] leading-relaxed text-[var(--ink-faint)]">
+                    Stima indipendente dal sito ViaMichelin: può riferirsi a
+                    un’alternativa diversa dal tratto Google selezionato.
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

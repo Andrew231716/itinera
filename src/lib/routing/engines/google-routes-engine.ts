@@ -15,6 +15,7 @@ import {
   offsetLatLng,
 } from "@/lib/routing/exclusion-helpers";
 import { getServerGoogleMapsKey } from "@/lib/config/env";
+import { enrichComputedRoutesWithMichelin } from "@/lib/michelin/enrich-tolls";
 import type { RoutingEngine } from "./types";
 
 export class GoogleRoutesEngine implements RoutingEngine {
@@ -70,6 +71,29 @@ export class GoogleRoutesEngine implements RoutingEngine {
         ...result.limitations,
         "Nessuna alternativa rispetta tutti i vincoli obbligatori. Riduci il raggio, rimuovi un’esclusione, oppure aggiungi una tappa che forzi la deviazione.",
       ];
+    }
+
+    if (result.mode === "live" && result.routes.length > 0) {
+      const points = [
+        request.origin.location,
+        ...request.intermediates.map((p) => p.location),
+        request.destination.location,
+      ];
+      const enriched = await enrichComputedRoutesWithMichelin({
+        routes: result.routes,
+        points,
+        departureName: request.origin.label,
+        arrivalName: request.destination.label,
+        avoidTolls: preferences.avoidTolls,
+        avoidHighways: preferences.avoidHighways,
+      });
+      result = {
+        ...result,
+        routes: enriched.routes,
+        limitations: enriched.limitation
+          ? [...result.limitations, enriched.limitation]
+          : result.limitations,
+      };
     }
 
     return result;

@@ -85,6 +85,7 @@ Attiva quando mancano le chiavi Google. Mostra:
 src/app/api/          Places, Routes, Maps config, Assistant, Share
 src/components/       UI mappa, pannelli, stati
 src/lib/google/       Clients + Maps links
+src/lib/michelin/     Pedaggi ViaMichelin (BFF GraphQL)
 src/lib/routing/      Preferenze, vincoli, engines (Google + ORS adapter)
 src/lib/storage/      Local + Supabase + Hybrid
 src/lib/ai/           Parser NL (Gemini gratuito + OpenAI fallback)
@@ -118,6 +119,7 @@ Valutazione sintetica: ORS adatto a `avoid_polygons`; GraphHopper forte su custo
 | Preferenze + stati | Operativa |
 | Esclusioni + verifica geometrica | Operativa |
 | Condivisione Google Maps + segmenti | Operativa |
+| Pedaggi Google Routes + ViaMichelin | Operativa (stime indipendenti) |
 | Share nativo / link pubblico locale | Operativa |
 | Share cloud Supabase | Richiede config + migration |
 | Persistenza locale | Operativa |
