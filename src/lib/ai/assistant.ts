@@ -4,7 +4,11 @@ import {
   autocompletePlaces,
   fetchPlaceDetails,
 } from "@/lib/google/places-client";
-import { getServerGoogleMapsKey } from "@/lib/config/env";
+import {
+  getGeminiKey,
+  getOpenAiKey,
+  getServerGoogleMapsKey,
+} from "@/lib/config/env";
 
 /**
  * Structured output expected from the NL assistant.
@@ -43,6 +47,8 @@ export const AssistantStructuredSchema = z.object({
 
 export type AssistantStructured = z.infer<typeof AssistantStructuredSchema>;
 
+export type AssistantProviderId = "openai" | "gemini";
+
 export interface AssistantParseResult {
   status: "ok" | "needs_clarification" | "unavailable" | "impossible" | "unsupported";
   originText?: string;
@@ -62,6 +68,8 @@ export interface AssistantParseResult {
   resolvedDestination?: PlaceRef | null;
   resolvedStops?: PlaceRef[];
   unresolvedPlaces?: string[];
+  /** Which model provider produced the structured parse */
+  provider?: AssistantProviderId;
   /** Preview patch for user confirmation before store mutation */
   preview?: {
     origin?: PlaceRef | null;
@@ -79,7 +87,7 @@ export interface AssistantParseRequest {
   locale?: string;
 }
 
-const JSON_SCHEMA = {
+const OPENAI_JSON_SCHEMA = {
   name: "itinera_trip_parse",
   strict: true,
   schema: {
@@ -159,6 +167,81 @@ const JSON_SCHEMA = {
   },
 } as const;
 
+/** Gemini Schema (nullable instead of union types). */
+const GEMINI_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    status: {
+      type: "STRING",
+      enum: ["ok", "needs_clarification", "impossible", "unsupported"],
+    },
+    originText: { type: "STRING", nullable: true },
+    destinationText: { type: "STRING", nullable: true },
+    stopTexts: { type: "ARRAY", items: { type: "STRING" } },
+    travelMode: {
+      type: "STRING",
+      nullable: true,
+      enum: ["DRIVE", "WALK", "BICYCLE", "TRANSIT", "TWO_WHEELER"],
+    },
+    preferences: {
+      type: "OBJECT",
+      properties: {
+        avoidTolls: { type: "BOOLEAN", nullable: true },
+        avoidHighways: { type: "BOOLEAN", nullable: true },
+        avoidFerries: { type: "BOOLEAN", nullable: true },
+        avoidTunnels: { type: "BOOLEAN", nullable: true },
+        preferFastest: { type: "BOOLEAN", nullable: true },
+        preferShortest: { type: "BOOLEAN", nullable: true },
+        preferScenic: { type: "BOOLEAN", nullable: true },
+        maxExtraMinutes: { type: "NUMBER", nullable: true },
+      },
+      required: [
+        "avoidTolls",
+        "avoidHighways",
+        "avoidFerries",
+        "avoidTunnels",
+        "preferFastest",
+        "preferShortest",
+        "preferScenic",
+        "maxExtraMinutes",
+      ],
+    },
+    hardExclusions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          kind: {
+            type: "STRING",
+            enum: ["city", "address", "road", "road_segment", "geo_zone"],
+          },
+          label: { type: "STRING" },
+        },
+        required: ["kind", "label"],
+      },
+    },
+    softNotes: { type: "ARRAY", items: { type: "STRING" } },
+    clarificationQuestions: { type: "ARRAY", items: { type: "STRING" } },
+    unsupportedRequests: { type: "ARRAY", items: { type: "STRING" } },
+    reorderStops: { type: "BOOLEAN" },
+    titleSuggestion: { type: "STRING", nullable: true },
+  },
+  required: [
+    "status",
+    "originText",
+    "destinationText",
+    "stopTexts",
+    "travelMode",
+    "preferences",
+    "hardExclusions",
+    "softNotes",
+    "clarificationQuestions",
+    "unsupportedRequests",
+    "reorderStops",
+    "titleSuggestion",
+  ],
+} as const;
+
 const SYSTEM_PROMPT = `Sei il parser di Itinera, un pianificatore di percorsi.
 Estrai SOLO parametri strutturati dalla richiesta dell'utente in italiano.
 NON inventare coordinate, place id, strade, distanze, tempi, pedaggi o disponibilità.
@@ -170,12 +253,15 @@ Distingui hardExclusions (obbligatorie, es. "non attraversare Bologna") da prefe
 maxExtraMinutes: converti "un'ora" in 60, "mezz'ora" in 30, ecc.
 travelMode default null se non specificato.`;
 
+type StructuredFetch =
+  | { ok: true; structured: AssistantStructured; provider: AssistantProviderId }
+  | { ok: false; provider: AssistantProviderId; detail: string };
+
 async function resolvePlaceText(text: string): Promise<PlaceRef | null> {
   const apiKey = getServerGoogleMapsKey();
   const { suggestions } = await autocompletePlaces(text, apiKey);
   if (suggestions.length === 0) return null;
   if (suggestions.length > 1) {
-    // Prefer exact primary match; still return top if clearly matching
     const exact = suggestions.find(
       (s) => s.primaryText.toLowerCase() === text.trim().toLowerCase(),
     );
@@ -202,33 +288,36 @@ function prefsFromStructured(
   return out;
 }
 
-export async function parseNaturalLanguageRequest(
-  request: AssistantParseRequest,
-  openAiKey: string | undefined,
-): Promise<AssistantParseResult> {
-  const utterance = request.utterance.trim();
-  if (!utterance) {
+function parseStructuredJson(
+  content: string,
+  provider: AssistantProviderId,
+): StructuredFetch {
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(content);
+  } catch {
     return {
-      status: "needs_clarification",
-      clarificationQuestions: ["Scrivi la tua richiesta di viaggio."],
-      limitations: [],
+      ok: false,
+      provider,
+      detail: `JSON non valido dalla risposta ${provider}.`,
     };
   }
 
-  if (!openAiKey) {
+  const validated = AssistantStructuredSchema.safeParse(parsedJson);
+  if (!validated.success) {
     return {
-      status: "unavailable",
-      limitations: [
-        "Assistente IA non configurato (manca OPENAI_API_KEY).",
-        "L’IA interpreterà solo la richiesta; il motore di routing calcolerà il percorso.",
-        "Nessuna strada, coordinata o distanza viene inventata da questo modulo.",
-      ],
-      clarificationQuestions: [
-        "Configura OPENAI_API_KEY oppure usa i campi del pannello per definire partenza, arrivo e tappe.",
-      ],
+      ok: false,
+      provider,
+      detail: `Schema strutturato non valido da ${provider}.`,
     };
   }
+  return { ok: true, structured: validated.data, provider };
+}
 
+async function fetchFromOpenAi(
+  utterance: string,
+  openAiKey: string,
+): Promise<StructuredFetch> {
   const model = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -246,17 +335,16 @@ export async function parseNaturalLanguageRequest(
       ],
       response_format: {
         type: "json_schema",
-        json_schema: JSON_SCHEMA,
+        json_schema: OPENAI_JSON_SCHEMA,
       },
     }),
   });
 
   if (!res.ok) {
     return {
-      status: "unavailable",
-      limitations: [
-        "OpenAI API non disponibile o rifiutata. Nessuna modifica applicata al viaggio.",
-      ],
+      ok: false,
+      provider: "openai",
+      detail: `OpenAI HTTP ${res.status}. Verifica chiave e credito.`,
     };
   }
 
@@ -265,33 +353,111 @@ export async function parseNaturalLanguageRequest(
   };
   const content = data.choices?.[0]?.message?.content;
   if (!content) {
+    return { ok: false, provider: "openai", detail: "Risposta OpenAI vuota." };
+  }
+  return parseStructuredJson(content, "openai");
+}
+
+async function fetchFromGemini(
+  utterance: string,
+  geminiKey: string,
+): Promise<StructuredFetch> {
+  const model =
+    process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text: utterance }] }],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: "application/json",
+        responseSchema: GEMINI_RESPONSE_SCHEMA,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    let detail = `Gemini HTTP ${res.status}.`;
+    try {
+      const errBody = (await res.json()) as {
+        error?: { message?: string };
+      };
+      if (errBody.error?.message) detail = `Gemini: ${errBody.error.message}`;
+    } catch {
+      /* keep status detail */
+    }
+    return { ok: false, provider: "gemini", detail };
+  }
+
+  const data = (await res.json()) as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> };
+    }>;
+  };
+  const content = data.candidates?.[0]?.content?.parts
+    ?.map((p) => p.text ?? "")
+    .join("")
+    .trim();
+  if (!content) {
+    return { ok: false, provider: "gemini", detail: "Risposta Gemini vuota." };
+  }
+  return parseStructuredJson(content, "gemini");
+}
+
+function providerOrder(): AssistantProviderId[] {
+  const pref = process.env.AI_PROVIDER?.trim().toLowerCase();
+  if (pref === "openai") return ["openai", "gemini"];
+  if (pref === "gemini") return ["gemini", "openai"];
+  // auto: prefer free Gemini when keyed, else OpenAI
+  if (getGeminiKey()) return ["gemini", "openai"];
+  return ["openai", "gemini"];
+}
+
+async function fetchStructuredFromProviders(
+  utterance: string,
+): Promise<StructuredFetch | { ok: false; detail: string; attempts: string[] }> {
+  const openAiKey = getOpenAiKey();
+  const geminiKey = getGeminiKey();
+  const order = providerOrder().filter((id) =>
+    id === "openai" ? Boolean(openAiKey) : Boolean(geminiKey),
+  );
+
+  if (order.length === 0) {
     return {
-      status: "unavailable",
-      limitations: ["Risposta OpenAI vuota."],
+      ok: false,
+      detail:
+        "Assistente IA non configurato (manca OPENAI_API_KEY e GEMINI_API_KEY).",
+      attempts: [],
     };
   }
 
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(content);
-  } catch {
-    return {
-      status: "unavailable",
-      limitations: ["JSON non valido dalla risposta OpenAI."],
-    };
+  const attempts: string[] = [];
+  for (const id of order) {
+    const result =
+      id === "openai"
+        ? await fetchFromOpenAi(utterance, openAiKey!)
+        : await fetchFromGemini(utterance, geminiKey!);
+    if (result.ok) return result;
+    attempts.push(result.detail);
   }
 
-  const validated = AssistantStructuredSchema.safeParse(parsedJson);
-  if (!validated.success) {
-    return {
-      status: "unavailable",
-      limitations: ["Schema strutturato non valido. Nessuna modifica applicata."],
-    };
-  }
+  return {
+    ok: false,
+    detail: "Nessun provider IA disponibile.",
+    attempts,
+  };
+}
 
-  const structured = validated.data;
+async function buildResultFromStructured(
+  structured: AssistantStructured,
+  provider: AssistantProviderId,
+): Promise<AssistantParseResult> {
   const limitations: string[] = [
-    "L’assistente ha solo interpretato la richiesta. Il percorso va calcolato dal motore di routing.",
+    `Interpretato con ${provider === "gemini" ? "Gemini (gratuito)" : "OpenAI"}. Il percorso va calcolato dal motore di routing.`,
     ...structured.unsupportedRequests.map((u) => `Non supportato: ${u}`),
     ...structured.softNotes,
   ];
@@ -301,6 +467,7 @@ export async function parseNaturalLanguageRequest(
       status: "needs_clarification",
       clarificationQuestions: structured.clarificationQuestions,
       limitations,
+      provider,
       originText: structured.originText ?? undefined,
       destinationText: structured.destinationText ?? undefined,
       stopTexts: structured.stopTexts,
@@ -312,10 +479,10 @@ export async function parseNaturalLanguageRequest(
       status: "impossible",
       clarificationQuestions: structured.clarificationQuestions,
       limitations,
+      provider,
     };
   }
 
-  // Resolve places via Places API only — never trust model coordinates
   const unresolvedPlaces: string[] = [];
   let resolvedOrigin: PlaceRef | null = null;
   let resolvedDestination: PlaceRef | null = null;
@@ -336,7 +503,6 @@ export async function parseNaturalLanguageRequest(
   }
 
   for (const ex of structured.hardExclusions) {
-    // Exclusions labels resolved later on user confirm via Places search in UI
     if (!ex.label.trim()) unresolvedPlaces.push("(esclusione senza nome)");
   }
 
@@ -347,6 +513,7 @@ export async function parseNaturalLanguageRequest(
         `Non riesco a risolvere in modo verificabile: ${unresolvedPlaces.join(", ")}. Specifica meglio o seleziona dalla ricerca.`,
       ],
       limitations,
+      provider,
       unresolvedPlaces,
       originText: structured.originText ?? undefined,
       destinationText: structured.destinationText ?? undefined,
@@ -370,6 +537,7 @@ export async function parseNaturalLanguageRequest(
     reorderStops: structured.reorderStops,
     titleSuggestion: structured.titleSuggestion,
     limitations,
+    provider,
     resolvedOrigin,
     resolvedDestination,
     resolvedStops,
@@ -384,4 +552,39 @@ export async function parseNaturalLanguageRequest(
       title: structured.titleSuggestion,
     },
   };
+}
+
+export async function parseNaturalLanguageRequest(
+  request: AssistantParseRequest,
+): Promise<AssistantParseResult> {
+  const utterance = request.utterance.trim();
+  if (!utterance) {
+    return {
+      status: "needs_clarification",
+      clarificationQuestions: ["Scrivi la tua richiesta di viaggio."],
+      limitations: [],
+    };
+  }
+
+  const fetched = await fetchStructuredFromProviders(utterance);
+  if (!fetched.ok) {
+    const attempts =
+      "attempts" in fetched && fetched.attempts.length > 0
+        ? fetched.attempts
+        : [];
+    return {
+      status: "unavailable",
+      limitations: [
+        fetched.detail,
+        ...attempts,
+        "L’IA interpreterà solo la richiesta; il motore di routing calcolerà il percorso.",
+        "Nessuna strada, coordinata o distanza viene inventata da questo modulo.",
+      ],
+      clarificationQuestions: [
+        "Configura GEMINI_API_KEY (gratuita) e/o OPENAI_API_KEY, oppure usa i campi del pannello.",
+      ],
+    };
+  }
+
+  return buildResultFromStructured(fetched.structured, fetched.provider);
 }

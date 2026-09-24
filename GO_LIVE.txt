@@ -15,7 +15,7 @@ Guida deploy completa (Supabase + Vercel, in italiano): DEPLOY_VERCEL.md
 - package.json: `build` = `next build` (senza turbopack; adatto a Vercel)
 - Tab "Live" (SetupPanel) + GET /api/health e /api/health?probe=1
 - Demo attiva finché le chiavi Google restano vuote
-- OpenAI con credito esaurito: non blocca deploy; solo assistente offline
+- OpenAI con credito esaurito: non blocca deploy; usa Gemini gratuito se configurato
 
 ## Azioni umane residue (3–5 click) — da Maps home del progetto
 
@@ -38,11 +38,18 @@ Poi, dalla home Maps del progetto itinera-509522:
 
 Minimo click dopo APIs/billing già ok: 2× Create API key + 2× Save restrizioni + incolla env.
 
-## Assistente (opzionale)
+## Assistente (opzionale — Gemini gratuito consigliato)
 
+# Gratuito — https://aistudio.google.com/apikey
+GEMINI_API_KEY=...
+# GEMINI_MODEL=gemini-2.0-flash   # opzionale
+
+# Fallback a pagamento
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini   # opzionale
-Nota: credit_balance_exhausted → deploy OK, assistente non operativo finché non ricarichi.
+# OPENAI_MODEL=gpt-4o-mini
+# AI_PROVIDER=auto   # gemini | openai | auto
+
+Con Gemini configurato l’assistente funziona anche se OpenAI è senza credito.
 
 ## Cloud save/share — Supabase (dettaglio in DEPLOY_VERCEL.md)
 
@@ -57,7 +64,7 @@ Nota: credit_balance_exhausted → deploy OK, assistente non operativo finché n
 
 1. https://vercel.com/new → Import repo GitHub (o `vercel` CLI)
 2. Framework Next.js, build `npm run build` / `next build`
-3. Settings → Environment Variables: tutte le chiavi sopra (Google + Supabase + OpenAI opz.)
+3. Settings → Environment Variables: Google + Supabase + GEMINI_API_KEY (e/o OpenAI)
 4. Deploy → copia dominio *.vercel.app
 5. Google Cloud → browser key → HTTP referrers → aggiungi il dominio Vercel → Save
 6. Verifica /api/health?probe=1
@@ -71,4 +78,4 @@ Nota: credit_balance_exhausted → deploy OK, assistente non operativo finché n
 ## Verifica automatica
 
 GET /api/health          → readiness (isLiveCapable)
-GET /api/health?probe=1  → ping Places / OpenAI / Supabase se configurati
+GET /api/health?probe=1  → ping Places / Gemini / OpenAI / Supabase se configurati

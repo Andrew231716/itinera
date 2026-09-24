@@ -1,8 +1,10 @@
 import {
   getBrowserGoogleMapsKey,
+  getGeminiKey,
   getOpenAiKey,
   getServerGoogleMapsKey,
   getSupabaseConfig,
+  hasAnyAssistantKey,
   resolveMapsMode,
   resolveRoutingMode,
 } from "@/lib/config/env";
@@ -26,6 +28,8 @@ export function getLiveReadiness(): {
   const hasServerKey = Boolean(getServerGoogleMapsKey());
   const hasBrowserKey = Boolean(getBrowserGoogleMapsKey());
   const hasOpenAi = Boolean(getOpenAiKey());
+  const hasGemini = Boolean(getGeminiKey());
+  const hasAssistant = hasAnyAssistantKey();
   const hasSupabase = Boolean(getSupabaseConfig());
 
   const services: ServiceReadiness[] = [
@@ -48,12 +52,21 @@ export function getLiveReadiness(): {
       envVars: ["NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY"],
     },
     {
+      id: "gemini",
+      label: "Assistente Gemini (gratuito)",
+      status: hasGemini ? "ready" : "optional",
+      message: hasGemini
+        ? "GEMINI_API_KEY presente. Preferito di default (tier gratuito)."
+        : "Opzionale e gratuito. Chiave da Google AI Studio → GEMINI_API_KEY.",
+      envVars: ["GEMINI_API_KEY", "GOOGLE_AI_API_KEY"],
+    },
+    {
       id: "openai",
       label: "Assistente OpenAI",
       status: hasOpenAi ? "ready" : "optional",
       message: hasOpenAi
-        ? "OPENAI_API_KEY presente."
-        : "Opzionale. Senza chiave l’assistente resta unavailable.",
+        ? "OPENAI_API_KEY presente. Usato come fallback se Gemini fallisce."
+        : "Opzionale. Fallback a pagamento se Gemini non è configurato/disponibile.",
       envVars: ["OPENAI_API_KEY"],
     },
     {
@@ -78,9 +91,13 @@ export function getLiveReadiness(): {
       "Crea una API key browser con restrizione HTTP referrer e impostala in NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY.",
     );
   }
-  if (!hasOpenAi) {
+  if (!hasAssistant) {
     nextSteps.push(
-      "Per l’assistente: aggiungi OPENAI_API_KEY (modello default gpt-4o-mini).",
+      "Per l’assistente (gratuito): crea una chiave su https://aistudio.google.com/apikey e impostala in GEMINI_API_KEY. In alternativa OPENAI_API_KEY.",
+    );
+  } else if (!hasGemini && hasOpenAi) {
+    nextSteps.push(
+      "Consigliato: aggiungi anche GEMINI_API_KEY (gratuita) come provider primario; OpenAI resta fallback.",
     );
   }
   if (!hasSupabase) {
@@ -120,6 +137,8 @@ export function getPublicConfigPayload() {
       mapDisplay: Boolean(browserKey),
       supabase: Boolean(getSupabaseConfig()),
       openai: Boolean(getOpenAiKey()),
+      gemini: Boolean(getGeminiKey()),
+      assistant: hasAnyAssistantKey(),
     },
     readiness: {
       services: readiness.services,
