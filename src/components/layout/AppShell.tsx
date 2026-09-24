@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Bookmark,
   Copy,
   Layers3,
   Map as MapIcon,
@@ -21,6 +22,7 @@ import { ExclusionsPanel } from "@/components/trip/ExclusionsPanel";
 import { RouteSummary } from "@/components/trip/RouteSummary";
 import { NaturalLanguageAssistant } from "@/components/trip/NaturalLanguageAssistant";
 import { SetupPanel } from "@/components/trip/SetupPanel";
+import { SavedPanel } from "@/components/trip/SavedPanel";
 import { MapCanvas } from "@/components/map/MapCanvas";
 import { StatusBanner } from "@/components/status/StatusBanner";
 
@@ -29,6 +31,7 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "preferences", label: "Percorso", icon: SlidersHorizontal },
   { id: "exclusions", label: "Esclusioni", icon: ShieldAlert },
   { id: "summary", label: "Riepilogo", icon: Layers3 },
+  { id: "saved", label: "Salvati", icon: Bookmark },
   { id: "assistant", label: "Assistente", icon: Sparkles },
   { id: "setup", label: "Live", icon: Settings2 },
 ];
@@ -42,9 +45,7 @@ export function AppShell() {
   const routeMode = useTripStore((s) => s.routeMode);
   const setMapsConfig = useTripStore((s) => s.setMapsConfig);
   const persistTrip = useTripStore((s) => s.persistTrip);
-  const duplicateCurrentTrip = useTripStore((s) => s.duplicateCurrentTrip);
   const refreshSavedTrips = useTripStore((s) => s.refreshSavedTrips);
-  const resetTrip = useTripStore((s) => s.resetTrip);
   const loadTrip = useTripStore((s) => s.loadTrip);
   const savedTrips = useTripStore((s) => s.savedTrips);
   const trip = useTripStore((s) => s.trip);
@@ -165,15 +166,16 @@ export function AppShell() {
           {activePanel === "exclusions" ? <ExclusionsPanel /> : null}
           {activePanel === "summary" ? <RouteSummary /> : null}
           {activePanel === "assistant" ? <NaturalLanguageAssistant /> : null}
+          {activePanel === "saved" ? <SavedPanel /> : null}
           {activePanel === "setup" ? <SetupPanel /> : null}
 
           {savedTrips.length > 0 && activePanel === "itinerary" ? (
             <div className="mt-6 border-t border-[var(--line)] pt-4">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-                Viaggi salvati (locale)
+                Ultimi viaggi — vedi tab Salvati
               </p>
               <div className="space-y-1.5">
-                {savedTrips.slice(0, 5).map((t) => (
+                {savedTrips.slice(0, 3).map((t) => (
                   <button
                     key={t.meta.id}
                     type="button"
@@ -192,24 +194,15 @@ export function AppShell() {
                   </button>
                 ))}
               </div>
-              <div className="mt-2 flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void duplicateCurrentTrip()}
-                >
-                  Duplica
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={resetTrip}
-                >
-                  Nuovo
-                </Button>
-              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="mt-2"
+                onClick={() => setActivePanel("saved")}
+              >
+                Apri Salvati
+              </Button>
             </div>
           ) : null}
         </div>

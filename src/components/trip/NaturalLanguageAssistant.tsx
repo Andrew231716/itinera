@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/primitives";
 import type { AssistantParseResult } from "@/lib/ai/assistant";
 import { useTripStore } from "@/lib/store/trip-store";
-import type { PointExclusion } from "@/lib/types/trip";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
+import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
 
 export function NaturalLanguageAssistant() {
   const [utterance, setUtterance] = useState("");
@@ -124,16 +124,18 @@ export function NaturalLanguageAssistant() {
         }
 
         if (place) {
-          const exclusion: PointExclusion = {
-            id: nanoid(),
-            kind: ex.kind === "geo_zone" || ex.kind === "road_segment" ? "city" : ex.kind,
-            label: ex.label,
-            strength: "hard",
-            place,
-            radiusMeters: ex.kind === "city" ? 5000 : 800,
-            createdAt: new Date().toISOString(),
-          };
-          addExclusion(exclusion);
+          const kind =
+            ex.kind === "geo_zone" || ex.kind === "road_segment"
+              ? "city"
+              : ex.kind;
+          addExclusion(
+            createPointExclusion({
+              id: nanoid(),
+              kind,
+              label: ex.label,
+              place,
+            }),
+          );
         }
       }
     }

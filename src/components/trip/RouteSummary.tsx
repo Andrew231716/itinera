@@ -99,6 +99,15 @@ export function RouteSummary() {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
             Alternative
           </p>
+          {routes.every((r) => r.isConformant === false) ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+              Nessun percorso rispetta ancora tutte le esclusioni hard. Google non
+              ha avoid-area nativi: ho già tentato delle deviazioni automatiche.
+              Prova a ridurre un raggio, togliere un’esclusione o aggiungere una
+              tappa che forzi il passaggio altrove.
+            </div>
+          ) : null}
+
           {routes.map((route) => {
             const active = selected?.id === route.id;
             const hard = route.violations.filter((v) => v.severity === "hard");
@@ -117,10 +126,12 @@ export function RouteSummary() {
                   <span className="text-sm font-semibold text-[var(--ink)]">
                     {route.label}
                   </span>
-                  {hard.length > 0 ? (
+                  {route.isConformant === true ? (
+                    <Badge tone="ok">Conforme</Badge>
+                  ) : hard.length > 0 ? (
                     <Badge tone="warn">{hard.length} vincoli</Badge>
                   ) : (
-                    <Badge tone="ok">ok</Badge>
+                    <Badge tone="neutral">Non verificato</Badge>
                   )}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-[var(--ink-muted)]">

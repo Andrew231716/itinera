@@ -5,10 +5,13 @@ import type {
   RouteLeg,
   RouteStep,
 } from "@/lib/types/route";
-import type { CustomExclusion, LatLng, RoadPreferences } from "@/lib/types/trip";
+import type { CustomExclusion, LatLng, PlaceRef, RoadPreferences } from "@/lib/types/trip";
 import { AppError } from "@/lib/utils/errors";
 import { decodePolyline } from "@/lib/utils/geometry";
-import { checkRouteConstraints } from "@/lib/routing/constraint-checker";
+import {
+  checkRouteConstraintsDetailed,
+  isRouteConformant,
+} from "@/lib/routing/constraint-checker";
 import { mapPreferencesToGoogle } from "@/lib/routing/preference-mapper";
 
 function parseDurationSeconds(value: unknown): number {
@@ -101,7 +104,12 @@ function mapGoogleRoute(
     ? (route.warnings as string[])
     : [];
 
-  const violations = checkRouteConstraints(decodedPath, exclusions);
+  const detailed = checkRouteConstraintsDetailed(decodedPath, exclusions);
+  const isConformant = isRouteConformant(
+    detailed.violations,
+    detailed.unverifiable,
+    exclusions,
+  );
 
   return {
     id: `google-${index}`,
@@ -114,7 +122,9 @@ function mapGoogleRoute(
     legs,
     tolls,
     warnings,
-    violations,
+    violations: detailed.violations,
+    unverifiableConstraints: detailed.unverifiable,
+    isConformant,
     engine: "google_routes",
     rawDescription: (route.description as string | undefined) ?? undefined,
   };
@@ -249,13 +259,18 @@ export async function computeRoutesWithGoogle(
 
   const limitations = [...mapped.limitations];
 
+  const anyConformant = routes.some((r) => r.isConformant === true);
   const hardViolations = routes.flatMap((r) =>
     r.violations.filter((v) => v.severity === "hard"),
   );
 
-  if (hardViolations.length > 0) {
+  if (hardViolations.length > 0 && !anyConformant) {
     limitations.push(
-      "Uno o più percorsi calcolati attraversano zone o tratti da evitare. Seleziona un’alternativa o modifica le esclusioni.",
+      "Nessuna alternativa Google rispetta ancora i vincoli hard. Provo un percorso con deviazione automatica intorno alle zone escluse…",
+    );
+  } else if (hardViolations.length > 0) {
+    limitations.push(
+      "Alcune alternative attraversano zone da evitare: scegli un percorso senza badge «vincoli».",
     );
   }
 
@@ -275,6 +290,27 @@ export async function computeRoutesWithGoogle(
     routes,
     optimizedIntermediateOrder: optimized,
     limitations,
+  };
+}
+
+/** Exposed for detour retries from the routing engine. */
+export function remapGoogleRoutesLabels(routes: ComputedRoute[]): ComputedRoute[] {
+  return routes.map((r, i) => ({
+    ...r,
+    id: `google-${i}`,
+    label: i === 0 ? "Percorso consigliato" : `Alternativa ${i}`,
+  }));
+}
+
+export function placeRefFromLatLng(
+  location: LatLng,
+  label: string,
+): PlaceRef {
+  return {
+    id: `via-${location.lat.toFixed(5)}-${location.lng.toFixed(5)}`,
+    label,
+    location,
+    source: "manual",
   };
 }
 
