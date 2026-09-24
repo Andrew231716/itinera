@@ -20,6 +20,13 @@ npm run lint
 npm test
 ```
 
+`npm run build` esegue `next build` (Webpack/production default). Turbopack è solo su `npm run dev`.
+
+## Deploy (Supabase + Vercel)
+
+Guida passo-passo in italiano: **[DEPLOY_VERCEL.md](./DEPLOY_VERCEL.md)**  
+Checklist breve: `GO_LIVE.txt` · template env: `.env.example`
+
 ## Variabili d'ambiente
 
 | Variabile | Ambito | Scopo |
