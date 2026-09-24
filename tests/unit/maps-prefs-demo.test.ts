@@ -44,7 +44,7 @@ describe("maps links", () => {
     expect(link.preview.stops).toHaveLength(stops.length);
   });
 
-  it("builds malformed-safe encode with coordinates", () => {
+  it("builds lat/lng URLs without fragile place_id: values", () => {
     const link = buildGoogleMapsDirectionsLink({
       origin: place("A", 45.1, 9.2),
       destination: place("B", 41.9, 12.5),
@@ -53,7 +53,34 @@ describe("maps links", () => {
       preferences: DEFAULT_ROAD_PREFERENCES,
     });
     expect(link.url).toContain("travelmode=walking");
-    expect(link.url).toContain("45.1");
+    expect(link.url).toContain("45.100000");
+    expect(link.url).not.toContain("place_id%3A");
+    expect(link.url).not.toContain("place_id:");
+  });
+
+  it("uses origin_place_id / destination_place_id when available", () => {
+    const origin: PlaceRef = {
+      ...place("Rozzano", 45.3819, 9.1547),
+      placeId: "places/ChIJorigin1234567890",
+      address: "Rozzano, MI, Italia",
+    };
+    const destination: PlaceRef = {
+      ...place("Roma", 41.9028, 12.4964),
+      placeId: "ChIJdest123456789012",
+      address: "Roma, RM, Italia",
+    };
+    const link = buildGoogleMapsDirectionsLink({
+      origin,
+      destination,
+      stops: [],
+      travelMode: "DRIVE",
+      preferences: DEFAULT_ROAD_PREFERENCES,
+    });
+    expect(link.url).toContain("origin_place_id=ChIJorigin1234567890");
+    expect(link.url).toContain("destination_place_id=ChIJdest123456789012");
+    expect(link.url).toContain("45.381900");
+    expect(link.url).toContain("41.902800");
+    expect(link.url).not.toContain("place_id%3A");
   });
 });
 

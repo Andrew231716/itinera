@@ -18,6 +18,7 @@ import {
   exportDirectionsText,
   exportStopsList,
   nativeShare,
+  openMapsDirectionsUrl,
 } from "@/lib/google/maps-links";
 import { getTripRepository } from "@/lib/storage/trip-repository";
 import { formatDistance, formatDuration, formatCurrency } from "@/lib/utils/format";
@@ -344,14 +345,14 @@ function ShareActions({
             trasferite.
           </p>
           <div className="flex gap-2">
-            <a
-              href={mapsLink.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] text-sm font-semibold text-[var(--accent-ink)]"
+            <Button
+              type="button"
+              className="flex-1"
+              onClick={() => openMapsDirectionsUrl(mapsLink.url)}
             >
+              <ExternalLink className="h-4 w-4" />
               Apri ora
-            </a>
+            </Button>
             <Button
               type="button"
               size="sm"
@@ -478,16 +479,15 @@ function ShareActions({
             Navigazione per tratta
           </p>
           {mapsLink.segments.map((seg) => (
-            <a
+            <button
               key={seg.url}
-              href={seg.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--brand)] hover:bg-[var(--brand-soft)]"
+              type="button"
+              onClick={() => openMapsDirectionsUrl(seg.url)}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-[var(--brand)] hover:bg-[var(--brand-soft)]"
             >
               <Navigation className="h-3.5 w-3.5" />
               {seg.label}: {seg.from} → {seg.to}
-            </a>
+            </button>
           ))}
         </div>
       ) : null}

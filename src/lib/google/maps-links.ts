@@ -8,11 +8,26 @@ const MODE_MAP: Record<TravelMode, string> = {
   TWO_WHEELER: "driving",
 };
 
-function encodePlace(place: PlaceRef): string {
-  if (place.placeId && !place.placeId.startsWith("demo-")) {
-    return `place_id:${place.placeId}`;
-  }
-  return `${place.location.lat},${place.location.lng}`;
+/** Strip Places API (New) resource prefix; Maps URLs want bare ChIJ… ids. */
+export function normalizeMapsPlaceId(
+  placeId: string | undefined,
+): string | undefined {
+  if (!placeId) return undefined;
+  if (placeId.startsWith("demo-")) return undefined;
+  const bare = placeId.startsWith("places/")
+    ? placeId.slice("places/".length)
+    : placeId;
+  // Classic Place IDs are stable; reject empty / obviously invalid
+  if (!bare || bare.length < 8) return undefined;
+  return bare;
+}
+
+/** Lat,lng — most reliable on mobile Maps apps (avoids place_id: hang). */
+function encodeLatLng(place: PlaceRef): string {
+  const lat = Number(place.location.lat);
+  const lng = Number(place.location.lng);
+  // Trim precision for shorter, more portable URLs
+  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
 }
 
 export interface MapsLinkResult {
@@ -38,9 +53,54 @@ export interface MapsLinkResult {
 
 export const MAX_WAYPOINTS_IN_URL = 8;
 
+function buildDirSearchParams(params: {
+  origin: PlaceRef;
+  destination: PlaceRef;
+  waypoints: PlaceRef[];
+  travelMode: TravelMode;
+  avoidParts: string[];
+}): URLSearchParams {
+  const { origin, destination, waypoints, travelMode, avoidParts } = params;
+
+  // Always use coordinates for origin/destination values.
+  // The old `place_id:…` form (and label-only values) often hang forever
+  // in the Google Maps mobile app.
+  const search = new URLSearchParams({
+    api: "1",
+    origin: encodeLatLng(origin),
+    destination: encodeLatLng(destination),
+    travelmode: MODE_MAP[travelMode],
+  });
+
+  const originPid = normalizeMapsPlaceId(origin.placeId);
+  const destPid = normalizeMapsPlaceId(destination.placeId);
+  if (originPid) search.set("origin_place_id", originPid);
+  if (destPid) search.set("destination_place_id", destPid);
+
+  if (waypoints.length > 0) {
+    const waypointPids = waypoints.map((w) => normalizeMapsPlaceId(w.placeId));
+    const allHavePid = waypointPids.every(Boolean);
+
+    // Coordinates are the reliable waypoint values on mobile.
+    search.set("waypoints", waypoints.map(encodeLatLng).join("|"));
+    if (allHavePid) {
+      search.set("waypoint_place_ids", waypointPids.join("|"));
+    }
+  }
+
+  if (avoidParts.length > 0) {
+    search.set("avoid", avoidParts.join("|"));
+  }
+
+  return search;
+}
+
 /**
  * Builds a Google Maps Directions URL.
  * Custom exclusions cannot be represented in Maps URLs.
+ *
+ * Mobile-safe: uses lat/lng (and optional *_place_id params). Never uses
+ * the fragile `place_id:…` value form that often spins forever in the app.
  */
 export function buildGoogleMapsDirectionsLink(params: {
   origin: PlaceRef;
@@ -93,19 +153,13 @@ export function buildGoogleMapsDirectionsLink(params: {
     );
   }
 
-  const search = new URLSearchParams({
-    api: "1",
-    origin: encodePlace(origin),
-    destination: encodePlace(destination),
-    travelmode: MODE_MAP[travelMode],
+  const search = buildDirSearchParams({
+    origin,
+    destination,
+    waypoints: waypointBatch,
+    travelMode,
+    avoidParts,
   });
-
-  if (waypointBatch.length > 0) {
-    search.set("waypoints", waypointBatch.map(encodePlace).join("|"));
-  }
-  if (avoidParts.length > 0) {
-    search.set("avoid", avoidParts.join("|"));
-  }
 
   const url = `https://www.google.com/maps/dir/?${search.toString()}`;
 
@@ -114,13 +168,13 @@ export function buildGoogleMapsDirectionsLink(params: {
     chain.length > 1
       ? chain.slice(0, -1).map((from, i) => {
           const to = chain[i + 1];
-          const s = new URLSearchParams({
-            api: "1",
-            origin: encodePlace(from),
-            destination: encodePlace(to),
-            travelmode: MODE_MAP[travelMode],
+          const s = buildDirSearchParams({
+            origin: from,
+            destination: to,
+            waypoints: [],
+            travelMode,
+            avoidParts,
           });
-          if (avoidParts.length > 0) s.set("avoid", avoidParts.join("|"));
           return {
             index: i + 1,
             label: `Tratta ${i + 1}`,
@@ -197,6 +251,30 @@ export function exportDirectionsText(
     parts.push("");
   });
   return parts.join("\n");
+}
+
+/**
+ * Open a Maps directions URL in a mobile-friendly way.
+ * Avoids some PWA/in-app-browser cases where target=_blank never handoffs.
+ */
+export function openMapsDirectionsUrl(url: string): void {
+  if (typeof window === "undefined") return;
+  const isStandalone =
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    // iOS Safari "Add to Home Screen"
+    ("standalone" in navigator &&
+      (navigator as Navigator & { standalone?: boolean }).standalone === true);
+
+  if (isStandalone) {
+    // Same-tab navigation hands off to the Maps app more reliably from PWAs
+    window.location.assign(url);
+    return;
+  }
+
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    window.location.assign(url);
+  }
 }
 
 export async function nativeShare(payload: {
