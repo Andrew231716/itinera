@@ -4,14 +4,18 @@
 Progetto Google Cloud già indicato: itinera-509522
 URL: https://console.cloud.google.com/google/maps-apis/home?project=itinera-509522
 
-Questo ambiente NON può accedere al tuo account Google, creare API key,
-abilitare billing o attivare abbonamenti. Serve il tuo login Console.
+Questo ambiente NON può accedere al tuo account Google/Supabase/Vercel, creare API key,
+abilitare billing o attivare abbonamenti. Serve il tuo login ai dashboard.
+
+Guida deploy completa (Supabase + Vercel, in italiano): DEPLOY_VERCEL.md
 
 ## Stato codice (già pronto)
 
-- .env.example + .env.local (placeholder vuoti)
+- .env.example + .env.local (locale; non committare segreti)
+- package.json: `build` = `next build` (senza turbopack; adatto a Vercel)
 - Tab "Live" (SetupPanel) + GET /api/health e /api/health?probe=1
-- Demo attiva finché le chiavi restano vuote
+- Demo attiva finché le chiavi Google restano vuote
+- OpenAI con credito esaurito: non blocca deploy; solo assistente offline
 
 ## Azioni umane residue (3–5 click) — da Maps home del progetto
 
@@ -23,34 +27,46 @@ Poi, dalla home Maps del progetto itinera-509522:
 1. Menu sinistro → "Keys & Credentials" (o Credenziali)
 2. "+ Create credentials" → "API key" → copia → rinomina "Itinera server"
    → Application restrictions: None (o IP) → API restrictions: Places API (New) + Routes API → Save
-   → incolla in GOOGLE_MAPS_API_KEY in .env.local
+   → incolla in GOOGLE_MAPS_API_KEY in .env.local (e su Vercel)
 3. Di nuovo "+ Create credentials" → "API key" → copia → rinomina "Itinera browser"
-   → Application restrictions: HTTP referrers → aggiungi http://localhost:3000/* (e il tuo dominio)
+   → Application restrictions: HTTP referrers → aggiungi http://localhost:3000/*
+     e, dopo il deploy, https://<progetto>.vercel.app/* (e custom domain)
    → API restrictions: Maps JavaScript API → Save
-   → incolla in NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY in .env.local
-4. Riavvia: npm run dev
+   → incolla in NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY in .env.local (e su Vercel)
+4. Locale: riavvia `npm run dev` — oppure Vercel: Redeploy dopo le env
 5. Tab "Live" → "Verifica connettività" → testa Milano → Roma
 
-Minimo click dopo APIs/billing già ok: 2× Create API key + 2× Save restrizioni + incolla in .env.local.
+Minimo click dopo APIs/billing già ok: 2× Create API key + 2× Save restrizioni + incolla env.
 
 ## Assistente (opzionale)
 
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini   # opzionale
+Nota: credit_balance_exhausted → deploy OK, assistente non operativo finché non ricarichi.
 
-## Cloud save/share (opzionale)
+## Cloud save/share — Supabase (dettaglio in DEPLOY_VERCEL.md)
 
-1. Crea progetto Supabase
+1. https://supabase.com/dashboard → New project (Free)
 2. SQL Editor → esegui supabase/migrations/001_itinera_trips.sql
 3. Settings → API → Project URL + anon public key
 4. NEXT_PUBLIC_SUPABASE_URL=...
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+   (locale: .env.local — produzione: Vercel Environment Variables + Redeploy)
+
+## Pubblicazione — Vercel (dettaglio in DEPLOY_VERCEL.md)
+
+1. https://vercel.com/new → Import repo GitHub (o `vercel` CLI)
+2. Framework Next.js, build `npm run build` / `next build`
+3. Settings → Environment Variables: tutte le chiavi sopra (Google + Supabase + OpenAI opz.)
+4. Deploy → copia dominio *.vercel.app
+5. Google Cloud → browser key → HTTP referrers → aggiungi il dominio Vercel → Save
+6. Verifica /api/health?probe=1
 
 ## Sicurezza
 
 - Mai committare .env.local
 - Mai mettere service_role in NEXT_PUBLIC_*
-- Restringi sempre la browser key per referrer
+- Restringi sempre la browser key per referrer (localhost + Vercel + custom domain)
 
 ## Verifica automatica
 
