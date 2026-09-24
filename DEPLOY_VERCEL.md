@@ -3,7 +3,7 @@
 Guida operativa in italiano. Piano gratuito Supabase e Hobby Vercel sono sufficienti.
 **Non** attivare piani a pagamento se non li vuoi. Non inventare URL/chiavi: copiale dai dashboard.
 
-OpenAI con credito esaurito (`credit_balance_exhausted`) **non blocca** il deploy: l’assistente resta off finché non ricarichi; Maps/Places/Routes e il resto dell’app funzionano lo stesso.
+OpenAI con credito esaurito (`credit_balance_exhausted`) **non blocca** il deploy: con `GEMINI_API_KEY` l’assistente resta usable; senza alcuna chiave IA solo l’assistente resta off. Maps/Places/Routes e il resto dell’app funzionano lo stesso.
 
 ---
 
