@@ -7,7 +7,6 @@ import {
   type CustomExclusion,
   type GeoZoneExclusion,
   type PlaceRef,
-  type PointExclusion,
   type RoadPreferences,
   type TravelMode,
   type TripDraft,

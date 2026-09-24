@@ -24,6 +24,15 @@ export interface TollInfo {
   /** True when the API reported tolls but no price */
   hasTolls: boolean;
   notes?: string;
+  /** Provenance of the amount when present */
+  source?: "google_routes";
+}
+
+export interface ZoneAdvisory {
+  id: string;
+  label: string;
+  kind: "ztl" | "traffic_limited" | "other";
+  message: string;
 }
 
 export interface ConstraintViolation {
@@ -53,6 +62,8 @@ export interface ComputedRoute {
   }>;
   /** True only when hard exclusions are verified with no hard violations */
   isConformant?: boolean;
+  /** Milan Area B / Area C and similar advisories */
+  zoneAdvisories?: ZoneAdvisory[];
   /** Engine that produced this route */
   engine: "google_routes" | "demo" | "openrouteservice" | "alternative";
   rawDescription?: string;

@@ -1,4 +1,4 @@
-import type { PlaceRef, RoadPreferences, TravelMode } from "@/lib/types/trip";
+import type { LatLng, PlaceRef, RoadPreferences, TravelMode } from "@/lib/types/trip";
 
 const MODE_MAP: Record<TravelMode, string> = {
   DRIVE: "driving",
@@ -53,6 +53,51 @@ export interface MapsLinkResult {
 
 export const MAX_WAYPOINTS_IN_URL = 8;
 
+/**
+ * Sample intermediate points along a decoded route so Maps follows Itinera’s
+ * chosen geometry as closely as the Directions URL API allows (no polyline param).
+ */
+export function sampleRoutePathAsWaypoints(
+  path: LatLng[],
+  maxWaypoints = MAX_WAYPOINTS_IN_URL,
+): PlaceRef[] {
+  if (path.length < 3 || maxWaypoints <= 0) return [];
+  const inner = path.slice(1, -1);
+  if (inner.length === 0) return [];
+  if (inner.length <= maxWaypoints) {
+    return inner.map((p, i) => ({
+      id: `shape-${i}`,
+      label: `Punto percorso ${i + 1}`,
+      location: p,
+      source: "manual" as const,
+    }));
+  }
+  const out: PlaceRef[] = [];
+  for (let i = 0; i < maxWaypoints; i++) {
+    const t = (i + 1) / (maxWaypoints + 1);
+    const idx = Math.min(
+      inner.length - 1,
+      Math.max(0, Math.round(t * (inner.length - 1))),
+    );
+    const p = inner[idx];
+    out.push({
+      id: `shape-${i}`,
+      label: `Punto percorso ${i + 1}`,
+      location: p,
+      source: "manual",
+    });
+  }
+  // Deduplicate consecutive identical samples
+  return out.filter((p, i, arr) => {
+    if (i === 0) return true;
+    const prev = arr[i - 1].location;
+    return (
+      Math.abs(prev.lat - p.location.lat) > 1e-5 ||
+      Math.abs(prev.lng - p.location.lng) > 1e-5
+    );
+  });
+}
+
 function buildDirSearchParams(params: {
   origin: PlaceRef;
   destination: PlaceRef;
@@ -99,8 +144,9 @@ function buildDirSearchParams(params: {
  * Builds a Google Maps Directions URL.
  * Custom exclusions cannot be represented in Maps URLs.
  *
- * Mobile-safe: uses lat/lng (and optional *_place_id params). Never uses
- * the fragile `place_id:…` value form that often spins forever in the app.
+ * When `routePath` (decoded geometry of the selected Itinera route) is provided,
+ * intermediate waypoints are sampled from that path so Maps opens closer to the
+ * chosen alternative instead of recalculating a generic A→B route.
  */
 export function buildGoogleMapsDirectionsLink(params: {
   origin: PlaceRef;
@@ -108,8 +154,11 @@ export function buildGoogleMapsDirectionsLink(params: {
   stops: PlaceRef[];
   travelMode: TravelMode;
   preferences: RoadPreferences;
+  /** Decoded polyline of the route selected in Itinera */
+  routePath?: LatLng[];
 }): MapsLinkResult {
-  const { origin, destination, stops, travelMode, preferences } = params;
+  const { origin, destination, stops, travelMode, preferences, routePath } =
+    params;
   const omitted: string[] = [
     "Esclusioni personalizzate (città, strade, zone) non trasferibili nel link Google Maps.",
   ];
@@ -144,13 +193,28 @@ export function buildGoogleMapsDirectionsLink(params: {
     );
   }
 
-  const requiresSegmentation = stops.length > MAX_WAYPOINTS_IN_URL;
-  const waypointBatch = stops.slice(0, MAX_WAYPOINTS_IN_URL);
+  const shapeWaypoints = routePath?.length
+    ? sampleRoutePathAsWaypoints(routePath, MAX_WAYPOINTS_IN_URL)
+    : [];
+  const usingShape = shapeWaypoints.length > 0;
 
-  if (requiresSegmentation) {
+  let waypointBatch: PlaceRef[];
+  let requiresSegmentation = false;
+
+  if (usingShape) {
+    // Prefer geometry of the selected Itinera route over free-form stop list.
+    waypointBatch = shapeWaypoints;
     omitted.push(
-      `Troppe tappe (${stops.length}): il link principale include solo le prime ${MAX_WAYPOINTS_IN_URL}. Usa i segmenti per navigare il resto — nessuna tappa viene eliminata silenziosamente.`,
+      "Il link include punti intermedi del percorso scelto in Itinera per avvicinare Maps a quell’alternativa (Maps non accetta la polyline completa).",
     );
+  } else {
+    requiresSegmentation = stops.length > MAX_WAYPOINTS_IN_URL;
+    waypointBatch = stops.slice(0, MAX_WAYPOINTS_IN_URL);
+    if (requiresSegmentation) {
+      omitted.push(
+        `Troppe tappe (${stops.length}): il link principale include solo le prime ${MAX_WAYPOINTS_IN_URL}. Usa i segmenti per navigare il resto — nessuna tappa viene eliminata silenziosamente.`,
+      );
+    }
   }
 
   const search = buildDirSearchParams({
@@ -165,7 +229,7 @@ export function buildGoogleMapsDirectionsLink(params: {
 
   const chain = [origin, ...stops, destination];
   const segments =
-    chain.length > 1
+    !usingShape && chain.length > 1
       ? chain.slice(0, -1).map((from, i) => {
           const to = chain[i + 1];
           const s = buildDirSearchParams({
@@ -194,11 +258,15 @@ export function buildGoogleMapsDirectionsLink(params: {
     preview: {
       origin: origin.label,
       destination: destination.label,
-      stops: stops.map((s) => s.label),
+      stops: usingShape
+        ? [`${shapeWaypoints.length} punti del percorso Itinera`]
+        : stops.map((s) => s.label),
       travelMode: MODE_MAP[travelMode],
-      note: requiresSegmentation
-        ? "Il viaggio richiede navigazione a segmenti."
-        : "Il link include l’itinerario completo supportato da Maps.",
+      note: usingShape
+        ? "Apre Maps guidandolo lungo il percorso selezionato in Itinera (via punti intermedi)."
+        : requiresSegmentation
+          ? "Il viaggio richiede navigazione a segmenti."
+          : "Il link include l’itinerario completo supportato da Maps.",
     },
   };
 }
