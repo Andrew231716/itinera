@@ -1,12 +1,14 @@
 import {
   getBrowserGoogleMapsKey,
   getGeminiKey,
+  getGeminiKeySource,
   getOpenAiKey,
   getServerGoogleMapsKey,
   getSupabaseConfig,
   hasAnyAssistantKey,
   resolveMapsMode,
   resolveRoutingMode,
+  GEMINI_ENABLE_API_URL,
 } from "@/lib/config/env";
 import { listRoutingEngines } from "@/lib/routing/engines/types";
 
@@ -28,9 +30,24 @@ export function getLiveReadiness(): {
   const hasServerKey = Boolean(getServerGoogleMapsKey());
   const hasBrowserKey = Boolean(getBrowserGoogleMapsKey());
   const hasOpenAi = Boolean(getOpenAiKey());
+  const geminiSource = getGeminiKeySource();
   const hasGemini = Boolean(getGeminiKey());
+  const hasDedicatedGemini =
+    geminiSource === "gemini" || geminiSource === "google_ai";
   const hasAssistant = hasAnyAssistantKey();
   const hasSupabase = Boolean(getSupabaseConfig());
+
+  const geminiStatus: ServiceReadiness["status"] = !hasGemini
+    ? "optional"
+    : hasDedicatedGemini
+      ? "ready"
+      : "partial";
+
+  const geminiMessage = !hasGemini
+    ? "Opzionale e gratuito. Con la chiave Maps server già impostata basta abilitare Generative Language API (nessuna nuova chiave)."
+    : hasDedicatedGemini
+      ? "Chiave Gemini dedicata presente. Preferito di default (tier gratuito)."
+      : "Usa la stessa GOOGLE_MAPS_API_KEY. Abilita Generative Language API sul progetto Google (gratis) — non serve una seconda chiave.";
 
   const services: ServiceReadiness[] = [
     {
@@ -54,11 +71,11 @@ export function getLiveReadiness(): {
     {
       id: "gemini",
       label: "Assistente Gemini (gratuito)",
-      status: hasGemini ? "ready" : "optional",
-      message: hasGemini
-        ? "GEMINI_API_KEY presente. Preferito di default (tier gratuito)."
-        : "Opzionale e gratuito. Chiave da Google AI Studio → GEMINI_API_KEY.",
-      envVars: ["GEMINI_API_KEY", "GOOGLE_AI_API_KEY"],
+      status: geminiStatus,
+      message: geminiMessage,
+      envVars: hasDedicatedGemini
+        ? ["GEMINI_API_KEY", "GOOGLE_AI_API_KEY"]
+        : ["GOOGLE_MAPS_API_KEY", "GEMINI_API_KEY"],
     },
     {
       id: "openai",
@@ -91,13 +108,13 @@ export function getLiveReadiness(): {
       "Crea una API key browser con restrizione HTTP referrer e impostala in NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY.",
     );
   }
-  if (!hasAssistant) {
+  if (hasServerKey && !hasDedicatedGemini) {
     nextSteps.push(
-      "Per l’assistente (gratuito): crea una chiave su https://aistudio.google.com/apikey e impostala in GEMINI_API_KEY. In alternativa OPENAI_API_KEY.",
+      `Assistente gratis senza nuova chiave: abilita Generative Language API → ${GEMINI_ENABLE_API_URL} — poi, se la chiave server ha «API restrictions», aggiungi Generative Language API all’elenco. Login Google nell’app NON serve e non sblocca Gemini da solo.`,
     );
-  } else if (!hasGemini && hasOpenAi) {
+  } else if (!hasAssistant) {
     nextSteps.push(
-      "Consigliato: aggiungi anche GEMINI_API_KEY (gratuita) come provider primario; OpenAI resta fallback.",
+      "Per l’assistente: abilita Generative Language sul progetto Maps oppure imposta GEMINI_API_KEY / OPENAI_API_KEY.",
     );
   }
   if (!hasSupabase) {

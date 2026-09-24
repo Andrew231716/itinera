@@ -104,7 +104,7 @@ Imposta almeno per **Production** (consigliato anche **Preview**):
 | `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | Sì (mappa JS) | Esposta al browser. Restringi per referrer (vedi B5). |
 | `NEXT_PUBLIC_SUPABASE_URL` | Per cloud save/share | Da Supabase Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Per cloud save/share | Solo chiave **anon** |
-| `GEMINI_API_KEY` | No (consigliata) | Assistente NL **gratuito** (AI Studio). Preferito di default. |
+| `GEMINI_API_KEY` | No (opzionale) | Assistente NL gratuito. Se assente, riusa `GOOGLE_MAPS_API_KEY` (abilita Generative Language API). |
 | `GEMINI_MODEL` | No | Default codice: `gemini-2.0-flash` |
 | `OPENAI_API_KEY` | No (opzionale) | Fallback. Se credito esaurito, Gemini continua a fungere. |
 | `OPENAI_MODEL` | No | Default codice: `gpt-4o-mini` |

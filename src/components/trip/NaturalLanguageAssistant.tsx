@@ -164,11 +164,11 @@ export function NaturalLanguageAssistant() {
 
       {!result ? (
         <EmptyHint>
-          Con <code>GEMINI_API_KEY</code> (gratuita) o{" "}
-          <code>OPENAI_API_KEY</code> l’assistente traduce la richiesta in
-          parametri strutturati. Preferisce Gemini quando disponibile; OpenAI è
-          fallback. Le località sono risolte via Places. Il trip store si
-          aggiorna solo dopo la tua conferma.
+          L’assistente usa Gemini gratis sulla stessa chiave Google Maps già
+          configurata (basta abilitare Generative Language API sul progetto —
+          nessuna nuova chiave da incollare). OpenAI resta fallback. Le località
+          sono risolte via Places; il trip store si aggiorna solo dopo la tua
+          conferma.
         </EmptyHint>
       ) : (
         <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3">

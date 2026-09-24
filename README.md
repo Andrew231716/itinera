@@ -64,12 +64,11 @@ Checklist breve: `GO_LIVE.txt` · template env: `.env.example`
 
 ## Configurazione assistente IA
 
-1. **Consigliato (gratuito):** crea una chiave su [Google AI Studio](https://aistudio.google.com/apikey) → `GEMINI_API_KEY` (alias `GOOGLE_AI_API_KEY`).
-2. **Opzionale (fallback):** `OPENAI_API_KEY`.
-3. Con entrambi: Gemini è preferito (`AI_PROVIDER=auto`); se fallisce si prova OpenAI.
-4. L’endpoint `/api/assistant/parse` usa output strutturato JSON.
-5. Le località sono risolte solo via Places API.
-6. L’UI mostra un’**anteprima**; il trip store si aggiorna solo dopo conferma.
+1. **Senza nuova chiave (consigliato):** con `GOOGLE_MAPS_API_KEY` già impostata, abilita [Generative Language API](https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview?project=itinera-509522) sul progetto Maps. Se la chiave ha API restrictions, aggiungi quella API all’elenco. Login Google nell’app **non** sblocca Gemini da solo.
+2. **Opzionale dedicato:** `GEMINI_API_KEY` da [AI Studio](https://aistudio.google.com/apikey).
+3. **Fallback:** `OPENAI_API_KEY`.
+4. Con Gemini risolvibile: è preferito (`AI_PROVIDER=auto`); se fallisce si prova OpenAI.
+5. `/api/assistant/parse` usa output strutturato JSON; le località solo via Places; conferma UI prima dello store.
 
 ## Modalità demo
 
