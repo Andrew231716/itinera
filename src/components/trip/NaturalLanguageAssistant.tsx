@@ -29,6 +29,7 @@ export function NaturalLanguageAssistant() {
   const addExclusion = useTripStore((s) => s.addExclusion);
   const setTravelMode = useTripStore((s) => s.setTravelMode);
   const setTitle = useTripStore((s) => s.setTitle);
+  const trip = useTripStore((s) => s.trip);
   const { computeRoute } = useRouteCompute();
 
   async function submit() {
@@ -39,7 +40,15 @@ export function NaturalLanguageAssistant() {
       const res = await fetch("/api/assistant/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ utterance }),
+        body: JSON.stringify({
+          utterance,
+          tripContext: {
+            originLabel: trip.origin?.label ?? null,
+            destinationLabel: trip.destination?.label ?? null,
+            stopLabels: trip.stops.map((s) => s.place.label),
+            exclusionLabels: trip.exclusions.map((e) => e.label),
+          },
+        }),
       });
       const data = (await res.json()) as AssistantParseResult;
       setResult(data);
