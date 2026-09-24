@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Loader2, MapPin, X } from "lucide-react";
+import { Crosshair, Loader2, MapPin, X } from "lucide-react";
 import { usePlaceSearch } from "@/hooks/usePlaceSearch";
+import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import type { PlaceRef } from "@/lib/types/trip";
 import { Button, Input, Label, cn } from "@/components/ui/primitives";
 
@@ -14,6 +15,8 @@ interface PlaceSearchProps {
   onClear?: () => void;
   onPickFromMap?: () => void;
   pickingFromMap?: boolean;
+  /** Show «Posizione attuale» GPS control (default true). */
+  allowGps?: boolean;
 }
 
 export function PlaceSearch({
@@ -24,6 +27,7 @@ export function PlaceSearch({
   onClear,
   onPickFromMap,
   pickingFromMap,
+  allowGps = true,
 }: PlaceSearchProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -38,6 +42,11 @@ export function PlaceSearch({
     clear,
     setQuery,
   } = usePlaceSearch();
+  const {
+    locate,
+    loading: gpsLoading,
+    error: gpsError,
+  } = useCurrentLocation();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -62,24 +71,58 @@ export function PlaceSearch({
     }
   }
 
+  async function handleGps() {
+    const place = await locate();
+    if (place) {
+      onSelect(place);
+      setQuery(place.label);
+      setOpen(false);
+    }
+  }
+
+  const busy = loading || gpsLoading;
+
   return (
     <div ref={rootRef} className="relative">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <Label className="mb-0">{label}</Label>
-        {onPickFromMap ? (
-          <button
-            type="button"
-            onClick={onPickFromMap}
-            className={cn(
-              "text-[11px] font-medium transition",
-              pickingFromMap
-                ? "text-[var(--accent)]"
-                : "text-[var(--brand)] hover:underline",
-            )}
-          >
-            {pickingFromMap ? "Tocca la mappa…" : "Seleziona sulla mappa"}
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {allowGps ? (
+            <button
+              type="button"
+              onClick={() => void handleGps()}
+              disabled={gpsLoading}
+              className={cn(
+                "inline-flex items-center gap-1 text-[11px] font-medium transition",
+                gpsLoading
+                  ? "text-[var(--ink-faint)]"
+                  : "text-[var(--brand)] hover:underline",
+              )}
+              aria-label="Usa posizione attuale GPS"
+            >
+              {gpsLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Crosshair className="h-3 w-3" />
+              )}
+              {gpsLoading ? "Rilevamento…" : "Posizione attuale"}
+            </button>
+          ) : null}
+          {onPickFromMap ? (
+            <button
+              type="button"
+              onClick={onPickFromMap}
+              className={cn(
+                "text-[11px] font-medium transition",
+                pickingFromMap
+                  ? "text-[var(--accent)]"
+                  : "text-[var(--brand)] hover:underline",
+              )}
+            >
+              {pickingFromMap ? "Tocca la mappa…" : "Seleziona sulla mappa"}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="relative">
         <MapPin className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--ink-faint)]" />
@@ -97,7 +140,7 @@ export function PlaceSearch({
           }}
           onFocus={() => setOpen(true)}
         />
-        {loading ? (
+        {busy ? (
           <Loader2 className="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin text-[var(--ink-faint)]" />
         ) : value || query ? (
           <button
@@ -114,8 +157,8 @@ export function PlaceSearch({
         ) : null}
       </div>
 
-      {error ? (
-        <p className="mt-1.5 text-xs text-red-600">{error}</p>
+      {error || gpsError ? (
+        <p className="mt-1.5 text-xs text-red-600">{gpsError ?? error}</p>
       ) : null}
 
       {open && suggestions.length > 0 ? (

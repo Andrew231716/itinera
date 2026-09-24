@@ -233,3 +233,101 @@ export async function fetchPlaceDetails(
     },
   };
 }
+
+/** Build a GPS place even without reverse geocoding (always usable for routing). */
+export function placeFromCoordinates(
+  lat: number,
+  lng: number,
+  opts?: { label?: string; address?: string; placeId?: string },
+): PlaceRef {
+  const roundedLat = Number(lat.toFixed(6));
+  const roundedLng = Number(lng.toFixed(6));
+  return {
+    id: opts?.placeId ?? `gps-${roundedLat}-${roundedLng}`,
+    label: opts?.label?.trim() || "Posizione attuale",
+    address:
+      opts?.address?.trim() ||
+      `${roundedLat.toFixed(5)}, ${roundedLng.toFixed(5)}`,
+    placeId: opts?.placeId,
+    location: { lat: roundedLat, lng: roundedLng },
+    source: "gps",
+  };
+}
+
+/**
+ * Reverse-geocode GPS coordinates.
+ * Tries Geocoding API, then Places searchNearby; always returns a usable PlaceRef.
+ */
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  apiKey: string | undefined,
+): Promise<{ mode: "live" | "demo"; place: PlaceRef }> {
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
+    throw new AppError("GPS_COORDS", "Coordinate GPS non valide.", 400);
+  }
+
+  if (!apiKey) {
+    return { mode: "demo", place: placeFromCoordinates(lat, lng) };
+  }
+
+  // 1) Geocoding reverse (best address label)
+  try {
+    const geoUrl = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+    geoUrl.searchParams.set("latlng", `${lat},${lng}`);
+    geoUrl.searchParams.set("language", "it");
+    geoUrl.searchParams.set("key", apiKey);
+    const geoRes = await fetch(geoUrl.toString());
+    if (geoRes.ok) {
+      const geo = (await geoRes.json()) as {
+        status?: string;
+        results?: Array<{
+          place_id?: string;
+          formatted_address?: string;
+          address_components?: Array<{
+            long_name?: string;
+            types?: string[];
+          }>;
+        }>;
+      };
+      if (geo.status === "OK" && geo.results?.[0]) {
+        const top = geo.results[0];
+        const street = top.address_components?.find((c) =>
+          c.types?.includes("route"),
+        )?.long_name;
+        const locality =
+          top.address_components?.find((c) =>
+            c.types?.includes("locality"),
+          )?.long_name ??
+          top.address_components?.find((c) =>
+            c.types?.includes("administrative_area_level_3"),
+          )?.long_name;
+        const label =
+          [street, locality].filter(Boolean).join(", ") ||
+          top.formatted_address?.split(",")[0]?.trim() ||
+          "Posizione attuale";
+        return {
+          mode: "live",
+          place: placeFromCoordinates(lat, lng, {
+            label,
+            address: top.formatted_address,
+            placeId: top.place_id,
+          }),
+        };
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // 2) Coordinates only — still valid for Routes / Maps links
+  // (Geocoding API may be off on the project; we never invent a street name.)
+  return { mode: "live", place: placeFromCoordinates(lat, lng) };
+}
