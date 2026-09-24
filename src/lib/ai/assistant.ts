@@ -407,7 +407,7 @@ async function fetchFromGemini(
 
     const needsEnable =
       res.status === 403 &&
-      /not been used|disabled|not enabled|PERMISSION_DENIED|API key not valid/i.test(
+      /not been used|disabled|not enabled|PERMISSION_DENIED|API key not valid|blocked|API_KEY_SERVICE_BLOCKED/i.test(
         detail,
       );
     if (needsEnable) {
@@ -415,7 +415,10 @@ async function fetchFromGemini(
       geminiSkippedUntil = Date.now() + 10 * 60 * 1000;
       const source = getGeminiKeySource();
       if (source === "maps_server") {
-        detail = `Gemini non ancora attivo sul progetto Google già usato per Maps. Abilita Generative Language API (gratis): ${GEMINI_ENABLE_API_URL} — poi, se la chiave server ha restrizioni API, aggiungi anche «Generative Language API». Nessuna nuova chiave da creare.`;
+        detail =
+          /blocked|API_KEY_SERVICE_BLOCKED/i.test(detail)
+            ? "Gemini: la chiave server blocca Generative Language API. Google Cloud → Credentials → chiave Itinera server → API restrictions → aggiungi «Generative Language API» → Save. Nessuna nuova chiave."
+            : `Gemini non ancora attivo sul progetto Google già usato per Maps. Abilita Generative Language API (gratis): ${GEMINI_ENABLE_API_URL} — poi, se la chiave server ha restrizioni API, aggiungi anche «Generative Language API». Nessuna nuova chiave da creare.`;
       } else {
         detail = `Gemini rifiutato (API disabilitata o chiave non valida). ${detail}`;
       }

@@ -47,7 +47,7 @@ export function getLiveReadiness(): {
     ? "Opzionale e gratuito. Con la chiave Maps server già impostata basta abilitare Generative Language API (nessuna nuova chiave)."
     : hasDedicatedGemini
       ? "Chiave Gemini dedicata presente. Preferito di default (tier gratuito)."
-      : "Usa la stessa GOOGLE_MAPS_API_KEY. Abilita Generative Language API sul progetto Google (gratis) — non serve una seconda chiave.";
+      : "Usa la stessa GOOGLE_MAPS_API_KEY. Se il probe Gemini dice «blocked»: aggiungi Generative Language API alle API restrictions della chiave server.";
 
   const services: ServiceReadiness[] = [
     {
