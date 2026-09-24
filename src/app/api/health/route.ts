@@ -105,15 +105,19 @@ export async function GET(request: Request) {
       };
     } else {
       try {
-        const res = await fetch(`${supabase.url}/rest/v1/`, {
-          headers: {
-            apikey: supabase.anonKey,
-            Authorization: `Bearer ${supabase.anonKey}`,
+        // Root /rest/v1/ rejects anon keys; probe a real table instead.
+        const res = await fetch(
+          `${supabase.url}/rest/v1/trips?select=id&limit=1`,
+          {
+            headers: {
+              apikey: supabase.anonKey,
+              Authorization: `Bearer ${supabase.anonKey}`,
+            },
           },
-        });
+        );
         probes.supabase = {
-          ok: res.ok || res.status === 200 || res.status === 404,
-          detail: res.ok || res.status === 404
+          ok: res.ok,
+          detail: res.ok
             ? "Progetto Supabase raggiungibile."
             : `Supabase HTTP ${res.status}.`,
         };
