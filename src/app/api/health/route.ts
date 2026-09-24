@@ -83,7 +83,7 @@ export async function GET(request: Request) {
       };
     } else {
       try {
-        const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+        const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}?key=${encodeURIComponent(geminiKey)}`,
         );
