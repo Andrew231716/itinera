@@ -34,7 +34,7 @@ Checklist breve: `GO_LIVE.txt` · template env: `.env.example`
 | `GOOGLE_MAPS_API_KEY` | server | Places + Routes (segreta) |
 | `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | browser | Maps JavaScript API (restringi per HTTP referrer) |
 | `GEMINI_API_KEY` | server | Assistente NL gratuito (preferito) |
-| `GEMINI_MODEL` | server | Default `gemini-2.0-flash` |
+| `GEMINI_MODEL` | server | Default `gemini-3.6-flash` |
 | `OPENAI_API_KEY` | server | Assistente NL (fallback) |
 | `OPENAI_MODEL` | server | Default `gpt-4o-mini` |
 | `AI_PROVIDER` | server | `auto` (default) \| `gemini` \| `openai` |

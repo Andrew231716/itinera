@@ -377,7 +377,7 @@ async function fetchFromGemini(
   }
 
   const model =
-    process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+    process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
 
   const res = await fetch(url, {
