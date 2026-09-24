@@ -6,8 +6,10 @@ import {
 } from "@/lib/google/places-client";
 import {
   getGeminiKey,
+  getGeminiKeySource,
   getOpenAiKey,
   getServerGoogleMapsKey,
+  GEMINI_ENABLE_API_URL,
 } from "@/lib/config/env";
 
 /**
@@ -358,10 +360,22 @@ async function fetchFromOpenAi(
   return parseStructuredJson(content, "openai");
 }
 
+/** Skip Gemini for a while after project-level 403 (API not enabled). */
+let geminiSkippedUntil = 0;
+
 async function fetchFromGemini(
   utterance: string,
   geminiKey: string,
 ): Promise<StructuredFetch> {
+  if (geminiSkippedUntil > Date.now()) {
+    return {
+      ok: false,
+      provider: "gemini",
+      detail:
+        "Gemini temporaneamente saltato (API non abilitata o chiave non autorizzata). Riprovo più tardi.",
+    };
+  }
+
   const model =
     process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
@@ -390,6 +404,23 @@ async function fetchFromGemini(
     } catch {
       /* keep status detail */
     }
+
+    const needsEnable =
+      res.status === 403 &&
+      /not been used|disabled|not enabled|PERMISSION_DENIED|API key not valid/i.test(
+        detail,
+      );
+    if (needsEnable) {
+      // Avoid hammering Gemini on every parse when the project API is off.
+      geminiSkippedUntil = Date.now() + 10 * 60 * 1000;
+      const source = getGeminiKeySource();
+      if (source === "maps_server") {
+        detail = `Gemini non ancora attivo sul progetto Google già usato per Maps. Abilita Generative Language API (gratis): ${GEMINI_ENABLE_API_URL} — poi, se la chiave server ha restrizioni API, aggiungi anche «Generative Language API». Nessuna nuova chiave da creare.`;
+      } else {
+        detail = `Gemini rifiutato (API disabilitata o chiave non valida). ${detail}`;
+      }
+    }
+
     return { ok: false, provider: "gemini", detail };
   }
 
@@ -405,6 +436,8 @@ async function fetchFromGemini(
   if (!content) {
     return { ok: false, provider: "gemini", detail: "Risposta Gemini vuota." };
   }
+  // Success — clear any previous skip window
+  geminiSkippedUntil = 0;
   return parseStructuredJson(content, "gemini");
 }
 
@@ -412,7 +445,7 @@ function providerOrder(): AssistantProviderId[] {
   const pref = process.env.AI_PROVIDER?.trim().toLowerCase();
   if (pref === "openai") return ["openai", "gemini"];
   if (pref === "gemini") return ["gemini", "openai"];
-  // auto: prefer free Gemini when keyed, else OpenAI
+  // auto: prefer free Gemini when a key is resolvable
   if (getGeminiKey()) return ["gemini", "openai"];
   return ["openai", "gemini"];
 }
@@ -430,7 +463,7 @@ async function fetchStructuredFromProviders(
     return {
       ok: false,
       detail:
-        "Assistente IA non configurato (manca OPENAI_API_KEY e GEMINI_API_KEY).",
+        "Assistente IA non configurato (nessuna chiave Google/OpenAI).",
       attempts: [],
     };
   }

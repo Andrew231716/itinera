@@ -38,18 +38,21 @@ Poi, dalla home Maps del progetto itinera-509522:
 
 Minimo click dopo APIs/billing già ok: 2× Create API key + 2× Save restrizioni + incolla env.
 
-## Assistente (opzionale — Gemini gratuito consigliato)
+## Assistente (Gemini gratis senza nuova chiave)
 
-# Gratuito — https://aistudio.google.com/apikey
-GEMINI_API_KEY=...
-# GEMINI_MODEL=gemini-2.0-flash   # opzionale
+Login Google nell’app NON sblocca Gemini automaticamente.
 
-# Fallback a pagamento
-OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-4o-mini
-# AI_PROVIDER=auto   # gemini | openai | auto
+Con GOOGLE_MAPS_API_KEY già presente:
+1. Apri (1 click Enable):
+   https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview?project=itinera-509522
+2. Se la chiave server ha «API restrictions», aggiungi anche Generative Language API → Save
+3. Nessuna nuova chiave da incollare in .env / Vercel — Itinera riusa GOOGLE_MAPS_API_KEY
 
-Con Gemini configurato l’assistente funziona anche se OpenAI è senza credito.
+Opzionale dedicato: GEMINI_API_KEY=... (AI Studio)
+Fallback: OPENAI_API_KEY=sk-...
+# AI_PROVIDER=auto
+
+Con Gemini attivo l’assistente funziona anche se OpenAI è senza credito.
 
 ## Cloud save/share — Supabase (dettaglio in DEPLOY_VERCEL.md)
 

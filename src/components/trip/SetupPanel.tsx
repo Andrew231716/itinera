@@ -103,7 +103,7 @@ export function SetupPanel() {
                 tone={
                   s.status === "ready"
                     ? "ok"
-                    : s.status === "missing"
+                    : s.status === "missing" || s.status === "partial"
                       ? "warn"
                       : "neutral"
                 }
