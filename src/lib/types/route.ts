@@ -18,14 +18,35 @@ export interface RouteStep {
   polyline?: string;
 }
 
+export interface MichelinTollDetail {
+  estimatedPrice?: number;
+  currencyCode?: string;
+  barriers?: Array<{
+    name: string;
+    amount?: number;
+    currencyCode?: string;
+  }>;
+  vignettes?: Array<{
+    name: string;
+    amount?: number;
+    currencyCode?: string;
+    message?: string;
+  }>;
+  matchedSummary?: string;
+  distanceMeters?: number;
+  notes?: string;
+}
+
 export interface TollInfo {
   currencyCode?: string;
   estimatedPrice?: number;
   /** True when the API reported tolls but no price */
   hasTolls: boolean;
   notes?: string;
-  /** Provenance of the amount when present */
-  source?: "google_routes";
+  /** Provenance of the primary amount when present */
+  source?: "google_routes" | "michelin" | "combined";
+  /** Independent ViaMichelin estimate for the same OD (may differ from Google) */
+  michelin?: MichelinTollDetail;
 }
 
 export interface ZoneAdvisory {
