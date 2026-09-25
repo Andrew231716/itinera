@@ -200,6 +200,8 @@ export async function computeRoutesWithGoogle(
     request.destination.label,
   ];
 
+  const limitations = [...mapped.limitations];
+
   const body: Record<string, unknown> = {
     origin: toWaypoint(request.origin),
     destination: toWaypoint(request.destination),
@@ -214,8 +216,20 @@ export async function computeRoutesWithGoogle(
     optimizeWaypointOrder: request.optimizeWaypointOrder,
   };
 
+  if (mapped.requestedReferenceRoutes?.length) {
+    body.requestedReferenceRoutes = mapped.requestedReferenceRoutes;
+  }
+
+  // Google requires departureTime in the future for TRAFFIC_AWARE_* modes.
   if (request.departureAt) {
-    body.departureTime = request.departureAt;
+    const ts = Date.parse(request.departureAt);
+    if (!Number.isNaN(ts) && ts > Date.now() + 30_000) {
+      body.departureTime = request.departureAt;
+    } else {
+      limitations.push(
+        "Orario di partenza nel passato o non valido: calcolo con partenza «adesso».",
+      );
+    }
   }
 
   const res = await fetch(
@@ -241,6 +255,7 @@ export async function computeRoutesWithGoogle(
           "routes.legs.steps.polyline",
           "routes.travelAdvisory",
           "routes.optimizedIntermediateWaypointIndex",
+          "routes.routeLabels",
         ].join(","),
       },
       body: JSON.stringify(body),
@@ -248,10 +263,11 @@ export async function computeRoutesWithGoogle(
   );
 
   if (!res.ok) {
+    const googleMessage = await readGoogleErrorMessage(res);
     if (res.status === 429) {
       throw new AppError(
         "QUOTA",
-        "Limite di utilizzo Routes API raggiunto.",
+        "Limite di utilizzo Routes API raggiunto. Riprova tra poco.",
         429,
       );
     }
@@ -264,7 +280,9 @@ export async function computeRoutesWithGoogle(
     }
     throw new AppError(
       "ROUTES_ERROR",
-      "Impossibile calcolare il percorso con Google Routes.",
+      googleMessage
+        ? `Google Routes: ${googleMessage}`
+        : "Impossibile calcolare il percorso con Google Routes.",
       res.status >= 500 ? 502 : 400,
     );
   }
@@ -276,8 +294,6 @@ export async function computeRoutesWithGoogle(
   const routes = (data.routes ?? []).map((r, i) =>
     mapGoogleRoute(r, i, waypointLabels, request.exclusions),
   );
-
-  const limitations = [...mapped.limitations];
 
   const anyConformant = routes.some((r) => r.isConformant === true);
   const hardViolations = routes.flatMap((r) =>
@@ -334,13 +350,64 @@ export function placeRefFromLatLng(
   };
 }
 
+async function readGoogleErrorMessage(res: Response): Promise<string | null> {
+  try {
+    const payload = (await res.json()) as {
+      error?: { message?: string; status?: string };
+    };
+    const message = payload.error?.message?.trim();
+    if (!message) return null;
+    // Keep user-facing text short and Italian-friendly for known cases.
+    if (/Timestamp must be set to a future time/i.test(message)) {
+      return "l’orario di partenza deve essere nel futuro.";
+    }
+    if (/Place ID .* is invalid/i.test(message)) {
+      return "località non valida. Riscegli partenza/arrivo dalla ricerca.";
+    }
+    if (/Invalid value at 'routing_preference'/i.test(message)) {
+      return "preferenza di percorso non supportata. Riprova con «più veloce».";
+    }
+    // Truncate very long Google messages
+    return message.length > 160 ? `${message.slice(0, 157)}…` : message;
+  } catch {
+    return null;
+  }
+}
+
+/** Normalize Places API (New) resource names to bare ChIJ… ids for Routes. */
+export function normalizeRoutePlaceId(
+  placeId: string | undefined,
+): string | undefined {
+  if (!placeId || placeId.startsWith("demo-")) return undefined;
+  const bare = placeId.startsWith("places/")
+    ? placeId.slice("places/".length)
+    : placeId;
+  if (!bare || bare.length < 8) return undefined;
+  return bare;
+}
+
 function toWaypoint(place: {
   location: LatLng;
   placeId?: string;
   label: string;
 }): Record<string, unknown> {
-  if (place.placeId && !place.placeId.startsWith("demo-")) {
-    return { placeId: place.placeId };
+  const placeId = normalizeRoutePlaceId(place.placeId);
+  // Prefer coordinates when available: more reliable than placeId across APIs.
+  if (
+    Number.isFinite(place.location.lat) &&
+    Number.isFinite(place.location.lng)
+  ) {
+    return {
+      location: {
+        latLng: {
+          latitude: place.location.lat,
+          longitude: place.location.lng,
+        },
+      },
+    };
+  }
+  if (placeId) {
+    return { placeId };
   }
   return {
     location: {

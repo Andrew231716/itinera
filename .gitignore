@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+LEGGIMI_PER_CHATGPT.txt
+itinera-per-chatgpt.zip
