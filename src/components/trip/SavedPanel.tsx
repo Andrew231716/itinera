@@ -10,6 +10,8 @@ import {
   MapPin,
   Trash2,
   Navigation,
+  History,
+  Eraser,
 } from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
 import {
@@ -20,6 +22,12 @@ import {
   type SavedPlace,
   type SavedPlaceKind,
 } from "@/lib/storage/saved-places";
+import {
+  formatDistance,
+  formatDuration,
+  formatCurrency,
+  formatRelativeIt,
+} from "@/lib/utils/format";
 import {
   Badge,
   Button,
@@ -41,10 +49,15 @@ const KINDS: Array<{ id: SavedPlaceKind; label: string; icon: typeof Heart }> = 
 export function SavedPanel() {
   const trip = useTripStore((s) => s.trip);
   const savedTrips = useTripStore((s) => s.savedTrips);
+  const tripHistory = useTripStore((s) => s.tripHistory);
   const loadTrip = useTripStore((s) => s.loadTrip);
   const persistTrip = useTripStore((s) => s.persistTrip);
   const refreshSavedTrips = useTripStore((s) => s.refreshSavedTrips);
+  const refreshTripHistory = useTripStore((s) => s.refreshTripHistory);
   const removeSavedTrip = useTripStore((s) => s.removeSavedTrip);
+  const loadHistoryEntry = useTripStore((s) => s.loadHistoryEntry);
+  const removeHistoryEntry = useTripStore((s) => s.removeHistoryEntry);
+  const clearHistory = useTripStore((s) => s.clearHistory);
   const resetTrip = useTripStore((s) => s.resetTrip);
   const duplicateCurrentTrip = useTripStore((s) => s.duplicateCurrentTrip);
   const setOrigin = useTripStore((s) => s.setOrigin);
@@ -65,7 +78,8 @@ export function SavedPanel() {
   useEffect(() => {
     reloadPlaces();
     void refreshSavedTrips();
-  }, [refreshSavedTrips]);
+    refreshTripHistory();
+  }, [refreshSavedTrips, refreshTripHistory]);
 
   const filteredPlaces = useMemo(
     () =>
@@ -77,10 +91,126 @@ export function SavedPanel() {
     <div className="space-y-6">
       <SectionTitle
         title="Salvati"
-        subtitle="Viaggi memorizzati, parcheggi e posti preferiti"
+        subtitle="Cronologia automatica, viaggi memorizzati e posti preferiti"
       />
 
       <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-[var(--ink)]">
+            <History className="h-4 w-4 text-[var(--brand)]" />
+            Cronologia viaggi
+          </h3>
+          {tripHistory.length > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Vuoi cancellare tutta la cronologia dei percorsi calcolati?",
+                  )
+                ) {
+                  clearHistory();
+                }
+              }}
+            >
+              <Eraser className="h-3.5 w-3.5" />
+              Svuota
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-[11px] leading-relaxed text-[var(--ink-muted)]">
+          Si aggiorna automaticamente a ogni «Calcola percorso». I viaggi
+          salvati restano separati (pin manuale sotto).
+        </p>
+
+        {tripHistory.length === 0 ? (
+          <EmptyHint>
+            Nessun percorso in cronologia. Calcola un itinerario per
+            registrarlo qui.
+          </EmptyHint>
+        ) : (
+          <ul className="space-y-2">
+            {tripHistory.map((entry) => {
+              const rs = entry.routeSummary;
+              return (
+                <li
+                  key={entry.id}
+                  className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5"
+                >
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => loadHistoryEntry(entry)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-[var(--ink)]">
+                        {entry.trip.origin?.label ?? "?"} →{" "}
+                        {entry.trip.destination?.label ?? "?"}
+                      </p>
+                      <span className="shrink-0 text-[10px] text-[var(--ink-faint)]">
+                        {formatRelativeIt(entry.computedAt)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                      {entry.trip.meta.title}
+                      {entry.trip.stops.length > 0
+                        ? ` · ${entry.trip.stops.length} tappe`
+                        : ""}
+                      {rs?.distanceMeters != null
+                        ? ` · ${formatDistance(rs.distanceMeters)}`
+                        : ""}
+                      {rs?.durationSeconds != null
+                        ? ` · ${formatDuration(rs.durationSeconds)}`
+                        : ""}
+                      {rs?.tollEstimate != null
+                        ? ` · ${formatCurrency(
+                            rs.tollEstimate,
+                            rs.tollCurrency ?? "EUR",
+                          )}`
+                        : ""}
+                    </p>
+                  </button>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => loadHistoryEntry(entry)}
+                    >
+                      Riapri
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        loadHistoryEntry(entry);
+                        void persistTrip().then(() => refreshSavedTrips());
+                      }}
+                    >
+                      <Bookmark className="h-3.5 w-3.5" />
+                      Salva
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeHistoryEntry(entry.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Elimina
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="space-y-3 border-t border-[var(--line)] pt-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-[var(--ink)]">
             Viaggi salvati
@@ -98,7 +228,7 @@ export function SavedPanel() {
         {savedTrips.length === 0 ? (
           <EmptyHint>
             Nessun viaggio salvato. Imposta partenza/arrivo e tocca «Salva
-            viaggio attuale».
+            viaggio attuale», oppure salva dalla cronologia.
           </EmptyHint>
         ) : (
           <ul className="space-y-2">

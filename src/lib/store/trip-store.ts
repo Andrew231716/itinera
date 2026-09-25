@@ -14,6 +14,13 @@ import {
 } from "@/lib/types/trip";
 import type { ComputedRoute } from "@/lib/types/route";
 import { getTripRepository } from "@/lib/storage/trip-repository";
+import {
+  clearTripHistory,
+  listTripHistory,
+  recordTripHistory,
+  removeTripHistoryEntry,
+  type TripHistoryEntry,
+} from "@/lib/storage/trip-history";
 import { isValidPolygon } from "@/lib/utils/geometry";
 import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
 
@@ -47,6 +54,7 @@ interface TripState {
   mobilePanelOpen: boolean;
   exclusionDraftPoints: { lat: number; lng: number }[];
   savedTrips: TripDraft[];
+  tripHistory: TripHistoryEntry[];
 
   setActivePanel: (tab: PanelTab) => void;
   setMobilePanelOpen: (open: boolean) => void;
@@ -87,6 +95,10 @@ interface TripState {
   refreshSavedTrips: () => Promise<void>;
   duplicateCurrentTrip: () => Promise<void>;
   removeSavedTrip: (id: string) => Promise<void>;
+  refreshTripHistory: () => void;
+  loadHistoryEntry: (entry: TripHistoryEntry) => void;
+  removeHistoryEntry: (id: string) => void;
+  clearHistory: () => void;
 }
 
 function touch(trip: TripDraft): TripDraft {
@@ -118,6 +130,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   mobilePanelOpen: true,
   exclusionDraftPoints: [],
   savedTrips: [],
+  tripHistory: [],
 
   setActivePanel: (tab) => set({ activePanel: tab }),
   setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
@@ -334,21 +347,43 @@ export const useTripStore = create<TripState>((set, get) => ({
       trip: touch({ ...s.trip, selectedRouteId: routeId }),
     })),
 
-  setRoutesResult: ({ routes, limitations, mode }) =>
-    set((s) => {
-      const preferred =
-        routes.find((r) => r.isConformant === true) ?? routes[0] ?? null;
-      return {
-        routes,
-        routeLimitations: limitations,
-        routeMode: mode,
-        routeError: null,
-        trip: touch({
-          ...s.trip,
-          selectedRouteId: preferred?.id ?? null,
-        }),
-      };
-    }),
+  setRoutesResult: ({ routes, limitations, mode }) => {
+    const preferred =
+      routes.find((r) => r.isConformant === true) ?? routes[0] ?? null;
+    const nextTrip = touch({
+      ...get().trip,
+      selectedRouteId: preferred?.id ?? null,
+    });
+
+    set({
+      routes,
+      routeLimitations: limitations,
+      routeMode: mode,
+      routeError: null,
+      trip: nextTrip,
+    });
+
+    // Auto-cronologia: solo calcoli con almeno un percorso reale.
+    if (routes.length > 0 && nextTrip.origin && nextTrip.destination) {
+      const toll =
+        preferred?.tolls?.estimatedPrice ??
+        preferred?.tolls?.michelin?.estimatedPrice;
+      recordTripHistory({
+        trip: nextTrip,
+        routeSummary: {
+          label: preferred?.label,
+          distanceMeters: preferred?.distanceMeters,
+          durationSeconds: preferred?.durationSeconds,
+          tollEstimate: toll,
+          tollCurrency:
+            preferred?.tolls?.currencyCode ??
+            preferred?.tolls?.michelin?.currencyCode,
+          mode,
+        },
+      });
+      set({ tripHistory: listTripHistory() });
+    }
+  },
 
   setRouteLoading: () =>
     set({ routeMode: "loading", routeError: null }),
@@ -418,5 +453,30 @@ export const useTripStore = create<TripState>((set, get) => ({
       get().resetTrip();
     }
     await get().refreshSavedTrips();
+  },
+
+  refreshTripHistory: () => {
+    set({ tripHistory: listTripHistory() });
+  },
+
+  loadHistoryEntry: (entry) => {
+    set({
+      trip: structuredClone(entry.trip),
+      routes: [],
+      routeLimitations: [],
+      routeMode: "idle",
+      routeError: null,
+      activePanel: "itinerary",
+    });
+  },
+
+  removeHistoryEntry: (id) => {
+    removeTripHistoryEntry(id);
+    set({ tripHistory: listTripHistory() });
+  },
+
+  clearHistory: () => {
+    clearTripHistory();
+    set({ tripHistory: [] });
   },
 }));
