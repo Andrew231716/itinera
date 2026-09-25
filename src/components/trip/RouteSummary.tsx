@@ -21,6 +21,7 @@ import {
   openMapsDirectionsUrl,
 } from "@/lib/google/maps-links";
 import { getTripRepository } from "@/lib/storage/trip-repository";
+import { getTrafficInfo } from "@/lib/routing/traffic-info";
 import { formatDistance, formatDuration, formatCurrency } from "@/lib/utils/format";
 import {
   Badge,
@@ -28,6 +29,7 @@ import {
   EmptyHint,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { TrafficMonitorPanel } from "@/components/trip/TrafficMonitorPanel";
 
 export function RouteSummary() {
   const trip = useTripStore((s) => s.trip);
@@ -49,6 +51,7 @@ export function RouteSummary() {
       travelMode: trip.travelMode,
       preferences: trip.preferences,
       routePath: selected?.decodedPath,
+      routeLabel: selected?.label,
     });
   }, [trip, selected]);
 
@@ -112,6 +115,7 @@ export function RouteSummary() {
           {routes.map((route) => {
             const active = selected?.id === route.id;
             const hard = route.violations.filter((v) => v.severity === "hard");
+            const traffic = getTrafficInfo(route);
             return (
               <button
                 key={route.id}
@@ -138,6 +142,14 @@ export function RouteSummary() {
                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-[var(--ink-muted)]">
                   <span>{formatDistance(route.distanceMeters)}</span>
                   <span>{formatDuration(route.durationSeconds)}</span>
+                  {traffic.level !== "unknown" ? (
+                    <span>
+                      {traffic.label}
+                      {traffic.delaySeconds >= 60
+                        ? ` (+${Math.round(traffic.delaySeconds / 60)} min)`
+                        : ""}
+                    </span>
+                  ) : null}
                   {route.tolls?.hasTolls || route.tolls?.michelin ? (
                     <span>
                       {route.tolls.estimatedPrice != null
@@ -212,6 +224,8 @@ export function RouteSummary() {
               }
             />
           </div>
+
+          <TrafficMonitorPanel route={selected} />
 
           {selected.tolls?.hasTolls || selected.tolls?.michelin ? (
             <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
@@ -481,6 +495,25 @@ function ShareActions({
         subtitle="Apri in Maps il percorso selezionato in Itinera (non un ricalcolo generico)"
       />
 
+      <div
+        className={`rounded-xl border px-3 py-2 text-xs ${
+          mapsLink.lockedToItineraRoute
+            ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+            : "border-amber-200 bg-amber-50 text-amber-950"
+        }`}
+      >
+        <p className="font-semibold">
+          {mapsLink.lockedToItineraRoute
+            ? `Maps seguirà: ${mapsLink.routeLabel ?? selected?.label ?? "percorso Itinera"}`
+            : "Maps potrebbe ricalcolare un percorso generico"}
+        </p>
+        <p className="mt-1 leading-relaxed opacity-90">
+          {mapsLink.lockedToItineraRoute
+            ? `Il link include ${mapsLink.shapeWaypointCount} punti intermedi della geometria scelta in Itinera. Se cambi alternativa sopra, aggiorna anche il link Maps.`
+            : "Calcola un percorso reale e seleziona un’alternativa: così Maps riceve i punti del tracciato Itinera."}
+        </p>
+      </div>
+
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
         <p className="font-medium text-[var(--ink)]">Riepilogo link Maps</p>
         <p>
@@ -500,12 +533,19 @@ function ShareActions({
         >
           <ExternalLink className="h-4 w-4" />
           Rivedi e apri in Google Maps
+          {mapsLink.routeLabel ? ` «${mapsLink.routeLabel}»` : ""}
         </Button>
       ) : (
         <div className="space-y-2 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3">
           <p className="text-xs text-[var(--accent-ink)]">
-            Confermi l’apertura? Le esclusioni personalizzate non saranno
-            trasferite.
+            Confermi l’apertura di{" "}
+            <span className="font-semibold">
+              {mapsLink.routeLabel ?? "questo percorso"}
+            </span>
+            ? Le esclusioni personalizzate non saranno trasferite.
+            {mapsLink.lockedToItineraRoute
+              ? ` Maps riceverà ${mapsLink.shapeWaypointCount} punti del tracciato Itinera.`
+              : ""}
           </p>
           <div className="flex gap-2">
             <Button

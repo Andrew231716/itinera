@@ -121,6 +121,8 @@ Valutazione sintetica: ORS adatto a `avoid_polygons`; GraphHopper forte su custo
 | Condivisione Google Maps + segmenti | Operativa |
 | Pedaggi Google Routes + ViaMichelin | Operativa (stime indipendenti) |
 | Cronologia viaggi (auto locale) | Operativa |
+| Monitora traffico sul percorso | Operativa (ritardo live vs statico Google) |
+| Apri Maps sul percorso Itinera scelto | Operativa (waypoints geometria) |
 | Share nativo / link pubblico locale | Operativa |
 | Share cloud Supabase | Richiede config + migration |
 | Persistenza locale | Operativa |
