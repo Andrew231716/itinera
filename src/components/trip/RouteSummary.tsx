@@ -50,7 +50,7 @@ export function RouteSummary() {
       stops: trip.stops.map((s) => s.place),
       travelMode: trip.travelMode,
       preferences: trip.preferences,
-      routePath: selected?.decodedPath,
+      // Solo tappe scelte dall’utente — niente punti intermedi inventati dalla geometria.
       routeLabel: selected?.label,
     });
   }, [trip, selected]);
@@ -492,37 +492,23 @@ function ShareActions({
     <div className="space-y-3 border-t border-[var(--line)] pt-4">
       <SectionTitle
         title="Condivisione"
-        subtitle="Apri in Maps il percorso selezionato in Itinera (non un ricalcolo generico)"
+        subtitle="Apre Maps con partenza, arrivo e solo le tappe che hai inserito tu"
       />
 
-      <div
-        className={`rounded-xl border px-3 py-2 text-xs ${
-          mapsLink.lockedToItineraRoute
-            ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-            : "border-amber-200 bg-amber-50 text-amber-950"
-        }`}
-      >
-        <p className="font-semibold">
-          {mapsLink.lockedToItineraRoute
-            ? `Maps seguirà: ${mapsLink.routeLabel ?? selected?.label ?? "percorso Itinera"}`
-            : "Maps potrebbe ricalcolare un percorso generico"}
-        </p>
-        <p className="mt-1 leading-relaxed opacity-90">
-          {mapsLink.lockedToItineraRoute
-            ? `Il link include ${mapsLink.shapeWaypointCount} punti intermedi della geometria scelta in Itinera. Se cambi alternativa sopra, aggiorna anche il link Maps.`
-            : "Calcola un percorso reale e seleziona un’alternativa: così Maps riceve i punti del tracciato Itinera."}
-        </p>
-      </div>
-
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
-        <p className="font-medium text-[var(--ink)]">Riepilogo link Maps</p>
+        <p className="font-medium text-[var(--ink)]">Link Maps</p>
         <p>
           {mapsLink.preview.origin} → {mapsLink.preview.destination}
         </p>
-        {mapsLink.preview.stops.length > 0 ? (
-          <p>Tappe: {mapsLink.preview.stops.join(" · ")}</p>
-        ) : null}
-        <p>{mapsLink.preview.note}</p>
+        {trip.stops.length > 0 ? (
+          <p>Tappe tue: {trip.stops.map((s) => s.place.label).join(" · ")}</p>
+        ) : (
+          <p>Nessuna tappa intermedia (solo A → B).</p>
+        )}
+        <p className="mt-1">
+          Maps può ricalcolare il tracciato: le esclusioni Itinera (es. Evita
+          Svizzera) non vengono trasferite nel link.
+        </p>
       </div>
 
       {!showPreview ? (
@@ -533,19 +519,14 @@ function ShareActions({
         >
           <ExternalLink className="h-4 w-4" />
           Rivedi e apri in Google Maps
-          {mapsLink.routeLabel ? ` «${mapsLink.routeLabel}»` : ""}
         </Button>
       ) : (
         <div className="space-y-2 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3">
           <p className="text-xs text-[var(--accent-ink)]">
-            Confermi l’apertura di{" "}
-            <span className="font-semibold">
-              {mapsLink.routeLabel ?? "questo percorso"}
-            </span>
-            ? Le esclusioni personalizzate non saranno trasferite.
-            {mapsLink.lockedToItineraRoute
-              ? ` Maps riceverà ${mapsLink.shapeWaypointCount} punti del tracciato Itinera.`
-              : ""}
+            Confermi l’apertura? Solo partenza
+            {trip.stops.length > 0 ? `, ${trip.stops.length} tappe` : ""} e
+            arrivo — nessuna tappa inventata. Le esclusioni personalizzate non
+            saranno trasferite.
           </p>
           <div className="flex gap-2">
             <Button
