@@ -22,9 +22,7 @@ export interface ConstraintCheckResult {
 /** Country polygons: ignore path near OD so departure from inside CH is fair. */
 const COUNTRY_ZONE_ENDPOINT_BUFFER_M = 8000;
 
-function isCountryGeoZone(
-  exclusion: CustomExclusion,
-): exclusion is CustomExclusion & { kind: "geo_zone"; notes?: string } {
+function isCountryGeoZone(exclusion: CustomExclusion): boolean {
   return (
     exclusion.kind === "geo_zone" &&
     typeof exclusion.notes === "string" &&
