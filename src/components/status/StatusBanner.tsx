@@ -1,6 +1,7 @@
 "use client";
 
 import { useTripStore } from "@/lib/store/trip-store";
+import { getTrafficInfo } from "@/lib/routing/traffic-info";
 import { Badge } from "@/components/ui/primitives";
 
 export function StatusBanner() {
@@ -12,6 +13,7 @@ export function StatusBanner() {
 
   const selected =
     routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0] ?? null;
+  const traffic = selected ? getTrafficInfo(selected) : null;
 
   return (
     <div
@@ -43,6 +45,17 @@ export function StatusBanner() {
       {routeMode === "live" && selected?.isConformant === true && (
         <Badge tone="ok">Percorso disponibile</Badge>
       )}
+      {routeMode === "live" &&
+        traffic &&
+        traffic.level !== "unknown" &&
+        traffic.level !== "fluid" && (
+          <Badge tone={traffic.level === "moderate" ? "demo" : "warn"}>
+            {traffic.label}
+            {traffic.delaySeconds >= 60
+              ? ` +${Math.round(traffic.delaySeconds / 60)} min`
+              : ""}
+          </Badge>
+        )}
       {routeError ? (
         <span className="rounded-lg bg-red-50 px-2 py-1 text-[10px] text-red-700 shadow-sm">
           {routeError}

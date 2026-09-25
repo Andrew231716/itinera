@@ -1,4 +1,5 @@
 import type { LatLng, PlaceRef, RoadPreferences, TravelMode } from "@/lib/types/trip";
+import { haversineMeters } from "@/lib/utils/geometry";
 
 const MODE_MAP: Record<TravelMode, string> = {
   DRIVE: "driving",
@@ -35,6 +36,11 @@ export interface MapsLinkResult {
   includedPreferences: string[];
   omitted: string[];
   requiresSegmentation: boolean;
+  /** True when URL embeds sampled geometry of the Itinera-selected route */
+  lockedToItineraRoute: boolean;
+  /** Label of the Itinera route being opened, when known */
+  routeLabel?: string;
+  shapeWaypointCount: number;
   segments?: Array<{
     index: number;
     label: string;
@@ -51,35 +57,49 @@ export interface MapsLinkResult {
   };
 }
 
-export const MAX_WAYPOINTS_IN_URL = 8;
+/** Google Maps Directions URLs accept up to 10 waypoints; stay at 9 for safety. */
+export const MAX_WAYPOINTS_IN_URL = 9;
 
 /**
  * Sample intermediate points along a decoded route so Maps follows Itinera’s
  * chosen geometry as closely as the Directions URL API allows (no polyline param).
+ * Samples by distance along the path (not by index) for better shape fidelity.
  */
 export function sampleRoutePathAsWaypoints(
   path: LatLng[],
   maxWaypoints = MAX_WAYPOINTS_IN_URL,
 ): PlaceRef[] {
   if (path.length < 3 || maxWaypoints <= 0) return [];
-  const inner = path.slice(1, -1);
-  if (inner.length === 0) return [];
-  if (inner.length <= maxWaypoints) {
-    return inner.map((p, i) => ({
-      id: `shape-${i}`,
-      label: `Punto percorso ${i + 1}`,
-      location: p,
-      source: "manual" as const,
-    }));
+
+  const cum: number[] = [0];
+  for (let i = 1; i < path.length; i++) {
+    cum.push(cum[i - 1] + haversineMeters(path[i - 1], path[i]));
   }
+  const total = cum[cum.length - 1];
+  if (total <= 0) return [];
+
+  function pointAtDistance(target: number): LatLng {
+    if (target <= 0) return path[0];
+    if (target >= total) return path[path.length - 1];
+    let i = 1;
+    while (i < cum.length && cum[i] < target) i++;
+    const prev = path[i - 1];
+    const next = path[i];
+    const segStart = cum[i - 1];
+    const segLen = cum[i] - segStart;
+    const t = segLen > 0 ? (target - segStart) / segLen : 0;
+    return {
+      lat: prev.lat + (next.lat - prev.lat) * t,
+      lng: prev.lng + (next.lng - prev.lng) * t,
+    };
+  }
+
   const out: PlaceRef[] = [];
   for (let i = 0; i < maxWaypoints; i++) {
-    const t = (i + 1) / (maxWaypoints + 1);
-    const idx = Math.min(
-      inner.length - 1,
-      Math.max(0, Math.round(t * (inner.length - 1))),
-    );
-    const p = inner[idx];
+    const target = ((i + 1) / (maxWaypoints + 1)) * total;
+    // Keep samples off the absolute endpoints
+    const clamped = Math.min(total * 0.98, Math.max(total * 0.02, target));
+    const p = pointAtDistance(clamped);
     out.push({
       id: `shape-${i}`,
       label: `Punto percorso ${i + 1}`,
@@ -87,6 +107,7 @@ export function sampleRoutePathAsWaypoints(
       source: "manual",
     });
   }
+
   // Deduplicate consecutive identical samples
   return out.filter((p, i, arr) => {
     if (i === 0) return true;
@@ -156,9 +177,18 @@ export function buildGoogleMapsDirectionsLink(params: {
   preferences: RoadPreferences;
   /** Decoded polyline of the route selected in Itinera */
   routePath?: LatLng[];
+  /** Label of the selected Itinera route (for preview / UX) */
+  routeLabel?: string;
 }): MapsLinkResult {
-  const { origin, destination, stops, travelMode, preferences, routePath } =
-    params;
+  const {
+    origin,
+    destination,
+    stops,
+    travelMode,
+    preferences,
+    routePath,
+    routeLabel,
+  } = params;
   const omitted: string[] = [
     "Esclusioni personalizzate (città, strade, zone) non trasferibili nel link Google Maps.",
   ];
@@ -203,6 +233,7 @@ export function buildGoogleMapsDirectionsLink(params: {
 
   if (usingShape) {
     // Prefer geometry of the selected Itinera route over free-form stop list.
+    // The polyline already passes through planned stops.
     waypointBatch = shapeWaypoints;
     omitted.push(
       "Il link include punti intermedi del percorso scelto in Itinera per avvicinare Maps a quell’alternativa (Maps non accetta la polyline completa).",
@@ -254,16 +285,25 @@ export function buildGoogleMapsDirectionsLink(params: {
     includedPreferences,
     omitted,
     requiresSegmentation,
+    lockedToItineraRoute: usingShape,
+    routeLabel,
+    shapeWaypointCount: usingShape ? shapeWaypoints.length : 0,
     segments,
     preview: {
       origin: origin.label,
       destination: destination.label,
       stops: usingShape
-        ? [`${shapeWaypoints.length} punti del percorso Itinera`]
+        ? [
+            `${shapeWaypoints.length} punti del percorso Itinera${
+              routeLabel ? ` «${routeLabel}»` : ""
+            }`,
+          ]
         : stops.map((s) => s.label),
       travelMode: MODE_MAP[travelMode],
       note: usingShape
-        ? "Apre Maps guidandolo lungo il percorso selezionato in Itinera (via punti intermedi)."
+        ? `Apre Maps sul percorso selezionato in Itinera${
+            routeLabel ? ` (${routeLabel})` : ""
+          } tramite ${shapeWaypoints.length} punti intermedi.`
         : requiresSegmentation
           ? "Il viaggio richiede navigazione a segmenti."
           : "Il link include l’itinerario completo supportato da Maps.",
