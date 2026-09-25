@@ -13,7 +13,7 @@ import {
 import type { AssistantParseResult } from "@/lib/ai/assistant";
 import { useTripStore } from "@/lib/store/trip-store";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
-import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
+import { createExclusionFromLabel } from "@/lib/routing/exclusion-helpers";
 
 export function NaturalLanguageAssistant() {
   const [utterance, setUtterance] = useState("");
@@ -87,6 +87,18 @@ export function NaturalLanguageAssistant() {
         // Resolve exclusion place via Places if we have matching stop/origin labels later;
         // for now create a labeled hard exclusion without coords until user picks —
         // Better: try to resolve from preview resolved places list
+        // Country labels (e.g. «Svizzera») need no Places resolve.
+        const countryOnly = createExclusionFromLabel({
+          id: nanoid(),
+          kind: ex.kind,
+          label: ex.label,
+          place: null,
+        });
+        if (countryOnly?.kind === "geo_zone") {
+          addExclusion(countryOnly);
+          continue;
+        }
+
         const match =
           pending.resolvedStops?.find((s) =>
             s.label.toLowerCase().includes(ex.label.toLowerCase()),
@@ -124,18 +136,13 @@ export function NaturalLanguageAssistant() {
         }
 
         if (place) {
-          const kind =
-            ex.kind === "geo_zone" || ex.kind === "road_segment"
-              ? "city"
-              : ex.kind;
-          addExclusion(
-            createPointExclusion({
-              id: nanoid(),
-              kind,
-              label: ex.label,
-              place,
-            }),
-          );
+          const exclusion = createExclusionFromLabel({
+            id: nanoid(),
+            kind: ex.kind,
+            label: ex.label,
+            place,
+          });
+          if (exclusion) addExclusion(exclusion);
         }
       }
     }

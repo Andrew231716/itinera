@@ -1,4 +1,11 @@
-import type { CustomExclusion, LatLng, PlaceRef, PointExclusion } from "@/lib/types/trip";
+import type {
+  CustomExclusion,
+  GeoZoneExclusion,
+  LatLng,
+  PlaceRef,
+  PointExclusion,
+} from "@/lib/types/trip";
+import { matchCountryZone } from "@/lib/geo/country-zones";
 
 /**
  * Choose an avoidance radius that is usable for routing checks.
@@ -42,6 +49,56 @@ export function createPointExclusion(params: {
       suggestedExclusionRadiusMeters(params.kind, params.label),
     createdAt: new Date().toISOString(),
   };
+}
+
+export function createCountryExclusion(params: {
+  id: string;
+  label: string;
+  strength?: GeoZoneExclusion["strength"];
+}): GeoZoneExclusion | null {
+  const zone = matchCountryZone(params.label);
+  if (!zone) return null;
+  return {
+    id: params.id,
+    kind: "geo_zone",
+    label: zone.label,
+    strength: params.strength ?? "hard",
+    polygon: zone.polygon.map((p) => ({ ...p })),
+    notes: `Esclusione paese: ${zone.label} (poligono approssimato).`,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Build the best exclusion for a label: country polygon when recognized,
+ * otherwise a point exclusion (requires place).
+ */
+export function createExclusionFromLabel(params: {
+  id: string;
+  kind: PointExclusion["kind"] | "geo_zone" | "road_segment";
+  label: string;
+  place?: PlaceRef | null;
+  strength?: "hard" | "soft";
+}): CustomExclusion | null {
+  const country = createCountryExclusion({
+    id: params.id,
+    label: params.label,
+    strength: params.strength,
+  });
+  if (country) return country;
+
+  if (!params.place) return null;
+  const kind =
+    params.kind === "geo_zone" || params.kind === "road_segment"
+      ? "city"
+      : params.kind;
+  return createPointExclusion({
+    id: params.id,
+    kind,
+    label: params.label,
+    place: params.place,
+    strength: params.strength,
+  });
 }
 
 /** Geographic offset used to request a detour intermediate around an exclusion. */

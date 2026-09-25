@@ -14,7 +14,7 @@ import {
   SectionTitle,
 } from "@/components/ui/primitives";
 import { PlaceSearch, MapPickHint } from "@/components/trip/PlaceSearch";
-import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
+import { createExclusionFromLabel, createPointExclusion } from "@/lib/routing/exclusion-helpers";
 
 function exclusionKindLabel(kind: CustomExclusion["kind"]): string {
   switch (kind) {
@@ -27,7 +27,7 @@ function exclusionKindLabel(kind: CustomExclusion["kind"]): string {
     case "road_segment":
       return "Tratto";
     case "geo_zone":
-      return "Zona";
+      return "Paese / zona";
   }
 }
 
@@ -76,20 +76,47 @@ export function ExclusionsPanel() {
             </button>
           ))}
         </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const ex = createExclusionFromLabel({
+                id: nanoid(),
+                kind: "geo_zone",
+                label: "Svizzera",
+              });
+              if (ex) addExclusion(ex);
+            }}
+          >
+            Evita Svizzera
+          </Button>
+        </div>
         <PlaceSearch
           label="Località da escludere"
           value={null}
           onSelect={(place) => {
-            addExclusion(
+            const ex =
+              createExclusionFromLabel({
+                id: nanoid(),
+                kind,
+                label: place.label,
+                place,
+              }) ??
               createPointExclusion({
                 id: nanoid(),
                 kind,
                 label: place.label,
                 place,
-              }),
-            );
+              });
+            addExclusion(ex);
           }}
         />
+        <p className="text-[11px] text-[var(--ink-muted)]">
+          Per un paese (es. «Svizzera») usa il pulsante sopra: viene applicato un
+          poligono sul territorio, non un singolo punto sulla mappa.
+        </p>
       </div>
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3 space-y-3">

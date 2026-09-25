@@ -139,6 +139,28 @@ export function pathIntersectsPolygon(
   return dense.some((p) => pointInPolygon(p, polygon));
 }
 
+/**
+ * Like pathIntersectsPolygon, but ignores points within `endpointBufferMeters`
+ * of the path start/end. Used for country exclusions when origin/destination
+ * already sit inside the avoided country — only transit deeper into the
+ * polygon counts as a violation.
+ */
+export function pathIntersectsPolygonAwayFromEndpoints(
+  path: LatLng[],
+  polygon: LatLng[],
+  endpointBufferMeters: number,
+): boolean {
+  if (path.length === 0 || polygon.length < 3) return false;
+  const start = path[0];
+  const end = path[path.length - 1];
+  const dense = densifyPath(path);
+  return dense.some((p) => {
+    if (haversineMeters(p, start) <= endpointBufferMeters) return false;
+    if (haversineMeters(p, end) <= endpointBufferMeters) return false;
+    return pointInPolygon(p, polygon);
+  });
+}
+
 export function pathNearPoint(
   path: LatLng[],
   center: LatLng,

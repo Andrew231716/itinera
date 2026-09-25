@@ -258,10 +258,11 @@ NON calcolare percorsi.
 Se una località è ambigua, status=needs_clarification e poni domande.
 Se la richiesta è impossibile (es. destinazione assente e non deducibile), status=impossible.
 Se chiede funzioni non supportate (es. evitare tunnel in modo garantito), elenca in unsupportedRequests e usa status=unsupported o ok con caveat.
-Distingui hardExclusions (obbligatorie, es. "non attraversare Bologna", "evita Chiasso", "evita Lugano") da preferences (soft).
+Distingui hardExclusions (obbligatorie, es. "non attraversare Bologna", "evita Chiasso", "evita Lugano", "evita la Svizzera") da preferences (soft).
 Se l'utente parla del "percorso attuale" / "itinerario attuale" e nel contesto sono già presenti partenza e arrivo, lascia originText e destinationText a null e applica solo le modifiche richieste (esclusioni, preferenze, tappe aggiuntive).
 maxExtraMinutes: converti "un'ora" in 60, "mezz'ora" in 30, ecc.
 travelMode default null se non specificato.
+Per Paesi (Svizzera/Switzerland/CH/Suisse/Schweiz) usa hardExclusions kind=geo_zone con label "Svizzera" (o il nome del paese).
 Per dogane/valichi: usa hardExclusions kind=city o address con il nome del luogo (es. "Chiasso", "dogana di Chiasso").`;
 
 type StructuredFetch =

@@ -3,6 +3,7 @@ import type { CustomExclusion, LatLng } from "@/lib/types/trip";
 import {
   isValidPolygon,
   pathIntersectsPolygon,
+  pathIntersectsPolygonAwayFromEndpoints,
   pathNearPoint,
   pathNearSegment,
 } from "@/lib/utils/geometry";
@@ -16,6 +17,19 @@ export interface ConstraintCheckResult {
     exclusionLabel: string;
     reason: string;
   }>;
+}
+
+/** Country polygons: ignore path near OD so departure from inside CH is fair. */
+const COUNTRY_ZONE_ENDPOINT_BUFFER_M = 8000;
+
+function isCountryGeoZone(
+  exclusion: CustomExclusion,
+): exclusion is CustomExclusion & { kind: "geo_zone"; notes?: string } {
+  return (
+    exclusion.kind === "geo_zone" &&
+    typeof exclusion.notes === "string" &&
+    exclusion.notes.startsWith("Esclusione paese:")
+  );
 }
 
 /**
@@ -101,7 +115,13 @@ export function checkRouteConstraintsDetailed(
           });
           break;
         }
-        intersects = pathIntersectsPolygon(path, exclusion.polygon);
+        intersects = isCountryGeoZone(exclusion)
+          ? pathIntersectsPolygonAwayFromEndpoints(
+              path,
+              exclusion.polygon,
+              COUNTRY_ZONE_ENDPOINT_BUFFER_M,
+            )
+          : pathIntersectsPolygon(path, exclusion.polygon);
         break;
       }
     }
