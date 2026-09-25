@@ -70,7 +70,7 @@ export function PreferencesPanel() {
       />
       <ToggleRow
         label="Preferisci il percorso più breve"
-        description="Indicazione preferenziale (fuel-efficient), non distanza minima garantita."
+        description="Richiede un’alternativa eco/efficiente (FUEL_EFFICIENT), non la distanza minima garantita."
         checked={preferences.preferShortest}
         onChange={(preferShortest) => setPreferences({ preferShortest })}
         soft

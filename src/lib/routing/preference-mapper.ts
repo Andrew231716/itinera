@@ -80,7 +80,7 @@ export function describePreferenceStatuses(
       enabled: preferences.preferShortest,
       status: preferences.preferShortest ? "preferential" : "preferential",
       explanation: preferences.preferShortest
-        ? "Mappato su FUEL_EFFICIENT quando più veloce è off: non è distanza minima garantita."
+        ? "Richiesto come percorso di riferimento FUEL_EFFICIENT (eco/efficiente), non distanza minima garantita."
         : "Disattivato.",
     },
     {
@@ -107,7 +107,10 @@ export function describePreferenceStatuses(
 }
 
 export interface GooglePreferenceMapping {
-  routingPreference: "TRAFFIC_AWARE" | "TRAFFIC_AWARE_OPTIMAL" | "FUEL_EFFICIENT";
+  /** Valid Google RoutingPreference enum values only */
+  routingPreference: "TRAFFIC_AWARE" | "TRAFFIC_AWARE_OPTIMAL" | "TRAFFIC_UNAWARE";
+  /** Eco / fuel-efficient reference route when preferShortest is on */
+  requestedReferenceRoutes?: Array<"FUEL_EFFICIENT">;
   routeModifiers: {
     avoidTolls: boolean;
     avoidHighways: boolean;
@@ -120,6 +123,9 @@ export interface GooglePreferenceMapping {
 /**
  * Maps UX preferences to Google Routes API fields.
  * Soft preferences that lack native support are documented in limitations.
+ *
+ * IMPORTANT: FUEL_EFFICIENT is NOT a RoutingPreference — it belongs in
+ * requestedReferenceRoutes. Sending it as routingPreference causes HTTP 400.
  */
 export function mapPreferencesToGoogle(
   preferences: RoadPreferences,
@@ -129,18 +135,19 @@ export function mapPreferencesToGoogle(
     .filter((s) => s.enabled)
     .map((s) => `${s.label}: ${s.explanation}`);
 
-  let routingPreference: GooglePreferenceMapping["routingPreference"] =
+  const routingPreference: GooglePreferenceMapping["routingPreference"] =
     "TRAFFIC_AWARE_OPTIMAL";
 
-  if (preferences.preferShortest && !preferences.preferFastest) {
-    routingPreference = "FUEL_EFFICIENT";
-  } else if (preferences.preferFastest) {
-    routingPreference = "TRAFFIC_AWARE_OPTIMAL";
-  }
+  const requestedReferenceRoutes: Array<"FUEL_EFFICIENT"> | undefined =
+    preferences.preferShortest ? ["FUEL_EFFICIENT"] : undefined;
 
   if (preferences.preferFastest && preferences.preferShortest) {
     limitations.push(
-      "Velocità e brevità sono entrambe attive: il motore bilancia secondo le proprie euristiche.",
+      "Velocità e brevità sono entrambe attive: Google calcola anche un’alternativa eco/efficiente.",
+    );
+  } else if (preferences.preferShortest && !preferences.preferFastest) {
+    limitations.push(
+      "Percorso più breve: richiesto riferimento FUEL_EFFICIENT (efficiente), non distanza stradale minima garantita.",
     );
   }
 
@@ -150,6 +157,7 @@ export function mapPreferencesToGoogle(
 
   return {
     routingPreference,
+    requestedReferenceRoutes,
     routeModifiers: {
       avoidTolls: preferences.avoidTolls,
       avoidHighways: preferences.avoidHighways,

@@ -1,6 +1,6 @@
 export type TravelMode = "DRIVE" | "WALK" | "BICYCLE" | "TRANSIT" | "TWO_WHEELER";
 
-export type RoutePreference = "TRAFFIC_AWARE_OPTIMAL" | "SHORTER" | "FUEL_EFFICIENT";
+export type RoutePreference = "TRAFFIC_AWARE_OPTIMAL" | "SHORTER" | "TRAFFIC_AWARE";
 
 export interface LatLng {
   lat: number;
