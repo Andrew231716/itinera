@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  Bookmark,
   Copy,
+  History,
   Layers3,
   Map as MapIcon,
   Route,
@@ -15,6 +15,11 @@ import { useEffect } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { useTripStore, type PanelTab } from "@/lib/store/trip-store";
+import {
+  formatDistance,
+  formatDuration,
+  formatRelativeIt,
+} from "@/lib/utils/format";
 import { Button, cn } from "@/components/ui/primitives";
 import { TripForm } from "@/components/trip/TripForm";
 import { PreferencesPanel } from "@/components/trip/PreferencesPanel";
@@ -31,7 +36,7 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "preferences", label: "Percorso", icon: SlidersHorizontal },
   { id: "exclusions", label: "Esclusioni", icon: ShieldAlert },
   { id: "summary", label: "Riepilogo", icon: Layers3 },
-  { id: "saved", label: "Salvati", icon: Bookmark },
+  { id: "saved", label: "Cronologia", icon: History },
   { id: "assistant", label: "Assistente", icon: Sparkles },
   { id: "setup", label: "Live", icon: Settings2 },
 ];
@@ -46,8 +51,11 @@ export function AppShell() {
   const setMapsConfig = useTripStore((s) => s.setMapsConfig);
   const persistTrip = useTripStore((s) => s.persistTrip);
   const refreshSavedTrips = useTripStore((s) => s.refreshSavedTrips);
+  const refreshTripHistory = useTripStore((s) => s.refreshTripHistory);
   const loadTrip = useTripStore((s) => s.loadTrip);
+  const loadHistoryEntry = useTripStore((s) => s.loadHistoryEntry);
   const savedTrips = useTripStore((s) => s.savedTrips);
+  const tripHistory = useTripStore((s) => s.tripHistory);
   const trip = useTripStore((s) => s.trip);
   const { computeRoute } = useRouteCompute();
 
@@ -62,7 +70,8 @@ export function AppShell() {
       })
       .catch(() => setMapsConfig("demo", null));
     void refreshSavedTrips();
-  }, [setMapsConfig, refreshSavedTrips]);
+    refreshTripHistory();
+  }, [setMapsConfig, refreshSavedTrips, refreshTripHistory]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -77,14 +86,14 @@ export function AppShell() {
     })();
   }, [loadTrip, refreshSavedTrips]);
 
+  const recentHistory = tripHistory.slice(0, 4);
+
   return (
     <div className="relative flex h-[100dvh] w-full overflow-hidden bg-[var(--mist)]">
       <div className="absolute inset-0 lg:left-[min(420px,38vw)]">
         <MapCanvas />
         <StatusBanner />
       </div>
-
-      {/* badges moved to StatusBanner */}
 
       <aside
         className={cn(
@@ -126,7 +135,7 @@ export function AppShell() {
               size="sm"
               variant="secondary"
               onClick={() => void persistTrip()}
-              title="Salva in locale (Supabase in fase 5)"
+              title="Salva in locale"
             >
               <Copy className="h-3.5 w-3.5" />
               Salva
@@ -137,6 +146,10 @@ export function AppShell() {
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const active = activePanel === tab.id;
+              const badge =
+                tab.id === "saved" && tripHistory.length > 0
+                  ? tripHistory.length
+                  : null;
               return (
                 <button
                   key={tab.id}
@@ -154,6 +167,18 @@ export function AppShell() {
                 >
                   <Icon className="h-3.5 w-3.5" />
                   {tab.label}
+                  {badge != null ? (
+                    <span
+                      className={cn(
+                        "rounded-md px-1 text-[10px] font-semibold",
+                        active
+                          ? "bg-white/20"
+                          : "bg-[var(--brand-soft)] text-[var(--brand)]",
+                      )}
+                    >
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -169,10 +194,58 @@ export function AppShell() {
           {activePanel === "saved" ? <SavedPanel /> : null}
           {activePanel === "setup" ? <SetupPanel /> : null}
 
-          {savedTrips.length > 0 && activePanel === "itinerary" ? (
+          {recentHistory.length > 0 && activePanel === "itinerary" ? (
+            <div className="mt-6 border-t border-[var(--line)] pt-4">
+              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+                <History className="h-3 w-3" />
+                Cronologia recente
+              </p>
+              <div className="space-y-1.5">
+                {recentHistory.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={cn(
+                      "w-full rounded-xl px-3 py-2 text-left text-sm transition hover:bg-[var(--surface-2)]",
+                      entry.trip.meta.id === trip.meta.id &&
+                        "bg-[var(--brand-soft)]/50",
+                    )}
+                    onClick={() => loadHistoryEntry(entry)}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-[var(--ink)]">
+                        {entry.trip.origin?.label ?? "?"} →{" "}
+                        {entry.trip.destination?.label ?? "?"}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-[var(--ink-faint)]">
+                        {formatRelativeIt(entry.computedAt)}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-[var(--ink-muted)]">
+                      {entry.routeSummary?.distanceMeters != null
+                        ? formatDistance(entry.routeSummary.distanceMeters)
+                        : entry.trip.meta.title}
+                      {entry.routeSummary?.durationSeconds != null
+                        ? ` · ${formatDuration(entry.routeSummary.durationSeconds)}`
+                        : ""}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="mt-2"
+                onClick={() => setActivePanel("saved")}
+              >
+                Apri cronologia
+              </Button>
+            </div>
+          ) : savedTrips.length > 0 && activePanel === "itinerary" ? (
             <div className="mt-6 border-t border-[var(--line)] pt-4">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-                Ultimi viaggi — vedi tab Salvati
+                Viaggi salvati
               </p>
               <div className="space-y-1.5">
                 {savedTrips.slice(0, 3).map((t) => (
@@ -212,7 +285,9 @@ export function AppShell() {
             type="button"
             size="lg"
             className="w-full"
-            disabled={routeMode === "loading" || !trip.origin || !trip.destination}
+            disabled={
+              routeMode === "loading" || !trip.origin || !trip.destination
+            }
             onClick={() => {
               void computeRoute();
               setActivePanel("summary");

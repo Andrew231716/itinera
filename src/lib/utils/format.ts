@@ -45,3 +45,34 @@ export function localInputToIso(value: string): string | null {
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
+
+/** Relative Italian time for history lists (e.g. «oggi 14:30», «ieri», «3 gg fa»). */
+export function formatRelativeIt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.round(diffMs / 60_000);
+  if (diffMin < 1) return "adesso";
+  if (diffMin < 60) return `${diffMin} min fa`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) {
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    const time = d.toLocaleTimeString("it-IT", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return sameDay ? `oggi ${time}` : `${diffH} h fa`;
+  }
+  const diffDays = Math.round(diffH / 24);
+  if (diffDays === 1) return "ieri";
+  if (diffDays < 7) return `${diffDays} gg fa`;
+  return d.toLocaleDateString("it-IT", {
+    day: "numeric",
+    month: "short",
+    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
+}
