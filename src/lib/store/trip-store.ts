@@ -23,6 +23,8 @@ import {
 } from "@/lib/storage/trip-history";
 import { isValidPolygon } from "@/lib/utils/geometry";
 import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
+import type { ParkingSpot } from "@/lib/parking/types";
+import { parkingSpotToPlaceRef } from "@/lib/parking/place-ref";
 
 export type MapPickTarget =
   | "origin"
@@ -37,6 +39,7 @@ export type PanelTab =
   | "preferences"
   | "exclusions"
   | "summary"
+  | "parking"
   | "assistant"
   | "setup"
   | "saved";
@@ -55,6 +58,13 @@ interface TripState {
   exclusionDraftPoints: { lat: number; lng: number }[];
   savedTrips: TripDraft[];
   tripHistory: TripHistoryEntry[];
+
+  /** Nearby parking results for the active search center */
+  parkingSpots: ParkingSpot[];
+  selectedParkingId: string | null;
+  parkingCenter: { lat: number; lng: number; label: string } | null;
+  /** Bumps when a new parking search is requested (destination / AI / manual) */
+  parkingSearchNonce: number;
 
   setActivePanel: (tab: PanelTab) => void;
   setMobilePanelOpen: (open: boolean) => void;
@@ -99,6 +109,17 @@ interface TripState {
   loadHistoryEntry: (entry: TripHistoryEntry) => void;
   removeHistoryEntry: (id: string) => void;
   clearHistory: () => void;
+
+  setParkingSpots: (spots: ParkingSpot[]) => void;
+  selectParking: (id: string | null) => void;
+  /** Search parking near a place and open the parking panel */
+  requestParkingNear: (center: {
+    lat: number;
+    lng: number;
+    label: string;
+  }) => void;
+  /** Apply selected parking as destination or as an intermediate stop */
+  applySelectedParking: (mode: "destination" | "stop") => void;
 }
 
 function touch(trip: TripDraft): TripDraft {
@@ -131,9 +152,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   exclusionDraftPoints: [],
   savedTrips: [],
   tripHistory: [],
+  parkingSpots: [],
+  selectedParkingId: null,
+  parkingCenter: null,
+  parkingSearchNonce: 0,
 
-  setActivePanel: (tab) => set({ activePanel: tab }),
-  setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
+  setActivePanel: (tab) => set({ activePanel: tab }),  setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
   setMapPickTarget: (target) =>
     set({
       mapPickTarget: target,
@@ -154,6 +178,17 @@ export const useTripStore = create<TripState>((set, get) => ({
     set((s) => ({
       trip: touch({ ...s.trip, destination: place }),
       mapPickTarget: null,
+      ...(place
+        ? {
+            parkingCenter: {
+              lat: place.location.lat,
+              lng: place.location.lng,
+              label: place.label,
+            },
+            parkingSearchNonce: s.parkingSearchNonce + 1,
+            selectedParkingId: null,
+          }
+        : {}),
     })),
 
   swapOriginDestination: () =>
@@ -478,5 +513,43 @@ export const useTripStore = create<TripState>((set, get) => ({
   clearHistory: () => {
     clearTripHistory();
     set({ tripHistory: [] });
+  },
+
+  setParkingSpots: (spots) =>
+    set((s) => ({
+      parkingSpots: spots,
+      selectedParkingId:
+        s.selectedParkingId && spots.some((p) => p.id === s.selectedParkingId)
+          ? s.selectedParkingId
+          : null,
+    })),
+
+  selectParking: (id) => set({ selectedParkingId: id }),
+
+  requestParkingNear: (center) =>
+    set((s) => ({
+      parkingCenter: center,
+      parkingSearchNonce: s.parkingSearchNonce + 1,
+      selectedParkingId: null,
+      activePanel: "parking",
+      mobilePanelOpen: true,
+    })),
+
+  applySelectedParking: (mode) => {
+    const { parkingSpots, selectedParkingId } = get();
+    const spot = parkingSpots.find((p) => p.id === selectedParkingId);
+    if (!spot) return;
+    const place = parkingSpotToPlaceRef(spot);
+    if (mode === "destination") {
+      set((s) => ({
+        trip: touch({ ...s.trip, destination: place }),
+        mapPickTarget: null,
+        activePanel: "itinerary",
+        mobilePanelOpen: true,
+      }));
+    } else {
+      get().addStop(place);
+      set({ activePanel: "itinerary", mobilePanelOpen: true });
+    }
   },
 }));
