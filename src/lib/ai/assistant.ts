@@ -45,6 +45,8 @@ export const AssistantStructuredSchema = z.object({
   unsupportedRequests: z.array(z.string()),
   reorderStops: z.boolean(),
   titleSuggestion: z.string().nullable(),
+  /** Location text for a parking search request (e.g. "parcheggi a Como") */
+  parkingSearchText: z.string().nullable(),
 });
 
 export type AssistantStructured = z.infer<typeof AssistantStructuredSchema>;
@@ -64,6 +66,9 @@ export interface AssistantParseResult {
   unsupportedRequests?: string[];
   reorderStops?: boolean;
   titleSuggestion?: string | null;
+  /** If set, open parking search near this resolved place */
+  parkingSearchText?: string | null;
+  resolvedParkingSearch?: PlaceRef | null;
   limitations: string[];
   /** Places resolved only via Places API — never invented by the model */
   resolvedOrigin?: PlaceRef | null;
@@ -81,6 +86,7 @@ export interface AssistantParseResult {
     exclusions?: Array<{ kind: CustomExclusion["kind"]; label: string }>;
     travelMode?: TravelMode | null;
     title?: string | null;
+    parkingSearch?: PlaceRef | null;
   };
 }
 
@@ -158,6 +164,7 @@ const OPENAI_JSON_SCHEMA = {
       unsupportedRequests: { type: "array", items: { type: "string" } },
       reorderStops: { type: "boolean" },
       titleSuggestion: { type: ["string", "null"] },
+      parkingSearchText: { type: ["string", "null"] },
     },
     required: [
       "status",
@@ -172,6 +179,7 @@ const OPENAI_JSON_SCHEMA = {
       "unsupportedRequests",
       "reorderStops",
       "titleSuggestion",
+      "parkingSearchText",
     ],
   },
 } as const;
@@ -234,6 +242,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     unsupportedRequests: { type: "ARRAY", items: { type: "STRING" } },
     reorderStops: { type: "BOOLEAN" },
     titleSuggestion: { type: "STRING", nullable: true },
+    parkingSearchText: { type: "STRING", nullable: true },
   },
   required: [
     "status",
@@ -248,6 +257,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     "unsupportedRequests",
     "reorderStops",
     "titleSuggestion",
+    "parkingSearchText",
   ],
 } as const;
 
@@ -263,7 +273,8 @@ Se l'utente parla del "percorso attuale" / "itinerario attuale" e nel contesto s
 maxExtraMinutes: converti "un'ora" in 60, "mezz'ora" in 30, ecc.
 travelMode default null se non specificato.
 Per Paesi (Svizzera/Switzerland/CH/Suisse/Schweiz) usa hardExclusions kind=geo_zone con label "Svizzera" (o il nome del paese).
-Per dogane/valichi: usa hardExclusions kind=city o address con il nome del luogo (es. "Chiasso", "dogana di Chiasso").`;
+Per dogane/valichi: usa hardExclusions kind=city o address con il nome del luogo (es. "Chiasso", "dogana di Chiasso").
+Se chiede parcheggi / sosta / garage / EasyPark in una zona (es. "cerca parcheggi a Como", "dove parcheggio vicino al Duomo"), imposta parkingSearchText con la località da cercare e status=ok. Non inventare elenchi di parcheggi: Itinera li cercherà con fonti reali.`;
 
 type StructuredFetch =
   | { ok: true; structured: AssistantStructured; provider: AssistantProviderId }
@@ -634,6 +645,16 @@ async function buildResultFromStructured(
     else unresolvedPlaces.push(stop);
   }
 
+  let resolvedParkingSearch: PlaceRef | null = null;
+  if (structured.parkingSearchText?.trim()) {
+    resolvedParkingSearch = await resolvePlaceText(
+      structured.parkingSearchText.trim(),
+    );
+    if (!resolvedParkingSearch) {
+      unresolvedPlaces.push(structured.parkingSearchText.trim());
+    }
+  }
+
   for (const ex of structured.hardExclusions) {
     if (!ex.label.trim()) unresolvedPlaces.push("(esclusione senza nome)");
   }
@@ -668,11 +689,13 @@ async function buildResultFromStructured(
     unsupportedRequests: structured.unsupportedRequests,
     reorderStops: structured.reorderStops,
     titleSuggestion: structured.titleSuggestion,
+    parkingSearchText: structured.parkingSearchText,
     limitations,
     provider,
     resolvedOrigin,
     resolvedDestination,
     resolvedStops,
+    resolvedParkingSearch,
     unresolvedPlaces: [],
     preview: {
       origin: resolvedOrigin,
@@ -682,6 +705,7 @@ async function buildResultFromStructured(
       exclusions: structured.hardExclusions,
       travelMode: structured.travelMode,
       title: structured.titleSuggestion,
+      parkingSearch: resolvedParkingSearch,
     },
   };
 }

@@ -31,7 +31,8 @@ function loadGoogleMaps(apiKey: string): Promise<void> {
 }
 
 function collectFocusPoints(): LatLng[] {
-  const { trip, routes, exclusionDraftPoints } = useTripStore.getState();
+  const { trip, routes, exclusionDraftPoints, parkingSpots, selectedParkingId } =
+    useTripStore.getState();
   const points: LatLng[] = [];
   if (trip.origin) points.push(trip.origin.location);
   if (trip.destination) points.push(trip.destination.location);
@@ -45,6 +46,9 @@ function collectFocusPoints(): LatLng[] {
     routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0];
   if (selected?.decodedPath.length) points.push(...selected.decodedPath);
   points.push(...exclusionDraftPoints);
+  const selectedParking = parkingSpots.find((p) => p.id === selectedParkingId);
+  if (selectedParking) points.push(selectedParking.location);
+  else parkingSpots.slice(0, 12).forEach((p) => points.push(p.location));
   return points;
 }
 
@@ -59,6 +63,11 @@ export function MapCanvas() {
   const exclusionDraftPoints = useTripStore((s) => s.exclusionDraftPoints);
   const mapPickTarget = useTripStore((s) => s.mapPickTarget);
   const handleMapClick = useTripStore((s) => s.handleMapClick);
+  const parkingSpots = useTripStore((s) => s.parkingSpots);
+  const selectedParkingId = useTripStore((s) => s.selectedParkingId);
+  const selectParking = useTripStore((s) => s.selectParking);
+  const setActivePanel = useTripStore((s) => s.setActivePanel);
+  const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -121,6 +130,7 @@ export function MapCanvas() {
       position: LatLng,
       label: string,
       color: string,
+      onClick?: () => void,
     ) => {
       const marker = new window.google!.maps.Marker({
         map,
@@ -133,13 +143,17 @@ export function MapCanvas() {
         },
         icon: {
           path: window.google!.maps.SymbolPath.CIRCLE,
-          scale: 12,
+          scale: onClick ? 11 : 12,
           fillColor: color,
           fillOpacity: 1,
           strokeColor: "#fff",
           strokeWeight: 2,
         },
+        zIndex: onClick ? 50 : 10,
       });
+      if (onClick) {
+        marker.addListener("click", onClick);
+      }
       overlaysRef.current.push(marker);
     };
 
@@ -148,6 +162,26 @@ export function MapCanvas() {
       addMarker(s.place.location, String(i + 1), "#4A7C8C"),
     );
     if (trip.destination) addMarker(trip.destination.location, "B", "#D4A017");
+
+    parkingSpots.slice(0, 24).forEach((spot, index) => {
+      const selected = spot.id === selectedParkingId;
+      addMarker(
+        spot.location,
+        selected ? "P" : String(index + 1),
+        selected
+          ? "#0F766E"
+          : spot.pricing === "free"
+            ? "#15803D"
+            : spot.pricing === "paid"
+              ? "#B45309"
+              : "#64748B",
+        () => {
+          selectParking(spot.id);
+          setActivePanel("parking");
+          setMobilePanelOpen(true);
+        },
+      );
+    });
 
     const selected =
       routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0];
@@ -240,7 +274,17 @@ export function MapCanvas() {
         64,
       );
     }
-  }, [trip, routes, exclusionDraftPoints, ready]);
+  }, [
+    trip,
+    routes,
+    exclusionDraftPoints,
+    parkingSpots,
+    selectedParkingId,
+    selectParking,
+    setActivePanel,
+    setMobilePanelOpen,
+    ready,
+  ]);
 
   if (mapsMode === "demo" || !browserMapsKey) {
     return <DemoMap />;

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownUp, CalendarClock, Car } from "lucide-react";
+import { ArrowDownUp, CalendarClock, Car, CircleParking } from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
 import type { TravelMode } from "@/lib/types/trip";
 import {
@@ -29,6 +29,9 @@ export function TripForm() {
   const setTravelMode = useTripStore((s) => s.setTravelMode);
   const mapPickTarget = useTripStore((s) => s.mapPickTarget);
   const setMapPickTarget = useTripStore((s) => s.setMapPickTarget);
+  const requestParkingNear = useTripStore((s) => s.requestParkingNear);
+  const setActivePanel = useTripStore((s) => s.setActivePanel);
+  const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
 
   return (
     <div className="space-y-5">
@@ -71,11 +74,37 @@ export function TripForm() {
       <PlaceSearch
         label="Destinazione"
         value={trip.destination}
-        onSelect={setDestination}
+        onSelect={(place) => {
+          setDestination(place);
+          // After choosing destination, offer parking search for that area.
+          if (place) {
+            setActivePanel("parking");
+            setMobilePanelOpen(true);
+          }
+        }}
         onClear={() => setDestination(null)}
         onPickFromMap={() => setMapPickTarget("destination")}
         pickingFromMap={mapPickTarget === "destination"}
       />
+
+      {trip.destination ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={() =>
+            requestParkingNear({
+              lat: trip.destination!.location.lat,
+              lng: trip.destination!.location.lng,
+              label: trip.destination!.label,
+            })
+          }
+        >
+          <CircleParking className="h-3.5 w-3.5" />
+          Cerca parcheggi vicino a «{trip.destination.label}»
+        </Button>
+      ) : null}
 
       <MapPickHint
         active={

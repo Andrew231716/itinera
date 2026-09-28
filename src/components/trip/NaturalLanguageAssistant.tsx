@@ -30,6 +30,7 @@ export function NaturalLanguageAssistant() {
   const setTravelMode = useTripStore((s) => s.setTravelMode);
   const setTitle = useTripStore((s) => s.setTitle);
   const trip = useTripStore((s) => s.trip);
+  const requestParkingNear = useTripStore((s) => s.requestParkingNear);
   const { computeRoute } = useRouteCompute();
 
   async function submit() {
@@ -147,6 +148,16 @@ export function NaturalLanguageAssistant() {
       }
     }
 
+    if (p.parkingSearch) {
+      requestParkingNear({
+        lat: p.parkingSearch.location.lat,
+        lng: p.parkingSearch.location.lng,
+        label: p.parkingSearch.label,
+      });
+      setPending(null);
+      return;
+    }
+
     setPending(null);
     await computeRoute();
   }
@@ -160,7 +171,7 @@ export function NaturalLanguageAssistant() {
 
       <TextArea
         rows={5}
-        placeholder='Es. “Parti da Rozzano, arriva a Roma passando da Firenze. Evita i pedaggi e non attraversare Bologna…”'
+        placeholder='Es. “Parti da Rozzano…”, oppure “cerca parcheggi a Como”'
         value={utterance}
         onChange={(e) => setUtterance(e.target.value)}
         aria-label="Richiesta in linguaggio naturale"
@@ -245,11 +256,18 @@ export function NaturalLanguageAssistant() {
             {pending.preview.exclusions?.map((e) => (
               <li key={e.label}>Esclusione hard: {e.label}</li>
             ))}
+            {pending.preview.parkingSearch ? (
+              <li>
+                Cerca parcheggi vicino a: {pending.preview.parkingSearch.label}
+              </li>
+            ) : null}
           </ul>
           <div className="flex gap-2">
             <Button type="button" size="sm" onClick={() => void confirmPreview()}>
               <Check className="h-3.5 w-3.5" />
-              Conferma e calcola
+              {pending.preview.parkingSearch
+                ? "Conferma e cerca parcheggi"
+                : "Conferma e calcola"}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={cancelPreview}>
               <X className="h-3.5 w-3.5" />

@@ -32,6 +32,7 @@ describe("assistant schema", () => {
       unsupportedRequests: [],
       reorderStops: false,
       titleSuggestion: "Rozzano–Roma",
+      parkingSearchText: null,
     });
     expect(ok.success).toBe(true);
   });
