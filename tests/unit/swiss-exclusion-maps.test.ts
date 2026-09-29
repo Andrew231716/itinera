@@ -31,7 +31,7 @@ describe("Switzerland country exclusion", () => {
     expect(matchCountryZone("Bologna")).toBeNull();
   });
 
-  it("polygon covers Ticino corridor but not Milan", () => {
+  it("polygon covers Ticino corridor but not Milan or Val d’Intelvi (IT)", () => {
     expect(pointInPolygon({ lat: 46.0, lng: 8.95 }, SWITZERLAND_ZONE.polygon)).toBe(
       true,
     ); // Lugano
@@ -41,6 +41,40 @@ describe("Switzerland country exclusion", () => {
     expect(pointInPolygon({ lat: 45.464, lng: 9.19 }, SWITZERLAND_ZONE.polygon)).toBe(
       false,
     ); // Milano
+    expect(pointInPolygon({ lat: 45.808, lng: 9.085 }, SWITZERLAND_ZONE.polygon)).toBe(
+      false,
+    ); // Como
+    expect(pointInPolygon({ lat: 45.983, lng: 9.022 }, SWITZERLAND_ZONE.polygon)).toBe(
+      false,
+    ); // Lanzo d’Intelvi
+    expect(pointInPolygon({ lat: 45.945, lng: 9.128 }, SWITZERLAND_ZONE.polygon)).toBe(
+      false,
+    ); // Argegno
+    expect(pointInPolygon({ lat: 45.843, lng: 9.078 }, SWITZERLAND_ZONE.polygon)).toBe(
+      false,
+    ); // Cernobbio
+  });
+
+  it("marks Italian Como→Lanzo lakeside path as conformant", () => {
+    const exclusion = createCountryExclusion({
+      id: "ex-ch",
+      label: "Svizzera",
+    });
+    const path = [
+      { lat: 45.382, lng: 9.155 }, // Rozzano
+      { lat: 45.464, lng: 9.19 }, // Milano
+      { lat: 45.808, lng: 9.085 }, // Como
+      { lat: 45.843, lng: 9.078 }, // Cernobbio
+      { lat: 45.945, lng: 9.128 }, // Argegno
+      { lat: 45.983, lng: 9.022 }, // Lanzo d’Intelvi
+    ];
+    const detailed = checkRouteConstraintsDetailed(path, [exclusion!]);
+    expect(detailed.violations.some((v) => v.severity === "hard")).toBe(false);
+    expect(
+      isRouteConformant(detailed.violations, detailed.unverifiable, [
+        exclusion!,
+      ]),
+    ).toBe(true);
   });
 
   it("marks Lugano→Milano via Chiasso as non-conformant", () => {
