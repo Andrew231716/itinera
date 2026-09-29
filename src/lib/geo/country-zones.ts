@@ -2,7 +2,8 @@ import type { LatLng } from "@/lib/types/trip";
 
 /**
  * Approximate country polygons for hard «avoid country» exclusions.
- * Not cadastral: conservative enough to catch transit corridors (e.g. Ticino).
+ * Not cadastral: must cover Swiss transit corridors (Ticino) without swallowing
+ * Italian lakeside towns (Como, Cernobbio, Argegno, Lanzo d’Intelvi).
  */
 export interface CountryZone {
   id: string;
@@ -12,7 +13,10 @@ export interface CountryZone {
   polygon: LatLng[];
 }
 
-/** Switzerland incl. Ticino (Lugano / Mendrisio / Chiasso corridor). */
+/**
+ * Switzerland incl. Ticino (Lugano / Mendrisio / Chiasso).
+ * SE edge follows the ridge west of Lake Como so Italian Val d’Intelvi stays out.
+ */
 export const SWITZERLAND_ZONE: CountryZone = {
   id: "country_ch",
   label: "Svizzera",
@@ -31,8 +35,14 @@ export const SWITZERLAND_ZONE: CountryZone = {
     { lat: 47.52, lng: 9.56 },
     { lat: 47.0, lng: 10.49 },
     { lat: 46.5, lng: 10.4 },
-    { lat: 46.13, lng: 10.2 },
-    { lat: 45.82, lng: 9.08 }, // sud Ticino / sotto Chiasso
+    { lat: 46.4, lng: 9.85 },
+    { lat: 46.28, lng: 9.4 },
+    { lat: 46.18, lng: 9.2 },
+    { lat: 46.08, lng: 9.05 },
+    { lat: 45.98, lng: 8.98 }, // CH a ovest di Lanzo d’Intelvi
+    { lat: 45.9, lng: 9.01 },
+    { lat: 45.86, lng: 9.03 },
+    { lat: 45.835, lng: 9.035 }, // Chiasso
     { lat: 45.83, lng: 9.0 },
     { lat: 45.86, lng: 8.95 },
     { lat: 45.95, lng: 8.85 },
@@ -40,7 +50,7 @@ export const SWITZERLAND_ZONE: CountryZone = {
     { lat: 46.15, lng: 8.3 },
     { lat: 46.2, lng: 7.5 },
     { lat: 46.15, lng: 6.9 },
-    { lat: 46.2, lng: 6.1 }, // Genèvè area
+    { lat: 46.2, lng: 6.1 },
     { lat: 46.5, lng: 6.0 },
     { lat: 46.95, lng: 6.1 },
     { lat: 47.4, lng: 6.9 },
@@ -55,9 +65,11 @@ export const KNOWN_COUNTRY_ZONES: CountryZone[] = [SWITZERLAND_ZONE];
 export function matchCountryZone(label: string): CountryZone | null {
   const raw = label.trim().toLowerCase();
   if (!raw) return null;
-  // Normalize common phrasing: "evita la Svizzera", "non passare dalla Svizzera"
   const cleaned = raw
-    .replace(/^(evita(re)?|non\s+(attraversare|passare\s+(da|per)|entrare\s+in)|avoid)\s+/i, "")
+    .replace(
+      /^(evita(re)?|non\s+(attraversare|passare\s+(da|per)|entrare\s+in)|avoid)\s+/i,
+      "",
+    )
     .replace(/^(la|il|lo|le|l'|the)\s+/i, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -70,7 +82,6 @@ export function matchCountryZone(label: string): CountryZone | null {
         raw === alias ||
         raw.includes(alias)
       ) {
-        // Avoid matching tiny substrings inside unrelated words
         if (alias.length <= 2) {
           const re = new RegExp(`(^|[^a-z])${alias}([^a-z]|$)`, "i");
           if (!re.test(raw) && !re.test(cleaned)) continue;

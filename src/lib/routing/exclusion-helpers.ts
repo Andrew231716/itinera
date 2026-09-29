@@ -137,3 +137,31 @@ export function hardPointExclusions(
       Boolean(e.place),
   );
 }
+
+export function hardCountryExclusions(
+  exclusions: CustomExclusion[],
+): GeoZoneExclusion[] {
+  return exclusions.filter(
+    (e): e is GeoZoneExclusion =>
+      e.strength === "hard" &&
+      e.kind === "geo_zone" &&
+      typeof e.notes === "string" &&
+      e.notes.startsWith("Esclusione paese:"),
+  );
+}
+
+/**
+ * Italian via-points that force Google to stay south of the Ticino corridor
+ * when avoiding Switzerland (no native avoid_polygon on Routes API).
+ */
+export function switzerlandAvoidViaPoints(): Array<{
+  label: string;
+  location: LatLng;
+}> {
+  return [
+    { label: "Como (IT)", location: { lat: 45.8081, lng: 9.0852 } },
+    { label: "Cernobbio (IT)", location: { lat: 45.843, lng: 9.078 } },
+    { label: "Argegno (IT)", location: { lat: 45.945, lng: 9.128 } },
+    { label: "Lecco (IT)", location: { lat: 45.856, lng: 9.397 } },
+  ];
+}
