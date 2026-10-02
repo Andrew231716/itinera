@@ -316,7 +316,7 @@ export function RouteSummary() {
                 <div
                   key={z.id}
                   className={`rounded-lg px-2.5 py-2 text-xs ${
-                    z.kind === "ztl"
+                    z.kind === "ztl" 
                       ? "bg-red-50 text-red-900"
                       : "bg-orange-50 text-orange-950"
                   }`}
@@ -465,6 +465,9 @@ function ShareActions({
   const persistTrip = useTripStore((s) => s.persistTrip);
   const [showPreview, setShowPreview] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
+  const setActivePanel = useTripStore((s) => s.setActivePanel);
+  const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
+  const setSelectedRoute = useTripStore((s) => s.setSelectedRoute);
 
   if (!trip.origin || !trip.destination) {
     return (
@@ -530,6 +533,20 @@ function ShareActions({
             personalizzate non saranno trasferite.
           </p>
           <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // Show the selected route on the in-app map before opening Maps
+                setShowPreview(false);
+                if (selected) setSelectedRoute(selected.id);
+                setActivePanel("itinerary");
+                setMobilePanelOpen(true);
+              }}
+            >
+              Mostra sulla mappa
+            </Button>
             <Button
               type="button"
               className="flex-1"
