@@ -30,13 +30,140 @@ export interface TripRepository {
 const STORAGE_KEY = "itinera.trips.v1";
 const SHARE_KEY = "itinera.shares.v1";
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function safeString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function safeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function cloneValue<T>(value: T): T {
+  return typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+}
+
+function makeTripId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `trip-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizePoint(value: unknown): { lat: number; lng: number } | null {
+  if (!isObject(value)) return null;
+  const lat = safeNumber(value.lat);
+  const lng = safeNumber(value.lng);
+  if (lat === null || lng === null) return null;
+  return { lat, lng };
+}
+
+function normalizePlace(value: unknown): TripDraft["origin"] {
+  if (!isObject(value)) return null;
+  const location = normalizePoint(value.location);
+  if (!location) return null;
+  return {
+    id: safeString(value.id, makeTripId()),
+    label: safeString(value.label, "Posizione"),
+    address: typeof value.address === "string" ? value.address : undefined,
+    placeId: typeof value.placeId === "string" ? value.placeId : undefined,
+    location,
+    source:
+      value.source === "places" ||
+      value.source === "map_click" ||
+      value.source === "manual" ||
+      value.source === "demo" ||
+      value.source === "assistant" ||
+      value.source === "gps"
+        ? value.source
+        : "manual",
+  };
+}
+
+function normalizeStops(value: unknown): TripDraft["stops"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isObject(entry)) return [];
+    const place = normalizePlace(entry.place);
+    if (!place) return [];
+    const dwellMinutes = safeNumber(entry.dwellMinutes);
+    return [{
+      id: safeString(entry.id, makeTripId()),
+      place,
+      dwellMinutes: dwellMinutes ?? undefined,
+      notes: typeof entry.notes === "string" ? entry.notes : undefined,
+    }];
+  });
+}
+
+function normalizePreferences(value: unknown): TripDraft["preferences"] {
+  const fallback = {
+    avoidTolls: false,
+    avoidHighways: false,
+    avoidFerries: false,
+    avoidTunnels: false,
+    preferFastest: true,
+    preferShortest: false,
+    preferScenic: false,
+    maxExtraMinutes: null,
+  };
+  if (!isObject(value)) return fallback;
+  return {
+    avoidTolls: Boolean(value.avoidTolls),
+    avoidHighways: Boolean(value.avoidHighways),
+    avoidFerries: Boolean(value.avoidFerries),
+    avoidTunnels: Boolean(value.avoidTunnels),
+    preferFastest: Boolean(value.preferFastest),
+    preferShortest: Boolean(value.preferShortest),
+    preferScenic: Boolean(value.preferScenic),
+    maxExtraMinutes: safeNumber(value.maxExtraMinutes),
+  };
+}
+
+function normalizeTripDraft(raw: unknown): TripDraft | null {
+  if (!isObject(raw) || !isObject(raw.meta)) return null;
+
+  const meta = raw.meta;
+  const tract = {
+    meta: {
+      id: safeString(meta.id, makeTripId()),
+      title: safeString(meta.title, "Viaggio"),
+      createdAt: safeString(meta.createdAt, new Date().toISOString()),
+      updatedAt: safeString(meta.updatedAt, new Date().toISOString()),
+    },
+    origin: normalizePlace(raw.origin),
+    destination: normalizePlace(raw.destination),
+    stops: normalizeStops(raw.stops),
+    departureAt: typeof raw.departureAt === "string" ? raw.departureAt : null,
+    travelMode:
+      raw.travelMode === "DRIVE" ||
+      raw.travelMode === "WALK" ||
+      raw.travelMode === "BICYCLE" ||
+      raw.travelMode === "TRANSIT" ||
+      raw.travelMode === "TWO_WHEELER"
+        ? raw.travelMode
+        : "DRIVE",
+    preferences: normalizePreferences(raw.preferences),
+    exclusions: Array.isArray(raw.exclusions) ? raw.exclusions.filter(Boolean) as TripDraft["exclusions"] : [],
+    optimizeStopOrder: Boolean(raw.optimizeStopOrder),
+    selectedRouteId: typeof raw.selectedRouteId === "string" ? raw.selectedRouteId : null,
+  };
+
+  return tract;
+}
+
 function readAll(): TripDraft[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as TripDraft[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(normalizeTripDraft)
+      .filter((entry): entry is TripDraft => entry !== null);
   } catch {
     return [];
   }
@@ -51,8 +178,17 @@ function readShares(): ShareRecord[] {
   try {
     const raw = localStorage.getItem(SHARE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as ShareRecord[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (entry): entry is ShareRecord =>
+        isObject(entry) &&
+        typeof entry.token === "string" &&
+        typeof entry.tripId === "string" &&
+        typeof entry.createdAt === "string" &&
+        typeof entry.permission === "string",
+    );
   } catch {
     return [];
   }
@@ -75,7 +211,7 @@ export class LocalTripRepository implements TripRepository {
 
   async save(trip: TripDraft): Promise<TripDraft> {
     const next = {
-      ...trip,
+      ...cloneValue(trip),
       meta: { ...trip.meta, updatedAt: new Date().toISOString() },
     };
     const all = readAll().filter((t) => t.meta.id !== next.meta.id);
@@ -89,9 +225,9 @@ export class LocalTripRepository implements TripRepository {
     if (!existing) return null;
     const now = new Date().toISOString();
     const copy: TripDraft = {
-      ...structuredClone(existing),
+      ...cloneValue(existing),
       meta: {
-        id: crypto.randomUUID(),
+        id: makeTripId(),
         title: `${existing.meta.title} (copia)`,
         createdAt: now,
         updatedAt: now,
@@ -109,7 +245,7 @@ export class LocalTripRepository implements TripRepository {
   async createShare(tripId: string, expiresAt: string | null = null): Promise<ShareRecord> {
     const trip = await this.get(tripId);
     if (!trip) throw new Error("Viaggio non trovato.");
-    const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    const token = `${makeTripId().replace(/-/g, "")}${makeTripId().replace(/-/g, "")}`;
     const record: ShareRecord = {
       token,
       tripId,
@@ -119,10 +255,9 @@ export class LocalTripRepository implements TripRepository {
       revokedAt: null,
       urlPath: `/share/${token}`,
     };
-    // Persist a snapshot for local share resolution
     localStorage.setItem(
       `itinera.share.snapshot.${token}`,
-      JSON.stringify(trip),
+      JSON.stringify(cloneValue(trip)),
     );
     writeShares([record, ...readShares()]);
     return record;
@@ -145,17 +280,13 @@ export class LocalTripRepository implements TripRepository {
     try {
       const raw = localStorage.getItem(`itinera.share.snapshot.${token}`);
       if (!raw) return this.get(share.tripId);
-      return JSON.parse(raw) as TripDraft;
+      return normalizeTripDraft(JSON.parse(raw));
     } catch {
       return null;
     }
   }
 }
 
-/**
- * Browser Supabase repository for authenticated users (RLS).
- * Anonymous cloud sync uses /api/trips with optional service role.
- */
 export class SupabaseTripRepository implements TripRepository {
   constructor(private readonly clientOwnerKey?: string) {}
 
@@ -176,7 +307,7 @@ export class SupabaseTripRepository implements TripRepository {
       .select("trip_data")
       .order("updated_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return (data as { trip_data: TripDraft }[] | null)?.map((r) => r.trip_data) ?? [];
+    return (data as { trip_data: TripDraft }[] | null)?.map((r) => normalizeTripDraft(r.trip_data) ?? r.trip_data) ?? [];
   }
 
   async get(id: string): Promise<TripDraft | null> {
@@ -187,18 +318,16 @@ export class SupabaseTripRepository implements TripRepository {
       .eq("id", id)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return (data as { trip_data: TripDraft } | null)?.trip_data ?? null;
+    return normalizeTripDraft((data as { trip_data: TripDraft } | null)?.trip_data ?? null);
   }
 
   async save(trip: TripDraft): Promise<TripDraft> {
     const supabase = this.client();
     const next = {
-      ...trip,
+      ...cloneValue(trip),
       meta: { ...trip.meta, updatedAt: new Date().toISOString() },
     };
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
     const row = {
       id: next.meta.id,
@@ -219,9 +348,9 @@ export class SupabaseTripRepository implements TripRepository {
     if (!existing) return null;
     const now = new Date().toISOString();
     const copy: TripDraft = {
-      ...structuredClone(existing),
+      ...cloneValue(existing),
       meta: {
-        id: crypto.randomUUID(),
+        id: makeTripId(),
         title: `${existing.meta.title} (copia)`,
         createdAt: now,
         updatedAt: now,
@@ -285,14 +414,10 @@ export class SupabaseTripRepository implements TripRepository {
     if (error) throw new Error(error.message);
     if (!data) return null;
     const payload = data as { trip?: TripDraft };
-    return payload.trip ?? null;
+    return normalizeTripDraft(payload.trip ?? null);
   }
 }
 
-/**
- * Writes to local first, then best-effort sync to Supabase when configured.
- * Local remains source of offline truth.
- */
 export class HybridTripRepository implements TripRepository {
   private local = new LocalTripRepository();
 
@@ -306,7 +431,6 @@ export class HybridTripRepository implements TripRepository {
     if (remote) {
       try {
         const cloud = await remote.list();
-        // Merge: cloud wins on same id by updatedAt
         const map = new Map<string, TripDraft>();
         for (const t of await this.local.list()) map.set(t.meta.id, t);
         for (const t of cloud) {
@@ -414,7 +538,6 @@ export function getTripRepository(): TripRepository {
   return new HybridTripRepository();
 }
 
-/** Server-side share lookup via RPC (no service role required). */
 export async function fetchSharedTripServer(
   token: string,
 ): Promise<TripDraft | null> {
@@ -425,5 +548,5 @@ export async function fetchSharedTripServer(
   });
   if (error || !data) return null;
   const payload = data as { trip?: TripDraft };
-  return payload.trip ?? null;
+  return normalizeTripDraft(payload.trip ?? null);
 }
