@@ -112,11 +112,25 @@ export const DEFAULT_ROAD_PREFERENCES: RoadPreferences = {
   maxExtraMinutes: null,
 };
 
+export function makeTripId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `trip_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function deepCloneValue<T>(value: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export function createEmptyTrip(title = "Nuovo viaggio"): TripDraft {
   const now = new Date().toISOString();
   return {
     meta: {
-      id: crypto.randomUUID(),
+      id: makeTripId(),
       title,
       createdAt: now,
       updatedAt: now,
