@@ -237,8 +237,7 @@ export function RouteSummary() {
                       selected.tolls.estimatedPrice,
                       selected.tolls.currencyCode ?? "EUR",
                     )}
-                  </span>
-                  {" "}
+                  </span>{" "}
                   (stima ufficiale API; può variare per classe veicolo / Telepass).
                 </p>
               ) : selected.tolls?.hasTolls ? (
@@ -506,8 +505,9 @@ function ShareActions({
           <p>Nessuna tappa intermedia (solo A → B).</p>
         )}
         <p className="mt-1">
-          Maps può ricalcolare il tracciato: le esclusioni Itinera (es. Evita
-          Svizzera) non vengono trasferite nel link.
+          Maps può ricalcolare il tracciato per traffico o variazioni del motore:
+          le esclusioni Itinera (es. Evita Svizzera) non vengono trasferite nel
+          link.
         </p>
       </div>
 
@@ -525,8 +525,9 @@ function ShareActions({
           <p className="text-xs text-[var(--accent-ink)]">
             Confermi l’apertura? Solo partenza
             {trip.stops.length > 0 ? `, ${trip.stops.length} tappe` : ""} e
-            arrivo — nessuna tappa inventata. Le esclusioni personalizzate non
-            saranno trasferite.
+            arrivo — nessuna tappa inventata. Maps può comunque ricalcolare il
+            percorso per traffico o per logica interna; le esclusioni
+            personalizzate non saranno trasferite.
           </p>
           <div className="flex gap-2">
             <Button
