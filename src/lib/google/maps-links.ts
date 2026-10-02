@@ -148,8 +148,21 @@ function buildDirSearchParams(params: {
     const allHavePid = waypointPids.every(Boolean);
 
     // Coordinates are the reliable waypoint values on mobile.
-    search.set("waypoints", waypoints.map(encodeLatLng).join("|"));
+    // For sampled geometry waypoints (ids like `shape-0`) try to mark them as
+    // pass-through (`via:`) so Maps is more likely to follow the shape instead
+    // of recalculating a generic A→B route. This is a best-effort; Maps may
+    // still adjust due to live traffic or internal heuristics.
+    const waypointStrings = waypoints.map((w) => {
+      const coord = encodeLatLng(w);
+      // Treat synthetic shape waypoints as via: to hint Maps to pass through them.
+      if (w.id && w.id.startsWith("shape-")) return `via:${coord}`;
+      return coord;
+    });
+
+    search.set("waypoints", waypointStrings.join("|"));
     if (allHavePid) {
+      // Only include place IDs when every waypoint has one — mixing can hang on
+      // some mobile clients.
       search.set("waypoint_place_ids", waypointPids.join("|"));
     }
   }
