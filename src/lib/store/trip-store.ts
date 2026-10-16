@@ -32,6 +32,8 @@ import type {
   NavProgress,
 } from "@/lib/navigation/types";
 import { stopNavigationSpeech } from "@/lib/navigation/voice";
+import { detectNavPlatform } from "@/lib/navigation/platform";
+import { releaseWakeLock } from "@/lib/navigation/wake-lock";
 
 export type MapPickTarget =
   | "origin"
@@ -64,6 +66,9 @@ const IDLE_NAVIGATION: NavigationRuntime = {
   progress: null,
   error: null,
   lastSpokenManeuverId: null,
+  wakeLockActive: false,
+  wakeLockMode: "inactive",
+  platform: "web",
 };
 
 interface TripState {
@@ -170,6 +175,10 @@ interface TripState {
   stopNavigation: () => void;
   setNavigationVoice: (enabled: boolean) => void;
   setNavigationFollowMap: (enabled: boolean) => void;
+  setNavigationWakeLock: (state: {
+    active: boolean;
+    mode: NavigationRuntime["wakeLockMode"];
+  }) => void;
   updateNavigationFix: (fix: {
     position: { lat: number; lng: number };
     headingDeg: number | null;
@@ -686,6 +695,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         status: "starting",
         voiceEnabled: get().navigation.voiceEnabled,
         followMap: true,
+        platform: detectNavPlatform(),
       },
       activePanel: "navigate",
       mobilePanelOpen: true,
@@ -701,7 +711,14 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   stopNavigation: () => {
     stopNavigationSpeech();
-    set({ navigation: { ...IDLE_NAVIGATION, voiceEnabled: get().navigation.voiceEnabled } });
+    void releaseWakeLock();
+    set({
+      navigation: {
+        ...IDLE_NAVIGATION,
+        voiceEnabled: get().navigation.voiceEnabled,
+        platform: detectNavPlatform(),
+      },
+    });
   },
 
   setNavigationVoice: (enabled) =>
@@ -712,6 +729,15 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   setNavigationFollowMap: (enabled) =>
     set((s) => ({ navigation: { ...s.navigation, followMap: enabled } })),
+
+  setNavigationWakeLock: ({ active, mode }) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        wakeLockActive: active,
+        wakeLockMode: mode,
+      },
+    })),
 
   updateNavigationFix: (fix) =>
     set((s) => ({

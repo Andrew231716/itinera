@@ -10,3 +10,4 @@
 8. Assistente richiede GEMINI_API_KEY (gratuita) e/o OPENAI_API_KEY; senza alcuna chiave resta unavailable.
 9. Non sono stati eseguiti test su dispositivi fisici reali; verificati build, lint, vitest e smoke API locali.
 11. GPS «Posizione attuale» richiede permesso browser/OS e contesto HTTPS (o localhost). Senza Geocoding API il punto resta usabile con etichetta «Posizione attuale» e coordinate.
+12. Navigazione PWA: Screen Wake Lock tiene lo schermo acceso in foreground; GPS continuo a schermo spento richiede shell Capacitor + permessi OS (MOBILE_APP.md), non è disponibile nel solo browser.

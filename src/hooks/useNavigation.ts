@@ -5,9 +5,15 @@ import { useTripStore } from "@/lib/store/trip-store";
 import { buildManeuvers } from "@/lib/navigation/maneuvers";
 import { computeNavProgress } from "@/lib/navigation/progress";
 import { speakNavigation, stopNavigationSpeech } from "@/lib/navigation/voice";
+import {
+  watchNavigationPosition,
+  type PositionWatcher,
+} from "@/lib/navigation/platform";
+import { acquireWakeLock, releaseWakeLock } from "@/lib/navigation/wake-lock";
 
 /**
  * Watches GPS while navigation is active and updates progress / voice cues.
+ * Acquires Screen Wake Lock (or audio fallback) for the session.
  */
 export function useNavigation() {
   const navigation = useTripStore((s) => s.navigation);
@@ -16,8 +22,9 @@ export function useNavigation() {
   const updateNavigationFix = useTripStore((s) => s.updateNavigationFix);
   const setNavigationProgress = useTripStore((s) => s.setNavigationProgress);
   const markNavigationSpoken = useTripStore((s) => s.markNavigationSpoken);
+  const setNavigationWakeLock = useTripStore((s) => s.setNavigationWakeLock);
 
-  const watchIdRef = useRef<number | null>(null);
+  const watcherRef = useRef<PositionWatcher | null>(null);
 
   const selected =
     routes.find((r) => r.id === selectedRouteId) ?? routes[0] ?? null;
@@ -29,105 +36,100 @@ export function useNavigation() {
       navigation.status === "starting";
 
     if (!active || !selected) {
-      if (watchIdRef.current != null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
+      watcherRef.current?.clear();
+      watcherRef.current = null;
+      void releaseWakeLock().then(() => {
+        setNavigationWakeLock({ active: false, mode: "inactive" });
+      });
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const wl = await acquireWakeLock();
+      if (cancelled) {
+        await releaseWakeLock();
+        return;
       }
-      return;
-    }
+      setNavigationWakeLock({ active: wl.active, mode: wl.mode });
 
-    if (!navigator.geolocation) {
-      useTripStore.setState((s) => ({
-        navigation: {
-          ...s.navigation,
-          status: "error",
-          error: "Geolocalizzazione non disponibile su questo dispositivo.",
+      const watcher = await watchNavigationPosition(
+        (fix) => {
+          if (cancelled) return;
+          updateNavigationFix({
+            position: fix.position,
+            headingDeg: fix.headingDeg,
+            accuracyMeters: fix.accuracyMeters,
+            speedMps: fix.speedMps,
+          });
+
+          const state = useTripStore.getState();
+          const route =
+            state.routes.find((r) => r.id === state.trip.selectedRouteId) ??
+            state.routes[0];
+          if (!route) return;
+
+          const maneuvers = buildManeuvers(route);
+          const progress = computeNavProgress({
+            position: fix.position,
+            route,
+            maneuvers,
+          });
+          if (!progress) return;
+          setNavigationProgress(progress);
+
+          const nav = useTripStore.getState().navigation;
+          if (
+            nav.voiceEnabled &&
+            progress.nextManeuver &&
+            progress.nextManeuver.id !== nav.lastSpokenManeuverId &&
+            progress.metersToNextManeuver < 280
+          ) {
+            const cue =
+              progress.metersToNextManeuver < 40
+                ? progress.nextManeuver.instruction
+                : `Tra ${Math.round(progress.metersToNextManeuver)} metri: ${progress.nextManeuver.instruction}`;
+            speakNavigation(cue, true);
+            markNavigationSpoken(progress.nextManeuver.id);
+          }
+
+          if (progress.arrived) {
+            speakNavigation("Sei arrivato a destinazione", nav.voiceEnabled);
+            stopNavigationSpeech();
+            useTripStore.setState((s) => ({
+              navigation: { ...s.navigation, status: "arrived" },
+            }));
+          }
         },
-      }));
-      return;
-    }
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const position = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-        updateNavigationFix({
-          position,
-          headingDeg:
-            pos.coords.heading != null && Number.isFinite(pos.coords.heading)
-              ? pos.coords.heading
-              : null,
-          accuracyMeters: pos.coords.accuracy,
-          speedMps:
-            pos.coords.speed != null && Number.isFinite(pos.coords.speed)
-              ? pos.coords.speed
-              : null,
-        });
-
-        const route =
-          useTripStore.getState().routes.find(
-            (r) => r.id === useTripStore.getState().trip.selectedRouteId,
-          ) ?? useTripStore.getState().routes[0];
-        if (!route) return;
-
-        const maneuvers = buildManeuvers(route);
-        const progress = computeNavProgress({
-          position,
-          route,
-          maneuvers,
-        });
-        if (!progress) return;
-        setNavigationProgress(progress);
-
-        const nav = useTripStore.getState().navigation;
-        if (
-          nav.voiceEnabled &&
-          progress.nextManeuver &&
-          progress.nextManeuver.id !== nav.lastSpokenManeuverId &&
-          progress.metersToNextManeuver < 280
-        ) {
-          const cue =
-            progress.metersToNextManeuver < 40
-              ? progress.nextManeuver.instruction
-              : `Tra ${Math.round(progress.metersToNextManeuver)} metri: ${progress.nextManeuver.instruction}`;
-          speakNavigation(cue, true);
-          markNavigationSpoken(progress.nextManeuver.id);
-        }
-
-        if (progress.arrived) {
-          speakNavigation("Sei arrivato a destinazione", nav.voiceEnabled);
-          stopNavigationSpeech();
+        (message, permissionDenied) => {
+          if (cancelled) return;
           useTripStore.setState((s) => ({
-            navigation: { ...s.navigation, status: "arrived" },
-          }));
-        }
-      },
-      (err) => {
-        useTripStore.setState((s) => ({
-          navigation: {
-            ...s.navigation,
-            status: "error",
-            error:
-              err.code === err.PERMISSION_DENIED
+            navigation: {
+              ...s.navigation,
+              status: "error",
+              error: permissionDenied
                 ? "Permesso posizione negato. Abilitalo per navigare."
-                : "Impossibile ottenere la posizione GPS.",
-          },
-        }));
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 15000,
-      },
-    );
+                : message,
+            },
+          }));
+        },
+      );
+
+      if (cancelled) {
+        watcher.clear();
+        return;
+      }
+      watcherRef.current = watcher;
+    })();
 
     return () => {
-      if (watchIdRef.current != null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
+      cancelled = true;
+      watcherRef.current?.clear();
+      watcherRef.current = null;
+      void releaseWakeLock().then(() => {
+        setNavigationWakeLock({ active: false, mode: "inactive" });
+      });
     };
   }, [
     navigation.status,
@@ -135,5 +137,6 @@ export function useNavigation() {
     updateNavigationFix,
     setNavigationProgress,
     markNavigationSpoken,
+    setNavigationWakeLock,
   ]);
 }

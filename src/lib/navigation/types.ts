@@ -44,6 +44,12 @@ export type NavigationStatus =
   | "arrived"
   | "error";
 
+export type WakeLockUiMode =
+  | "wake-lock"
+  | "audio-fallback"
+  | "unsupported"
+  | "inactive";
+
 export interface NavigationRuntime {
   status: NavigationStatus;
   voiceEnabled: boolean;
@@ -56,4 +62,9 @@ export interface NavigationRuntime {
   error: string | null;
   /** Last instruction spoken (to avoid repeats) */
   lastSpokenManeuverId: string | null;
+  /** Screen kept awake while navigating */
+  wakeLockActive: boolean;
+  wakeLockMode: WakeLockUiMode;
+  /** web PWA vs Capacitor native shell */
+  platform: "web" | "capacitor";
 }

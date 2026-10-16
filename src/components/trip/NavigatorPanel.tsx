@@ -4,6 +4,8 @@ import {
   Compass,
   MapPin,
   Navigation,
+  Smartphone,
+  Sun,
   Volume2,
   VolumeX,
   X,
@@ -202,11 +204,31 @@ export function NavigatorPanel() {
         </div>
       ) : null}
 
+      {active && navigation.status !== "arrived" ? (
+        <div className="flex flex-wrap gap-2 text-[11px] text-[var(--ink-muted)]">
+          <span className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-1">
+            <Sun className="h-3 w-3" />
+            {navigation.wakeLockMode === "wake-lock"
+              ? "Schermo acceso (Wake Lock)"
+              : navigation.wakeLockMode === "audio-fallback"
+                ? "Keepalive audio (no Wake Lock)"
+                : navigation.wakeLockMode === "unsupported"
+                  ? "Wake Lock non supportato"
+                  : "Wake Lock…"}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-1">
+            <Smartphone className="h-3 w-3" />
+            {navigation.platform === "capacitor"
+              ? "App nativa (GPS background)"
+              : "PWA / browser"}
+          </span>
+        </div>
+      ) : null}
+
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[11px] leading-relaxed text-[var(--ink-muted)]">
-        Navigatore guidato leggero (PWA): segue la polyline Itinera e le manovre
-        del calcolo. Non sostituisce un Navigation SDK nativo, ma mantiene le
-        esclusioni (es. Evita Svizzera) che il link Google Maps non può
-        trasferire. Usa con lo schermo acceso e permesso posizione.
+        Navigatore guidato leggero: segue la polyline Itinera (esclusioni
+        incluse). In PWA lo schermo resta acceso con Wake Lock; GPS in
+        background richiede l&apos;app Capacitor (vedi MOBILE_APP.md).
       </div>
     </div>
   );
