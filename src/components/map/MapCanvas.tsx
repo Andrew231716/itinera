@@ -79,10 +79,17 @@ export function MapCanvas() {
   const fuelStations = useTripStore((s) => s.fuelStations);
   const selectedFuelId = useTripStore((s) => s.selectedFuelId);
   const selectFuel = useTripStore((s) => s.selectFuel);
+  const navigation = useTripStore((s) => s.navigation);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+
+  const navActive =
+    navigation.status === "navigating" ||
+    navigation.status === "off_route" ||
+    navigation.status === "starting" ||
+    navigation.status === "arrived";
 
   useEffect(() => {
     if (!browserMapsKey || !containerRef.current) return;
@@ -221,10 +228,65 @@ export function MapCanvas() {
         map,
         path: selected.decodedPath,
         strokeColor: "#2C5F7C",
-        strokeOpacity: 0.9,
-        strokeWeight: 5,
+        strokeOpacity: navActive ? 0.35 : 0.9,
+        strokeWeight: navActive ? 4 : 5,
       });
       overlaysRef.current.push(poly);
+
+      // Remaining path highlight while navigating
+      if (navActive && navigation.progress) {
+        const from = Math.max(0, navigation.progress.segmentIndex);
+        const remaining = [
+          navigation.progress.snapped,
+          ...selected.decodedPath.slice(from + 1),
+        ];
+        if (remaining.length >= 2) {
+          const remainPoly = new window.google.maps.Polyline({
+            map,
+            path: remaining,
+            strokeColor: navigation.status === "off_route" ? "#C23B22" : "#0F766E",
+            strokeOpacity: 0.95,
+            strokeWeight: 6,
+          });
+          overlaysRef.current.push(remainPoly);
+        }
+      }
+    }
+
+    if (navActive && navigation.position) {
+      const heading =
+        navigation.headingDeg ??
+        navigation.progress?.routeBearingDeg ??
+        0;
+      const arrow = new window.google.maps.Marker({
+        map,
+        position: navigation.position,
+        icon: {
+          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 6,
+          fillColor: navigation.status === "off_route" ? "#C23B22" : "#2C5F7C",
+          fillOpacity: 1,
+          strokeColor: "#fff",
+          strokeWeight: 2,
+          rotation: heading,
+        },
+        zIndex: 200,
+        title: "La tua posizione",
+      });
+      overlaysRef.current.push(arrow);
+      if (navigation.accuracyMeters && navigation.accuracyMeters < 120) {
+        const accuracy = new window.google.maps.Circle({
+          map,
+          center: navigation.position,
+          radius: navigation.accuracyMeters,
+          fillColor: "#2C5F7C",
+          fillOpacity: 0.08,
+          strokeColor: "#2C5F7C",
+          strokeOpacity: 0.25,
+          strokeWeight: 1,
+        });
+        overlaysRef.current.push(accuracy);
+      }
     }
 
     trip.exclusions.forEach((ex) => {
@@ -289,6 +351,9 @@ export function MapCanvas() {
       }
     }
 
+    // Don't auto-fit while navigating — camera is driven by follow mode.
+    if (navActive && navigation.followMap) return;
+
     const focus = collectFocusPoints();
     const bounds = boundsFromPoints(focus);
     if (bounds && focus.length === 1) {
@@ -315,9 +380,26 @@ export function MapCanvas() {
     fuelStations,
     selectedFuelId,
     selectFuel,
+    navigation,
+    navActive,
     setActivePanel,
     setMobilePanelOpen,
     ready,
+  ]);
+
+  // Follow GPS while navigating
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !navActive || !navigation.followMap) return;
+    if (!navigation.position) return;
+    map.panTo(navigation.position);
+    if ((map.getZoom() ?? 0) < 15) map.setZoom(16);
+  }, [
+    ready,
+    navActive,
+    navigation.followMap,
+    navigation.position?.lat,
+    navigation.position?.lng,
   ]);
 
   if (mapsMode === "demo" || !browserMapsKey) {

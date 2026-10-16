@@ -27,6 +27,11 @@ import type { ParkingSpot } from "@/lib/parking/types";
 import { parkingSpotToPlaceRef } from "@/lib/parking/place-ref";
 import type { FuelStation } from "@/lib/fuel/types";
 import { fuelStationToPlaceRef } from "@/lib/fuel/place-ref";
+import type {
+  NavigationRuntime,
+  NavProgress,
+} from "@/lib/navigation/types";
+import { stopNavigationSpeech } from "@/lib/navigation/voice";
 
 export type MapPickTarget =
   | "origin"
@@ -43,9 +48,23 @@ export type PanelTab =
   | "summary"
   | "parking"
   | "fuel"
+  | "navigate"
   | "assistant"
   | "setup"
   | "saved";
+
+const IDLE_NAVIGATION: NavigationRuntime = {
+  status: "idle",
+  voiceEnabled: true,
+  followMap: true,
+  position: null,
+  headingDeg: null,
+  accuracyMeters: null,
+  speedMps: null,
+  progress: null,
+  error: null,
+  lastSpokenManeuverId: null,
+};
 
 interface TripState {
   trip: TripDraft;
@@ -75,6 +94,9 @@ interface TripState {
   fuelCenter: { lat: number; lng: number; label: string } | null;
   /** Bumps when a new fuel search is requested (AI / manual / GPS) */
   fuelSearchNonce: number;
+
+  /** In-app guided navigation along the selected Itinera route */
+  navigation: NavigationRuntime;
 
   setActivePanel: (tab: PanelTab) => void;
   setMobilePanelOpen: (open: boolean) => void;
@@ -143,6 +165,19 @@ interface TripState {
   }) => void;
   /** Apply selected fuel station as destination or as an intermediate stop */
   applySelectedFuel: (mode: "destination" | "stop") => void;
+
+  startNavigation: () => void;
+  stopNavigation: () => void;
+  setNavigationVoice: (enabled: boolean) => void;
+  setNavigationFollowMap: (enabled: boolean) => void;
+  updateNavigationFix: (fix: {
+    position: { lat: number; lng: number };
+    headingDeg: number | null;
+    accuracyMeters: number | null;
+    speedMps: number | null;
+  }) => void;
+  setNavigationProgress: (progress: NavProgress) => void;
+  markNavigationSpoken: (maneuverId: string) => void;
 }
 
 function touch(trip: TripDraft): TripDraft {
@@ -183,6 +218,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   selectedFuelId: null,
   fuelCenter: null,
   fuelSearchNonce: 0,
+  navigation: { ...IDLE_NAVIGATION },
 
   setActivePanel: (tab) => set({ activePanel: tab }),
   setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
@@ -627,4 +663,91 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({ activePanel: "itinerary", mobilePanelOpen: true });
     }
   },
+
+  startNavigation: () => {
+    const { routes, trip } = get();
+    const selected =
+      routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0] ?? null;
+    if (!selected || selected.decodedPath.length < 2) {
+      set({
+        navigation: {
+          ...IDLE_NAVIGATION,
+          status: "error",
+          error: "Calcola prima un percorso in Itinera.",
+        },
+        activePanel: "navigate",
+        mobilePanelOpen: true,
+      });
+      return;
+    }
+    set({
+      navigation: {
+        ...IDLE_NAVIGATION,
+        status: "starting",
+        voiceEnabled: get().navigation.voiceEnabled,
+        followMap: true,
+      },
+      activePanel: "navigate",
+      mobilePanelOpen: true,
+    });
+    // Move to navigating once GPS watch attaches (hook upgrades status)
+    setTimeout(() => {
+      const nav = get().navigation;
+      if (nav.status === "starting") {
+        set({ navigation: { ...nav, status: "navigating" } });
+      }
+    }, 400);
+  },
+
+  stopNavigation: () => {
+    stopNavigationSpeech();
+    set({ navigation: { ...IDLE_NAVIGATION, voiceEnabled: get().navigation.voiceEnabled } });
+  },
+
+  setNavigationVoice: (enabled) =>
+    set((s) => {
+      if (!enabled) stopNavigationSpeech();
+      return { navigation: { ...s.navigation, voiceEnabled: enabled } };
+    }),
+
+  setNavigationFollowMap: (enabled) =>
+    set((s) => ({ navigation: { ...s.navigation, followMap: enabled } })),
+
+  updateNavigationFix: (fix) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        position: fix.position,
+        headingDeg: fix.headingDeg,
+        accuracyMeters: fix.accuracyMeters,
+        speedMps: fix.speedMps,
+        error: null,
+        status:
+          s.navigation.status === "starting"
+            ? "navigating"
+            : s.navigation.status === "idle"
+              ? "idle"
+              : s.navigation.status,
+      },
+    })),
+
+  setNavigationProgress: (progress) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        progress,
+        status: progress.arrived
+          ? "arrived"
+          : progress.offRoute
+            ? "off_route"
+            : s.navigation.status === "arrived"
+              ? "arrived"
+              : "navigating",
+      },
+    })),
+
+  markNavigationSpoken: (maneuverId) =>
+    set((s) => ({
+      navigation: { ...s.navigation, lastSpokenManeuverId: maneuverId },
+    })),
 }));

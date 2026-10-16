@@ -7,6 +7,7 @@ import {
   Map as MapIcon,
   CircleParking,
   Fuel,
+  Navigation,
   Route,
   ShieldAlert,
   Sparkles,
@@ -32,6 +33,7 @@ import { SetupPanel } from "@/components/trip/SetupPanel";
 import { SavedPanel } from "@/components/trip/SavedPanel";
 import { ParkingPanel } from "@/components/trip/ParkingPanel";
 import { FuelPanel } from "@/components/trip/FuelPanel";
+import { NavigatorPanel } from "@/components/trip/NavigatorPanel";
 import { MapCanvas } from "@/components/map/MapCanvas";
 import { StatusBanner } from "@/components/status/StatusBanner";
 
@@ -42,6 +44,7 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "parking", label: "Parcheggi", icon: CircleParking },
   { id: "fuel", label: "Benzinai", icon: Fuel },
   { id: "summary", label: "Riepilogo", icon: Layers3 },
+  { id: "navigate", label: "Naviga", icon: Navigation },
   { id: "saved", label: "Cronologia", icon: History },
   { id: "assistant", label: "Assistente", icon: Sparkles },
   { id: "setup", label: "Live", icon: Settings2 },
@@ -198,6 +201,7 @@ export function AppShell() {
           {activePanel === "summary" ? <RouteSummary /> : null}
           {activePanel === "parking" ? <ParkingPanel /> : null}
           {activePanel === "fuel" ? <FuelPanel /> : null}
+          {activePanel === "navigate" ? <NavigatorPanel /> : null}
           {activePanel === "assistant" ? <NaturalLanguageAssistant /> : null}
           {activePanel === "saved" ? <SavedPanel /> : null}
           {activePanel === "setup" ? <SetupPanel /> : null}

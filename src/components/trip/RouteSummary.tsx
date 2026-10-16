@@ -38,6 +38,9 @@ export function RouteSummary() {
   const routeError = useTripStore((s) => s.routeError);
   const routeLimitations = useTripStore((s) => s.routeLimitations);
   const setSelectedRoute = useTripStore((s) => s.setSelectedRoute);
+  const startNavigation = useTripStore((s) => s.startNavigation);
+  const setActivePanel = useTripStore((s) => s.setActivePanel);
+  const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
 
   const selected =
     routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0] ?? null;
@@ -226,6 +229,23 @@ export function RouteSummary() {
           </div>
 
           <TrafficMonitorPanel route={selected} />
+
+          <Button
+            type="button"
+            className="w-full"
+            onClick={() => {
+              startNavigation();
+              setActivePanel("navigate");
+              setMobilePanelOpen(true);
+            }}
+          >
+            <Navigation className="h-4 w-4" />
+            Avvia navigazione Itinera
+          </Button>
+          <p className="text-[11px] text-[var(--ink-muted)]">
+            Guidato in-app sul percorso calcolato (esclusioni incluse). Il link
+            Google Maps resta un’approssimazione senza zone escluse.
+          </p>
 
           {selected.tolls?.hasTolls || selected.tolls?.michelin ? (
             <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
