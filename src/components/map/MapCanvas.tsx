@@ -87,6 +87,7 @@ export function MapCanvas() {
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [isVector, setIsVector] = useState(false);
   const lastHeadingRef = useRef<number | null>(null);
 
   const navActive =
@@ -98,10 +99,12 @@ export function MapCanvas() {
   useEffect(() => {
     if (!browserMapsKey || !containerRef.current) return;
     let cancelled = false;
+    let renderingListener: google.maps.MapsEventListener | null = null;
 
     loadGoogleMaps(browserMapsKey)
       .then(() => {
         if (cancelled || !containerRef.current || !window.google?.maps) return;
+        const gmaps = window.google.maps;
         const opts: google.maps.MapOptions = {
           center: { lat: 42.5, lng: 12.5 },
           zoom: 6,
@@ -113,14 +116,19 @@ export function MapCanvas() {
           rotateControl: false,
           tilt: 0,
           heading: 0,
+          // Vector enables programmatic tilt + heading (3D driving camera).
+          renderingType: gmaps.RenderingType?.VECTOR ?? "VECTOR",
+          // Map ID required by some vector features; DEMO_MAP_ID needs no Cloud setup.
+          mapId: mapsMapId || gmaps.Map.DEMO_MAP_ID,
         };
-        // Vector map ID unlocks programmatic tilt + heading-up navigation.
-        if (mapsMapId) {
-          opts.mapId = mapsMapId;
-        } else {
-          opts.styles = MAP_STYLES as unknown as google.maps.MapTypeStyle[];
-        }
-        mapRef.current = new window.google.maps.Map(containerRef.current, opts);
+        mapRef.current = new gmaps.Map(containerRef.current, opts);
+        const map = mapRef.current;
+        const syncVector = () => {
+          const type = String(map.getRenderingType?.() ?? "");
+          setIsVector(type === "VECTOR");
+        };
+        syncVector();
+        renderingListener = map.addListener("renderingtype_changed", syncVector);
         setReady(true);
       })
       .catch((err: Error) => {
@@ -129,6 +137,7 @@ export function MapCanvas() {
 
     return () => {
       cancelled = true;
+      renderingListener?.remove();
     };
   }, [browserMapsKey, mapsMapId]);
 
@@ -448,11 +457,12 @@ export function MapCanvas() {
 
     try {
       map.setHeading(camHeading);
-      map.setTilt(mapsMapId ? 47 : 0);
+      // 3D tilt on vector maps; raster ignores / clamps this.
+      map.setTilt(isVector ? 55 : 0);
     } catch {
-      // Raster maps without Map ID may ignore heading/tilt
+      // Unsupported on some devices that fall back to raster
     }
-  }, [ready, navActive, navigation, mapsMapId]);
+  }, [ready, navActive, navigation, isVector]);
 
   if (mapsMode === "demo" || !browserMapsKey) {
     return <DemoMap />;
@@ -587,38 +597,3 @@ function DemoMap() {
     </div>
   );
 }
-
-const MAP_STYLES: Array<Record<string, unknown>> = [
-  { elementType: "geometry", stylers: [{ color: "#eef3f7" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#5b6b7c" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#eef3f7" }] },
-  {
-    featureType: "administrative",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#c5d2dc" }],
-  },
-  {
-    featureType: "poi",
-    stylers: [{ visibility: "off" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#ffffff" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#d9e4ec" }],
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#c5d9e8" }],
-  },
-  {
-    featureType: "landscape.natural",
-    elementType: "geometry",
-    stylers: [{ color: "#e4ece6" }],
-  },
-];
