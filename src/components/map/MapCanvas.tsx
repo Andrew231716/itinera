@@ -6,6 +6,12 @@ import type { LatLng } from "@/lib/types/trip";
 import { boundsFromPoints } from "@/lib/utils/geometry";
 import { destinationPoint } from "@/lib/navigation/destination-point";
 import { effectiveNavHeading } from "@/lib/navigation/effective-heading";
+import {
+  lerpHeading,
+  lerpLatLng,
+  NAV_CHEVRON_PATH,
+} from "@/lib/navigation/smooth";
+import { useTheme } from "@/hooks/useTheme";
 
 declare global {
   interface Window {
@@ -68,6 +74,15 @@ export function MapCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
+  const navMarkerRef = useRef<google.maps.Marker | null>(null);
+  const accuracyRef = useRef<google.maps.Circle | null>(null);
+  const animRef = useRef<number | null>(null);
+  const displayPosRef = useRef<LatLng | null>(null);
+  const displayHeadingRef = useRef<number>(0);
+  const targetPosRef = useRef<LatLng | null>(null);
+  const targetHeadingRef = useRef<number>(0);
+
+  const { theme } = useTheme();
   const browserMapsKey = useTripStore((s) => s.browserMapsKey);
   const mapsMapId = useTripStore((s) => s.mapsMapId);
   const mapsMode = useTripStore((s) => s.mapsMode);
@@ -88,7 +103,6 @@ export function MapCanvas() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [isVector, setIsVector] = useState(false);
-  const lastHeadingRef = useRef<number | null>(null);
 
   const navActive =
     navigation.status === "navigating" ||
@@ -96,10 +110,25 @@ export function MapCanvas() {
     navigation.status === "starting" ||
     navigation.status === "arrived";
 
+  // Init / recreate map when key, mapId, or theme changes
   useEffect(() => {
     if (!browserMapsKey || !containerRef.current) return;
     let cancelled = false;
     let renderingListener: google.maps.MapsEventListener | null = null;
+    setReady(false);
+
+    // Clear previous overlays/marker when recreating
+    navMarkerRef.current?.setMap(null);
+    navMarkerRef.current = null;
+    accuracyRef.current?.setMap(null);
+    accuracyRef.current = null;
+    overlaysRef.current.forEach((o) => {
+      if ("setMap" in o) {
+        (o as google.maps.Marker).setMap(null);
+      }
+    });
+    overlaysRef.current = [];
+    mapRef.current = null;
 
     loadGoogleMaps(browserMapsKey)
       .then(() => {
@@ -116,10 +145,12 @@ export function MapCanvas() {
           rotateControl: false,
           tilt: 0,
           heading: 0,
-          // Vector enables programmatic tilt + heading (3D driving camera).
           renderingType: gmaps.RenderingType?.VECTOR ?? "VECTOR",
-          // Map ID required by some vector features; DEMO_MAP_ID needs no Cloud setup.
           mapId: mapsMapId || gmaps.Map.DEMO_MAP_ID,
+          colorScheme:
+            theme === "dark"
+              ? gmaps.ColorScheme?.DARK ?? "DARK"
+              : gmaps.ColorScheme?.LIGHT ?? "LIGHT",
         };
         mapRef.current = new gmaps.Map(containerRef.current, opts);
         const map = mapRef.current;
@@ -138,8 +169,12 @@ export function MapCanvas() {
     return () => {
       cancelled = true;
       renderingListener?.remove();
+      if (animRef.current != null) {
+        cancelAnimationFrame(animRef.current);
+        animRef.current = null;
+      }
     };
-  }, [browserMapsKey, mapsMapId]);
+  }, [browserMapsKey, mapsMapId, theme]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -155,6 +190,7 @@ export function MapCanvas() {
     };
   }, [handleMapClick, ready]);
 
+  // Static overlays (route, stops, parking…) — NOT every GPS tick
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !window.google?.maps || !ready) return;
@@ -193,9 +229,7 @@ export function MapCanvas() {
         },
         zIndex: onClick ? 50 : 10,
       });
-      if (onClick) {
-        marker.addListener("click", onClick);
-      }
+      if (onClick) marker.addListener("click", onClick);
       overlaysRef.current.push(marker);
     };
 
@@ -205,43 +239,45 @@ export function MapCanvas() {
     );
     if (trip.destination) addMarker(trip.destination.location, "B", "#D4A017");
 
-    parkingSpots.slice(0, 24).forEach((spot, index) => {
-      const selected = spot.id === selectedParkingId;
-      addMarker(
-        spot.location,
-        selected ? "P" : String(index + 1),
-        selected
-          ? "#0F766E"
-          : spot.pricing === "free"
-            ? "#15803D"
-            : spot.pricing === "paid"
-              ? "#B45309"
-              : "#64748B",
-        () => {
-          selectParking(spot.id);
-          setActivePanel("parking");
-          setMobilePanelOpen(true);
-        },
-      );
-    });
+    if (!navActive) {
+      parkingSpots.slice(0, 24).forEach((spot, index) => {
+        const selected = spot.id === selectedParkingId;
+        addMarker(
+          spot.location,
+          selected ? "P" : String(index + 1),
+          selected
+            ? "#0F766E"
+            : spot.pricing === "free"
+              ? "#15803D"
+              : spot.pricing === "paid"
+                ? "#B45309"
+                : "#64748B",
+          () => {
+            selectParking(spot.id);
+            setActivePanel("parking");
+            setMobilePanelOpen(true);
+          },
+        );
+      });
 
-    fuelStations.slice(0, 24).forEach((station, index) => {
-      const selected = station.id === selectedFuelId;
-      addMarker(
-        station.location,
-        selected ? "F" : String(index + 1),
-        selected
-          ? "#1D4ED8"
-          : station.amenities.adblue === "yes"
-            ? "#2563EB"
-            : "#475569",
-        () => {
-          selectFuel(station.id);
-          setActivePanel("fuel");
-          setMobilePanelOpen(true);
-        },
-      );
-    });
+      fuelStations.slice(0, 24).forEach((station, index) => {
+        const selected = station.id === selectedFuelId;
+        addMarker(
+          station.location,
+          selected ? "F" : String(index + 1),
+          selected
+            ? "#1D4ED8"
+            : station.amenities.adblue === "yes"
+              ? "#2563EB"
+              : "#475569",
+          () => {
+            selectFuel(station.id);
+            setActivePanel("fuel");
+            setMobilePanelOpen(true);
+          },
+        );
+      });
+    }
 
     const selected =
       routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0];
@@ -249,13 +285,12 @@ export function MapCanvas() {
       const poly = new window.google.maps.Polyline({
         map,
         path: selected.decodedPath,
-        strokeColor: "#2C5F7C",
+        strokeColor: theme === "dark" ? "#7eb6d4" : "#2C5F7C",
         strokeOpacity: navActive ? 0.35 : 0.9,
-        strokeWeight: navActive ? 4 : 5,
+        strokeWeight: navActive ? 5 : 5,
       });
       overlaysRef.current.push(poly);
 
-      // Remaining path highlight while navigating
       if (navActive && navigation.progress) {
         const from = Math.max(0, navigation.progress.segmentIndex);
         const remaining = [
@@ -266,45 +301,13 @@ export function MapCanvas() {
           const remainPoly = new window.google.maps.Polyline({
             map,
             path: remaining,
-            strokeColor: navigation.status === "off_route" ? "#C23B22" : "#0F766E",
+            strokeColor:
+              navigation.status === "off_route" ? "#F87171" : "#34D399",
             strokeOpacity: 0.95,
-            strokeWeight: 6,
+            strokeWeight: 7,
           });
           overlaysRef.current.push(remainPoly);
         }
-      }
-    }
-
-    if (navActive && navigation.position) {
-      const heading = effectiveNavHeading(navigation);
-      const arrow = new window.google.maps.Marker({
-        map,
-        position: navigation.position,
-        icon: {
-          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 7,
-          fillColor: navigation.status === "off_route" ? "#C23B22" : "#1D4ED8",
-          fillOpacity: 1,
-          strokeColor: "#fff",
-          strokeWeight: 2,
-          rotation: heading,
-        },
-        zIndex: 200,
-        title: "La tua posizione",
-      });
-      overlaysRef.current.push(arrow);
-      if (navigation.accuracyMeters && navigation.accuracyMeters < 120) {
-        const accuracy = new window.google.maps.Circle({
-          map,
-          center: navigation.position,
-          radius: navigation.accuracyMeters,
-          fillColor: "#1D4ED8",
-          fillOpacity: 0.08,
-          strokeColor: "#1D4ED8",
-          strokeOpacity: 0.25,
-          strokeWeight: 1,
-        });
-        overlaysRef.current.push(accuracy);
       }
     }
 
@@ -347,48 +350,28 @@ export function MapCanvas() {
       exclusionDraftPoints.forEach((p, i) =>
         addMarker(p, String(i + 1), "#C23B22"),
       );
-      if (exclusionDraftPoints.length >= 2) {
-        const draft = new window.google.maps.Polyline({
-          map,
-          path: exclusionDraftPoints,
-          strokeColor: "#C23B22",
-          strokeOpacity: 0.7,
-          strokeWeight: 2,
-          icons: [
-            {
-              icon: {
-                path: "M 0,-1 0,1",
-                strokeOpacity: 1,
-                scale: 3,
-              },
-              offset: "0",
-              repeat: "12px",
-            },
-          ],
-        });
-        overlaysRef.current.push(draft);
+    }
+
+    if (!(navActive && navigation.followMap)) {
+      const focus = collectFocusPoints();
+      const bounds = boundsFromPoints(focus);
+      if (bounds && focus.length === 1) {
+        map.setCenter(focus[0]);
+        map.setZoom(12);
+      } else if (bounds && focus.length > 1) {
+        map.fitBounds(
+          {
+            north: bounds.north,
+            south: bounds.south,
+            east: bounds.east,
+            west: bounds.west,
+          },
+          64,
+        );
       }
     }
-
-    // Don't auto-fit while navigating — camera is driven by follow mode.
-    if (navActive && navigation.followMap) return;
-
-    const focus = collectFocusPoints();
-    const bounds = boundsFromPoints(focus);
-    if (bounds && focus.length === 1) {
-      map.setCenter(focus[0]);
-      map.setZoom(12);
-    } else if (bounds && focus.length > 1) {
-      map.fitBounds(
-        {
-          north: bounds.north,
-          south: bounds.south,
-          east: bounds.east,
-          west: bounds.west,
-        },
-        64,
-      );
-    }
+    // Intentional: avoid redrawing static overlays on every GPS tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nav progress only for remaining polyline
   }, [
     trip,
     routes,
@@ -399,70 +382,218 @@ export function MapCanvas() {
     fuelStations,
     selectedFuelId,
     selectFuel,
-    navigation,
     navActive,
+    navigation.status,
+    navigation.followMap,
+    navigation.progress?.segmentIndex,
+    navigation.progress?.snapped?.lat,
+    navigation.progress?.snapped?.lng,
     setActivePanel,
     setMobilePanelOpen,
     ready,
+    theme,
   ]);
 
-  // Driving camera: heading-up, slight tilt, look ahead along the road
+  // Persistent, smooth car cursor (not destroyed every GPS tick)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready) return;
+    if (!map || !window.google?.maps || !ready) return;
 
-    if (!navActive || !navigation.followMap || !navigation.position) {
-      // Reset north-up when leaving navigation
+    if (!navActive || !navigation.position) {
+      navMarkerRef.current?.setMap(null);
+      navMarkerRef.current = null;
+      accuracyRef.current?.setMap(null);
+      accuracyRef.current = null;
+      displayPosRef.current = null;
+      return;
+    }
+
+    // Prefer snapped-on-route point so the chevron stays on the line
+    const onRoute =
+      navigation.progress &&
+      !navigation.progress.offRoute &&
+      navigation.progress.crossTrackMeters < 35;
+    const rawTarget =
+      onRoute && navigation.progress
+        ? navigation.progress.snapped
+        : navigation.position;
+    targetPosRef.current = rawTarget;
+    targetHeadingRef.current = effectiveNavHeading(navigation);
+
+    if (!displayPosRef.current) {
+      displayPosRef.current = rawTarget;
+      displayHeadingRef.current = targetHeadingRef.current;
+    }
+
+    const fill =
+      navigation.status === "off_route" ? "#EF4444" : "#2563EB";
+
+    if (!navMarkerRef.current) {
+      navMarkerRef.current = new window.google.maps.Marker({
+        map,
+        position: displayPosRef.current,
+        zIndex: 999,
+        optimized: false,
+        title: "La tua posizione",
+        icon: {
+          path: NAV_CHEVRON_PATH,
+          fillColor: fill,
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2.5,
+          scale: 1,
+          rotation: displayHeadingRef.current,
+          anchor: new window.google.maps.Point(0, 0),
+        },
+      });
+    }
+
+    if (
+      navigation.accuracyMeters != null &&
+      navigation.accuracyMeters > 0 &&
+      navigation.accuracyMeters < 80
+    ) {
+      if (!accuracyRef.current) {
+        accuracyRef.current = new window.google.maps.Circle({
+          map,
+          center: displayPosRef.current,
+          radius: navigation.accuracyMeters,
+          fillColor: fill,
+          fillOpacity: 0.1,
+          strokeColor: fill,
+          strokeOpacity: 0.3,
+          strokeWeight: 1,
+          clickable: false,
+          zIndex: 1,
+        });
+      } else {
+        accuracyRef.current.setRadius(navigation.accuracyMeters);
+      }
+    } else if (accuracyRef.current) {
+      accuracyRef.current.setMap(null);
+      accuracyRef.current = null;
+    }
+
+    // Update icon color if status changed
+    const icon = navMarkerRef.current.getIcon();
+    if (icon && typeof icon === "object" && "fillColor" in icon) {
+      navMarkerRef.current.setIcon({
+        ...(icon as google.maps.Symbol),
+        fillColor: fill,
+        path: NAV_CHEVRON_PATH,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- field-level deps avoid marker thrash
+  }, [
+    ready,
+    navActive,
+    navigation.position?.lat,
+    navigation.position?.lng,
+    navigation.headingDeg,
+    navigation.compassHeadingDeg,
+    navigation.progress?.snapped?.lat,
+    navigation.progress?.snapped?.lng,
+    navigation.progress?.offRoute,
+    navigation.progress?.crossTrackMeters,
+    navigation.progress?.routeBearingDeg,
+    navigation.speedMps,
+    navigation.status,
+    navigation.accuracyMeters,
+  ]);
+
+  // rAF smoother for marker + camera
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !navActive || !navigation.followMap) {
+      if (animRef.current != null) {
+        cancelAnimationFrame(animRef.current);
+        animRef.current = null;
+      }
       if (!navActive) {
         try {
-          map.setTilt(0);
-          map.setHeading(0);
+          map?.setTilt(0);
+          map?.setHeading(0);
         } catch {
-          // ignore if unsupported
+          // ignore
         }
-        lastHeadingRef.current = null;
       }
       return;
     }
 
-    const heading = effectiveNavHeading(navigation);
-    const prev = lastHeadingRef.current;
-    // Smooth small compass jitter
-    const smoothed =
-      prev == null
-        ? heading
-        : prev +
-          ((((heading - prev + 540) % 360) - 180) *
-            (navigation.speedMps != null && navigation.speedMps > 1.4
-              ? 0.55
-              : 0.25));
-    const camHeading = ((smoothed % 360) + 360) % 360;
-    lastHeadingRef.current = camHeading;
+    let alive = true;
+    const tick = () => {
+      if (!alive) return;
+      const target = targetPosRef.current;
+      if (!target) {
+        animRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      const cur = displayPosRef.current ?? target;
+      const speed = navigation.speedMps ?? 0;
+      // Higher alpha when moving fast so we don't lag behind GPS
+      const alpha = speed > 12 ? 0.28 : speed > 4 ? 0.18 : 0.12;
+      const nextPos = lerpLatLng(cur, target, alpha);
+      const nextHeading = lerpHeading(
+        displayHeadingRef.current,
+        targetHeadingRef.current,
+        speed > 4 ? 0.22 : 0.14,
+      );
+      displayPosRef.current = nextPos;
+      displayHeadingRef.current = nextHeading;
 
-    // Place the camera slightly ahead so the road fills the screen (user lower third)
-    const lookAheadM =
-      navigation.speedMps != null && navigation.speedMps > 8 ? 110 : 70;
-    const focus = destinationPoint(
-      navigation.position,
-      camHeading,
-      lookAheadM,
-    );
-    map.panTo(focus);
+      if (navMarkerRef.current) {
+        navMarkerRef.current.setPosition(nextPos);
+        const icon = navMarkerRef.current.getIcon();
+        if (icon && typeof icon === "object") {
+          navMarkerRef.current.setIcon({
+            ...(icon as google.maps.Symbol),
+            path: NAV_CHEVRON_PATH,
+            rotation: nextHeading,
+          });
+        }
+      }
+      accuracyRef.current?.setCenter(nextPos);
 
-    const zoom =
-      navigation.speedMps != null && navigation.speedMps > 16 ? 16 : 18;
-    if (Math.abs((map.getZoom() ?? zoom) - zoom) >= 0.5) {
-      map.setZoom(zoom);
-    }
+      // Short look-ahead so the chevron stays visible above the HUD
+      const lookAheadM = speed > 10 ? 40 : 22;
+      const focus = destinationPoint(nextPos, nextHeading, lookAheadM);
+      map.moveCamera?.({
+        center: focus,
+        heading: nextHeading,
+        tilt: isVector ? 55 : 0,
+        zoom: speed > 18 ? 16.5 : 17.5,
+      });
+      // Fallback if moveCamera unavailable
+      if (!map.moveCamera) {
+        map.panTo(focus);
+        try {
+          map.setHeading(nextHeading);
+          map.setTilt(isVector ? 55 : 0);
+        } catch {
+          // ignore
+        }
+        const z = speed > 18 ? 16 : 18;
+        if (Math.abs((map.getZoom() ?? z) - z) > 0.6) map.setZoom(z);
+      }
 
-    try {
-      map.setHeading(camHeading);
-      // 3D tilt on vector maps; raster ignores / clamps this.
-      map.setTilt(isVector ? 55 : 0);
-    } catch {
-      // Unsupported on some devices that fall back to raster
-    }
-  }, [ready, navActive, navigation, isVector]);
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      alive = false;
+      if (animRef.current != null) {
+        cancelAnimationFrame(animRef.current);
+        animRef.current = null;
+      }
+    };
+  }, [
+    ready,
+    navActive,
+    navigation.followMap,
+    navigation.speedMps,
+    isVector,
+  ]);
 
   if (mapsMode === "demo" || !browserMapsKey) {
     return <DemoMap />;
@@ -510,7 +641,6 @@ function DemoMap() {
   ].filter(Boolean) as Array<LatLng & { kind: string }>;
 
   function project(lat: number, lng: number) {
-    // Rough Italy-centered projection for demo visualization only
     const x = ((lng - 6.5) / (18.5 - 6.5)) * 100;
     const y = ((47.1 - lat) / (47.1 - 36.5)) * 100;
     return {
@@ -521,7 +651,7 @@ function DemoMap() {
 
   return (
     <div
-      className={`relative h-full w-full overflow-hidden bg-[linear-gradient(160deg,#d9e6ef_0%,#eef3f7_45%,#d5e4dc_100%)] ${
+      className={`relative h-full w-full overflow-hidden bg-[linear-gradient(160deg,var(--surface-3)_0%,var(--mist)_45%,var(--brand-soft)_100%)] ${
         mapPickTarget ? "cursor-crosshair" : ""
       }`}
       onClick={(e) => {
@@ -534,16 +664,8 @@ function DemoMap() {
         handleMapClick(lat, lng);
       }}
     >
-      <div
-        className="absolute inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 20% 30%, rgba(44,95,124,0.12), transparent 40%), radial-gradient(circle at 80% 70%, rgba(212,160,23,0.12), transparent 35%), linear-gradient(rgba(44,95,124,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(44,95,124,0.06) 1px, transparent 1px)",
-          backgroundSize: "auto, auto, 48px 48px, 48px 48px",
-        }}
-      />
-      <div className="absolute top-4 left-4 z-10 max-w-xs rounded-2xl border border-white/60 bg-white/85 px-4 py-3 shadow-sm backdrop-blur">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-700">
+      <div className="absolute top-4 left-4 z-10 max-w-xs rounded-2xl border border-[var(--line)] bg-[var(--surface)]/90 px-4 py-3 shadow-sm backdrop-blur">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--brand)]">
           Modalità demo
         </p>
         <p className="mt-1 text-sm font-medium text-[var(--ink)]">
@@ -554,8 +676,7 @@ function DemoMap() {
           <code className="rounded bg-[var(--surface-2)] px-1">
             NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
           </code>{" "}
-          per la mappa Google reale. I marker demo posizionano le località
-          note; nessun routing inventato.
+          per la mappa Google reale.
         </p>
       </div>
 
@@ -572,28 +693,6 @@ function DemoMap() {
           </div>
         );
       })}
-
-      {trip.exclusions
-        .filter((ex) => ex.kind === "geo_zone")
-        .map((ex) => {
-          if (ex.kind !== "geo_zone" || ex.polygon.length === 0) return null;
-          const xs = ex.polygon.map((p) => project(p.lat, p.lng));
-          return (
-            <div
-              key={ex.id}
-              className="pointer-events-none absolute inset-0"
-              aria-hidden
-            >
-              {xs.map((s, i) => (
-                <div
-                  key={i}
-                  className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500/80"
-                  style={s}
-                />
-              ))}
-            </div>
-          );
-        })}
     </div>
   );
 }

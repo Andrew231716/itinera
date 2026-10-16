@@ -7,18 +7,21 @@ import {
   Map as MapIcon,
   CircleParking,
   Fuel,
+  Moon,
   Navigation,
   Route,
   ShieldAlert,
   Sparkles,
   SlidersHorizontal,
   Settings2,
+  Sun,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { useNavigation } from "@/hooks/useNavigation";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
+import { useTheme } from "@/hooks/useTheme";
 import { useTripStore, type PanelTab } from "@/lib/store/trip-store";
 import {
   formatDistance,
@@ -74,6 +77,7 @@ export function AppShell() {
   const startNavigation = useTripStore((s) => s.startNavigation);
   const { computeRoute } = useRouteCompute();
   useNavigation();
+  const { theme, toggleTheme } = useTheme();
   const hasRoute = routes.length > 0;
   const driving =
     navigation.status === "navigating" ||
@@ -126,7 +130,7 @@ export function AppShell() {
 
       <aside
         className={cn(
-          "absolute z-30 flex flex-col border-[var(--line)] bg-[var(--surface)]/95 shadow-[0_20px_60px_rgba(36,52,71,0.14)] backdrop-blur-xl transition-transform duration-300 ease-out",
+          "absolute z-30 flex flex-col border-[var(--line)] bg-[var(--surface)]/95 shadow-[0_20px_60px_var(--shadow-panel)] backdrop-blur-xl transition-transform duration-300 ease-out",
           isDesktop
             ? cn(
                 "top-0 left-0 h-full w-[min(420px,38vw)] border-r",
@@ -166,16 +170,34 @@ export function AppShell() {
                 Percorsi su misura, tappe e vincoli reali
               </p>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => void persistTrip()}
-              title="Salva in locale"
-            >
-              <Copy className="h-3.5 w-3.5" />
-              Salva
-            </Button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={toggleTheme}
+                title={theme === "dark" ? "Modalità chiara" : "Modalità scura"}
+                aria-label={
+                  theme === "dark" ? "Attiva modalità chiara" : "Attiva modalità scura"
+                }
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void persistTrip()}
+                title="Salva in locale"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Salva
+              </Button>
+            </div>
           </div>
 
           <nav className="mt-4 flex gap-1 overflow-x-auto pb-1">

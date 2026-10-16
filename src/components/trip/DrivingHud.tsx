@@ -61,7 +61,7 @@ export function DrivingHud() {
                   : "…"}
               </span>
               <span className="mt-1 text-[10px] font-medium tracking-wide uppercase opacity-80">
-                poi
+                dopo
               </span>
             </div>
             <div className="min-w-0 flex-1 px-3 py-3">
