@@ -17,6 +17,12 @@ export function getBrowserGoogleMapsKey(): string | undefined {
   return key || undefined;
 }
 
+/** Optional Map ID — enables vector map tilt + heading-up during navigation. */
+export function getBrowserGoogleMapsMapId(): string | undefined {
+  const id = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID?.trim();
+  return id || undefined;
+}
+
 export function getOpenAiKey(): string | undefined {
   return process.env.OPENAI_API_KEY?.trim() || undefined;
 }

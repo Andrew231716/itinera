@@ -61,6 +61,7 @@ const IDLE_NAVIGATION: NavigationRuntime = {
   followMap: true,
   position: null,
   headingDeg: null,
+  compassHeadingDeg: null,
   accuracyMeters: null,
   speedMps: null,
   progress: null,
@@ -79,6 +80,7 @@ interface TripState {
   routeError: string | null;
   mapsMode: "unknown" | "live" | "demo";
   browserMapsKey: string | null;
+  mapsMapId: string | null;
   mapPickTarget: MapPickTarget;
   activePanel: PanelTab;
   mobilePanelOpen: boolean;
@@ -135,7 +137,11 @@ interface TripState {
   setRouteLoading: () => void;
   setRouteError: (message: string) => void;
   clearRoutes: () => void;
-  setMapsConfig: (mode: "live" | "demo", browserKey: string | null) => void;
+  setMapsConfig: (
+    mode: "live" | "demo",
+    browserKey: string | null,
+    mapId?: string | null,
+  ) => void;
   loadTrip: (trip: TripDraft) => void;
   resetTrip: () => void;
   persistTrip: () => Promise<void>;
@@ -175,6 +181,7 @@ interface TripState {
   stopNavigation: () => void;
   setNavigationVoice: (enabled: boolean) => void;
   setNavigationFollowMap: (enabled: boolean) => void;
+  setNavigationCompassHeading: (headingDeg: number | null) => void;
   setNavigationWakeLock: (state: {
     active: boolean;
     mode: NavigationRuntime["wakeLockMode"];
@@ -213,6 +220,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   routeError: null,
   mapsMode: "unknown",
   browserMapsKey: null,
+  mapsMapId: null,
   mapPickTarget: null,
   activePanel: "itinerary",
   mobilePanelOpen: true,
@@ -508,8 +516,12 @@ export const useTripStore = create<TripState>((set, get) => ({
       trip: touch({ ...s.trip, selectedRouteId: null }),
     })),
 
-  setMapsConfig: (mode, browserKey) =>
-    set({ mapsMode: mode, browserMapsKey: browserKey }),
+  setMapsConfig: (mode, browserKey, mapId) =>
+    set({
+      mapsMode: mode,
+      browserMapsKey: browserKey,
+      mapsMapId: mapId ?? null,
+    }),
 
   loadTrip: (trip) =>
     set({
@@ -698,7 +710,8 @@ export const useTripStore = create<TripState>((set, get) => ({
         platform: detectNavPlatform(),
       },
       activePanel: "navigate",
-      mobilePanelOpen: true,
+      // Collapse the planning sheet — driving HUD takes over on the map.
+      mobilePanelOpen: false,
     });
     // Move to navigating once GPS watch attaches (hook upgrades status)
     setTimeout(() => {
@@ -718,6 +731,8 @@ export const useTripStore = create<TripState>((set, get) => ({
         voiceEnabled: get().navigation.voiceEnabled,
         platform: detectNavPlatform(),
       },
+      mobilePanelOpen: true,
+      activePanel: "summary",
     });
   },
 
@@ -729,6 +744,11 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   setNavigationFollowMap: (enabled) =>
     set((s) => ({ navigation: { ...s.navigation, followMap: enabled } })),
+
+  setNavigationCompassHeading: (headingDeg) =>
+    set((s) => ({
+      navigation: { ...s.navigation, compassHeadingDeg: headingDeg },
+    })),
 
   setNavigationWakeLock: ({ active, mode }) =>
     set((s) => ({
