@@ -98,6 +98,8 @@ export function MapCanvas() {
   const selectedFuelId = useTripStore((s) => s.selectedFuelId);
   const selectFuel = useTripStore((s) => s.selectFuel);
   const navigation = useTripStore((s) => s.navigation);
+  const setNavigationFollowMap = useTripStore((s) => s.setNavigationFollowMap);
+  const setNavigationOverview = useTripStore((s) => s.setNavigationOverview);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -175,6 +177,68 @@ export function MapCanvas() {
       }
     };
   }, [browserMapsKey, mapsMapId, theme]);
+
+  // Pan / drag unlocks follow so the recenter button appears
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !window.google?.maps) return;
+    const onDragStart = () => {
+      const nav = useTripStore.getState().navigation;
+      if (
+        nav.status === "navigating" ||
+        nav.status === "off_route" ||
+        nav.status === "starting"
+      ) {
+        setNavigationFollowMap(false);
+        setNavigationOverview(false);
+      }
+    };
+    const drag = map.addListener("dragstart", onDragStart);
+    return () => {
+      drag.remove();
+    };
+  }, [ready, setNavigationFollowMap, setNavigationOverview]);
+
+  // Overview: fit remaining route + position
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !navigation.overview || !navActive) return;
+    const selected =
+      routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0];
+    const pts: LatLng[] = [];
+    if (navigation.position) pts.push(navigation.position);
+    if (selected?.decodedPath?.length) {
+      const startIdx = Math.max(0, navigation.progress?.segmentIndex ?? 0);
+      pts.push(...selected.decodedPath.slice(startIdx));
+    } else if (trip.destination) {
+      pts.push(trip.destination.location);
+    }
+    if (pts.length < 2) return;
+    const b = boundsFromPoints(pts);
+    if (!b) return;
+    map.fitBounds(
+      new google.maps.LatLngBounds(
+        { lat: b.south, lng: b.west },
+        { lat: b.north, lng: b.east },
+      ),
+      64,
+    );
+    try {
+      map.setTilt(0);
+      map.setHeading(0);
+    } catch {
+      // ignore
+    }
+  }, [
+    ready,
+    navigation.overview,
+    navigation.position,
+    navigation.progress?.segmentIndex,
+    navActive,
+    routes,
+    trip.selectedRouteId,
+    trip.destination,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -554,21 +618,27 @@ export function MapCanvas() {
       }
       accuracyRef.current?.setCenter(nextPos);
 
+      const northUp = useTripStore.getState().navigation.northUp;
+      const camHeading = northUp ? 0 : nextHeading;
+      const camTilt = northUp ? 0 : isVector ? 55 : 0;
       // Short look-ahead so the chevron stays visible above the HUD
-      const lookAheadM = speed > 10 ? 40 : 22;
-      const focus = destinationPoint(nextPos, nextHeading, lookAheadM);
+      const lookAheadM = northUp ? 0 : speed > 10 ? 40 : 22;
+      const focus =
+        lookAheadM > 0
+          ? destinationPoint(nextPos, nextHeading, lookAheadM)
+          : nextPos;
       map.moveCamera?.({
         center: focus,
-        heading: nextHeading,
-        tilt: isVector ? 55 : 0,
+        heading: camHeading,
+        tilt: camTilt,
         zoom: speed > 18 ? 16.5 : 17.5,
       });
       // Fallback if moveCamera unavailable
       if (!map.moveCamera) {
         map.panTo(focus);
         try {
-          map.setHeading(nextHeading);
-          map.setTilt(isVector ? 55 : 0);
+          map.setHeading(camHeading);
+          map.setTilt(camTilt);
         } catch {
           // ignore
         }

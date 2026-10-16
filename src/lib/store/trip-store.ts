@@ -59,6 +59,9 @@ const IDLE_NAVIGATION: NavigationRuntime = {
   status: "idle",
   voiceEnabled: true,
   followMap: true,
+  northUp: false,
+  overview: false,
+  recalculating: false,
   position: null,
   headingDeg: null,
   compassHeadingDeg: null,
@@ -187,6 +190,10 @@ interface TripState {
   stopNavigation: () => void;
   setNavigationVoice: (enabled: boolean) => void;
   setNavigationFollowMap: (enabled: boolean) => void;
+  setNavigationNorthUp: (enabled: boolean) => void;
+  setNavigationOverview: (enabled: boolean) => void;
+  setNavigationRecalculating: (busy: boolean) => void;
+  recenterNavigation: () => void;
   setNavigationCompassHeading: (headingDeg: number | null) => void;
   setNavigationWakeLock: (state: {
     active: boolean;
@@ -730,6 +737,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         status: "starting",
         voiceEnabled: get().navigation.voiceEnabled,
         followMap: true,
+        northUp: get().navigation.northUp,
         platform: detectNavPlatform(),
       },
       activePanel: "navigate",
@@ -767,6 +775,40 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   setNavigationFollowMap: (enabled) =>
     set((s) => ({ navigation: { ...s.navigation, followMap: enabled } })),
+
+  setNavigationNorthUp: (enabled) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        northUp: enabled,
+        // Re-lock camera when toggling orientation mode
+        followMap: true,
+        overview: false,
+      },
+    })),
+
+  setNavigationOverview: (enabled) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        overview: enabled,
+        followMap: enabled ? false : s.navigation.followMap,
+      },
+    })),
+
+  setNavigationRecalculating: (busy) =>
+    set((s) => ({
+      navigation: { ...s.navigation, recalculating: busy },
+    })),
+
+  recenterNavigation: () =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        followMap: true,
+        overview: false,
+      },
+    })),
 
   setNavigationCompassHeading: (headingDeg) =>
     set((s) => ({

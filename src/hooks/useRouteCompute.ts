@@ -2,15 +2,24 @@
 
 import { useTripStore } from "@/lib/store/trip-store";
 import { toUserErrorMessage } from "@/lib/utils/errors";
+import type { PlaceRef } from "@/lib/types/trip";
+
+type ComputeOverrides = {
+  origin?: PlaceRef;
+  destination?: PlaceRef;
+};
 
 export function useRouteCompute() {
-  const trip = useTripStore((s) => s.trip);
   const setRouteLoading = useTripStore((s) => s.setRouteLoading);
   const setRoutesResult = useTripStore((s) => s.setRoutesResult);
   const setRouteError = useTripStore((s) => s.setRouteError);
 
-  async function computeRoute() {
-    if (!trip.origin || !trip.destination) {
+  async function computeRoute(overrides?: ComputeOverrides) {
+    const trip = useTripStore.getState().trip;
+    const origin = overrides?.origin ?? trip.origin;
+    const destination = overrides?.destination ?? trip.destination;
+
+    if (!origin || !destination) {
       setRouteError("Imposta partenza e destinazione prima di calcolare.");
       return;
     }
@@ -21,8 +30,8 @@ export function useRouteCompute() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          origin: trip.origin,
-          destination: trip.destination,
+          origin,
+          destination,
           intermediates: trip.stops.map((s) => s.place),
           travelMode: trip.travelMode,
           departureAt: trip.departureAt,

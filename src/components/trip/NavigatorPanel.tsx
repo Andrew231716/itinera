@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
-import { useRouteCompute } from "@/hooks/useRouteCompute";
+import { useNavRecalculate } from "@/hooks/useNavRecalculate";
 import { formatDistance, formatDuration } from "@/lib/utils/format";
 import {
   Badge,
@@ -19,7 +19,6 @@ import {
   EmptyHint,
   SectionTitle,
 } from "@/components/ui/primitives";
-import { nanoid } from "nanoid";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 
 /** Setup / idle view for the Naviga tab. Active driving UI is DrivingHud. */
@@ -31,8 +30,7 @@ export function NavigatorPanel() {
   const stopNavigation = useTripStore((s) => s.stopNavigation);
   const setNavigationVoice = useTripStore((s) => s.setNavigationVoice);
   const setNavigationFollowMap = useTripStore((s) => s.setNavigationFollowMap);
-  const setOrigin = useTripStore((s) => s.setOrigin);
-  const { computeRoute } = useRouteCompute();
+  const { recalculateFromHere, busy: recalcBusy } = useNavRecalculate();
 
   const selected =
     routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0] ?? null;
@@ -44,19 +42,6 @@ export function NavigatorPanel() {
 
   const progress = navigation.progress;
   const next = progress?.nextManeuver;
-
-  async function recalculateFromHere() {
-    if (!navigation.position || !trip.destination) return;
-    setOrigin({
-      id: nanoid(),
-      label: "Posizione attuale",
-      location: { ...navigation.position },
-      source: "map_click",
-    });
-    stopNavigation();
-    await computeRoute();
-    startNavigation();
-  }
 
   return (
     <div className="space-y-4">
@@ -162,9 +147,12 @@ export function NavigatorPanel() {
           <Button
             type="button"
             size="sm"
+            disabled={recalcBusy || !navigation.position}
             onClick={() => void recalculateFromHere()}
           >
-            Ricalcola da qui (con esclusioni)
+            {recalcBusy
+              ? "Ricalcolo…"
+              : "Ricalcola da qui (con esclusioni)"}
           </Button>
         </div>
       ) : null}
