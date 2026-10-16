@@ -230,22 +230,26 @@ export function RouteSummary() {
 
           <TrafficMonitorPanel route={selected} />
 
-          <Button
-            type="button"
-            className="w-full"
-            onClick={() => {
-              startNavigation();
-              setActivePanel("navigate");
-              setMobilePanelOpen(true);
-            }}
-          >
-            <Navigation className="h-4 w-4" />
-            Avvia navigazione Itinera
-          </Button>
-          <p className="text-[11px] text-[var(--ink-muted)]">
-            Guidato in-app sul percorso calcolato (esclusioni incluse). Il link
-            Google Maps resta un’approssimazione senza zone escluse.
-          </p>
+          <div className="space-y-2 rounded-2xl border border-[var(--brand)]/35 bg-[var(--brand-soft)]/35 p-3">
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              onClick={() => {
+                startNavigation();
+                setActivePanel("navigate");
+                setMobilePanelOpen(true);
+              }}
+            >
+              <Navigation className="h-4 w-4" />
+              Avvia navigazione Itinera
+            </Button>
+            <p className="text-[11px] leading-relaxed text-[var(--ink-muted)]">
+              Navigazione guidata sul sito: segue il percorso Itinera con le
+              esclusioni. Google Maps (sotto) è solo un’alternativa esterna e
+              non trasferisce i vincoli.
+            </p>
+          </div>
 
           {selected.tolls?.hasTolls || selected.tolls?.michelin ? (
             <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
@@ -513,12 +517,12 @@ function ShareActions({
   return (
     <div className="space-y-3 border-t border-[var(--line)] pt-4">
       <SectionTitle
-        title="Condivisione"
-        subtitle="Apre Maps con partenza, arrivo e solo le tappe che hai inserito tu"
+        title="Google Maps (opzionale)"
+        subtitle="Apre l’app esterna — senza esclusioni Itinera"
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
-        <p className="font-medium text-[var(--ink)]">Link Maps</p>
+        <p className="font-medium text-[var(--ink)]">Link esterno</p>
         <p>
           {mapsLink.preview.origin} → {mapsLink.preview.destination}
         </p>
@@ -528,20 +532,20 @@ function ShareActions({
           <p>Nessuna tappa intermedia (solo A → B).</p>
         )}
         <p className="mt-1">
-          Maps può ricalcolare il tracciato per traffico o variazioni del motore:
-          le esclusioni Itinera (es. Evita Svizzera) non vengono trasferite nel
-          link.
+          Preferisci navigare in Itinera (pulsante sopra o tab Naviga) se hai
+          esclusioni: Maps può ricalcolare il tracciato e non riceve i vincoli.
         </p>
       </div>
 
       {!showPreview ? (
         <Button
           type="button"
+          variant="outline"
           className="w-full"
           onClick={() => setShowPreview(true)}
         >
           <ExternalLink className="h-4 w-4" />
-          Rivedi e apri in Google Maps
+          Apri in Google Maps
         </Button>
       ) : (
         <div className="space-y-2 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3">

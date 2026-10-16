@@ -251,6 +251,8 @@ export const useTripStore = create<TripState>((set, get) => ({
     set((s) => ({
       trip: touch({ ...s.trip, destination: place }),
       mapPickTarget: null,
+      // Keep a suggested parking center, but do not open the panel or
+      // trigger a search — the user starts that from Parcheggi explicitly.
       ...(place
         ? {
             parkingCenter: {
@@ -258,8 +260,6 @@ export const useTripStore = create<TripState>((set, get) => ({
               lng: place.location.lng,
               label: place.label,
             },
-            parkingSearchNonce: s.parkingSearchNonce + 1,
-            selectedParkingId: null,
           }
         : {}),
     })),

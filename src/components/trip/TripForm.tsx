@@ -32,8 +32,6 @@ export function TripForm() {
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
   const requestFuelNear = useTripStore((s) => s.requestFuelNear);
   const openFuelPanel = useTripStore((s) => s.openFuelPanel);
-  const setActivePanel = useTripStore((s) => s.setActivePanel);
-  const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
 
   return (
     <div className="space-y-5">
@@ -76,14 +74,7 @@ export function TripForm() {
       <PlaceSearch
         label="Destinazione"
         value={trip.destination}
-        onSelect={(place) => {
-          setDestination(place);
-          // After choosing destination, offer parking search for that area.
-          if (place) {
-            setActivePanel("parking");
-            setMobilePanelOpen(true);
-          }
-        }}
+        onSelect={setDestination}
         onClear={() => setDestination(null)}
         onPickFromMap={() => setMapPickTarget("destination")}
         pickingFromMap={mapPickTarget === "destination"}
