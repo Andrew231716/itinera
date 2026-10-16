@@ -11,7 +11,6 @@ import {
   X,
 } from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
-import { useNavigation } from "@/hooks/useNavigation";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { formatDistance, formatDuration } from "@/lib/utils/format";
 import {
@@ -21,10 +20,10 @@ import {
   SectionTitle,
 } from "@/components/ui/primitives";
 import { nanoid } from "nanoid";
+import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 
+/** Setup / idle view for the Naviga tab. Active driving UI is DrivingHud. */
 export function NavigatorPanel() {
-  useNavigation();
-
   const trip = useTripStore((s) => s.trip);
   const routes = useTripStore((s) => s.routes);
   const navigation = useTripStore((s) => s.navigation);
@@ -96,7 +95,11 @@ export function NavigatorPanel() {
           <Button
             type="button"
             disabled={!selected}
-            onClick={() => startNavigation()}
+            onClick={() => {
+              void requestCompassPermission().finally(() => {
+                startNavigation();
+              });
+            }}
           >
             <Navigation className="h-4 w-4" />
             Avvia navigazione

@@ -55,7 +55,10 @@ export interface NavigationRuntime {
   voiceEnabled: boolean;
   followMap: boolean;
   position: LatLng | null;
+  /** GPS course over ground when available */
   headingDeg: number | null;
+  /** Device compass / gyroscope heading */
+  compassHeadingDeg: number | null;
   accuracyMeters: number | null;
   speedMps: number | null;
   progress: NavProgress | null;

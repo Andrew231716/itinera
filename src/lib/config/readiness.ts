@@ -1,5 +1,6 @@
 import {
   getBrowserGoogleMapsKey,
+  getBrowserGoogleMapsMapId,
   getGeminiKey,
   getGeminiKeySource,
   getOpenAiKey,
@@ -140,12 +141,14 @@ export function getLiveReadiness(): {
 export function getPublicConfigPayload() {
   const readiness = getLiveReadiness();
   const browserKey = getBrowserGoogleMapsKey() ?? null;
+  const mapId = getBrowserGoogleMapsMapId() ?? null;
   const hasServerKey = Boolean(getServerGoogleMapsKey());
 
   return {
     mapsMode: readiness.mapsMode,
     routingMode: readiness.routingMode,
     browserKey,
+    mapId,
     hasServerKey,
     isLiveCapable: readiness.isLiveCapable,
     features: {

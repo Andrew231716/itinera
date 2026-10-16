@@ -10,10 +10,11 @@ import {
   type PositionWatcher,
 } from "@/lib/navigation/platform";
 import { acquireWakeLock, releaseWakeLock } from "@/lib/navigation/wake-lock";
+import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 
 /**
- * Watches GPS while navigation is active and updates progress / voice cues.
- * Acquires Screen Wake Lock (or audio fallback) for the session.
+ * Watches GPS + compass while navigation is active.
+ * Mount once (e.g. AppShell) so the session survives sheet collapse.
  */
 export function useNavigation() {
   const navigation = useTripStore((s) => s.navigation);
@@ -23,24 +24,38 @@ export function useNavigation() {
   const setNavigationProgress = useTripStore((s) => s.setNavigationProgress);
   const markNavigationSpoken = useTripStore((s) => s.markNavigationSpoken);
   const setNavigationWakeLock = useTripStore((s) => s.setNavigationWakeLock);
+  const setNavigationCompassHeading = useTripStore(
+    (s) => s.setNavigationCompassHeading,
+  );
 
   const watcherRef = useRef<PositionWatcher | null>(null);
 
   const selected =
     routes.find((r) => r.id === selectedRouteId) ?? routes[0] ?? null;
 
-  useEffect(() => {
-    const active =
-      navigation.status === "navigating" ||
-      navigation.status === "off_route" ||
-      navigation.status === "starting";
+  const navLive =
+    navigation.status === "navigating" ||
+    navigation.status === "off_route" ||
+    navigation.status === "starting";
 
-    if (!active || !selected) {
+  const { requestPermission } = useDeviceHeading(navLive, (headingDeg) => {
+    setNavigationCompassHeading(headingDeg);
+  });
+
+  // Ask for compass permission once when navigation starts (iOS).
+  useEffect(() => {
+    if (!navLive) return;
+    void requestPermission();
+  }, [navLive, requestPermission]);
+
+  useEffect(() => {
+    if (!navLive || !selected) {
       watcherRef.current?.clear();
       watcherRef.current = null;
       void releaseWakeLock().then(() => {
         setNavigationWakeLock({ active: false, mode: "inactive" });
       });
+      setNavigationCompassHeading(null);
       return;
     }
 
@@ -132,11 +147,12 @@ export function useNavigation() {
       });
     };
   }, [
-    navigation.status,
+    navLive,
     selected,
     updateNavigationFix,
     setNavigationProgress,
     markNavigationSpoken,
     setNavigationWakeLock,
+    setNavigationCompassHeading,
   ]);
 }

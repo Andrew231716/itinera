@@ -30,6 +30,7 @@ import {
   SectionTitle,
 } from "@/components/ui/primitives";
 import { TrafficMonitorPanel } from "@/components/trip/TrafficMonitorPanel";
+import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 
 export function RouteSummary() {
   const trip = useTripStore((s) => s.trip);
@@ -39,8 +40,6 @@ export function RouteSummary() {
   const routeLimitations = useTripStore((s) => s.routeLimitations);
   const setSelectedRoute = useTripStore((s) => s.setSelectedRoute);
   const startNavigation = useTripStore((s) => s.startNavigation);
-  const setActivePanel = useTripStore((s) => s.setActivePanel);
-  const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
 
   const selected =
     routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0] ?? null;
@@ -236,9 +235,9 @@ export function RouteSummary() {
               size="lg"
               className="w-full"
               onClick={() => {
-                startNavigation();
-                setActivePanel("navigate");
-                setMobilePanelOpen(true);
+                void requestCompassPermission().finally(() => {
+                  startNavigation();
+                });
               }}
             >
               <Navigation className="h-4 w-4" />

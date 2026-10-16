@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTripStore } from "@/lib/store/trip-store";
 import type { LatLng } from "@/lib/types/trip";
 import { boundsFromPoints } from "@/lib/utils/geometry";
+import { destinationPoint } from "@/lib/navigation/destination-point";
+import { effectiveNavHeading } from "@/lib/navigation/effective-heading";
 
 declare global {
   interface Window {
@@ -67,6 +69,7 @@ export function MapCanvas() {
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
   const browserMapsKey = useTripStore((s) => s.browserMapsKey);
+  const mapsMapId = useTripStore((s) => s.mapsMapId);
   const mapsMode = useTripStore((s) => s.mapsMode);
   const trip = useTripStore((s) => s.trip);
   const routes = useTripStore((s) => s.routes);
@@ -84,6 +87,7 @@ export function MapCanvas() {
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const lastHeadingRef = useRef<number | null>(null);
 
   const navActive =
     navigation.status === "navigating" ||
@@ -98,7 +102,7 @@ export function MapCanvas() {
     loadGoogleMaps(browserMapsKey)
       .then(() => {
         if (cancelled || !containerRef.current || !window.google?.maps) return;
-        mapRef.current = new window.google.maps.Map(containerRef.current, {
+        const opts: google.maps.MapOptions = {
           center: { lat: 42.5, lng: 12.5 },
           zoom: 6,
           mapTypeControl: false,
@@ -106,8 +110,17 @@ export function MapCanvas() {
           fullscreenControl: false,
           clickableIcons: false,
           gestureHandling: "greedy",
-          styles: MAP_STYLES as unknown as google.maps.MapTypeStyle[],
-        });
+          rotateControl: false,
+          tilt: 0,
+          heading: 0,
+        };
+        // Vector map ID unlocks programmatic tilt + heading-up navigation.
+        if (mapsMapId) {
+          opts.mapId = mapsMapId;
+        } else {
+          opts.styles = MAP_STYLES as unknown as google.maps.MapTypeStyle[];
+        }
+        mapRef.current = new window.google.maps.Map(containerRef.current, opts);
         setReady(true);
       })
       .catch((err: Error) => {
@@ -117,7 +130,7 @@ export function MapCanvas() {
     return () => {
       cancelled = true;
     };
-  }, [browserMapsKey]);
+  }, [browserMapsKey, mapsMapId]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -254,17 +267,14 @@ export function MapCanvas() {
     }
 
     if (navActive && navigation.position) {
-      const heading =
-        navigation.headingDeg ??
-        navigation.progress?.routeBearingDeg ??
-        0;
+      const heading = effectiveNavHeading(navigation);
       const arrow = new window.google.maps.Marker({
         map,
         position: navigation.position,
         icon: {
           path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 6,
-          fillColor: navigation.status === "off_route" ? "#C23B22" : "#2C5F7C",
+          scale: 7,
+          fillColor: navigation.status === "off_route" ? "#C23B22" : "#1D4ED8",
           fillOpacity: 1,
           strokeColor: "#fff",
           strokeWeight: 2,
@@ -279,9 +289,9 @@ export function MapCanvas() {
           map,
           center: navigation.position,
           radius: navigation.accuracyMeters,
-          fillColor: "#2C5F7C",
+          fillColor: "#1D4ED8",
           fillOpacity: 0.08,
-          strokeColor: "#2C5F7C",
+          strokeColor: "#1D4ED8",
           strokeOpacity: 0.25,
           strokeWeight: 1,
         });
@@ -387,20 +397,62 @@ export function MapCanvas() {
     ready,
   ]);
 
-  // Follow GPS while navigating
+  // Driving camera: heading-up, slight tilt, look ahead along the road
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !navActive || !navigation.followMap) return;
-    if (!navigation.position) return;
-    map.panTo(navigation.position);
-    if ((map.getZoom() ?? 0) < 15) map.setZoom(16);
-  }, [
-    ready,
-    navActive,
-    navigation.followMap,
-    navigation.position?.lat,
-    navigation.position?.lng,
-  ]);
+    if (!map || !ready) return;
+
+    if (!navActive || !navigation.followMap || !navigation.position) {
+      // Reset north-up when leaving navigation
+      if (!navActive) {
+        try {
+          map.setTilt(0);
+          map.setHeading(0);
+        } catch {
+          // ignore if unsupported
+        }
+        lastHeadingRef.current = null;
+      }
+      return;
+    }
+
+    const heading = effectiveNavHeading(navigation);
+    const prev = lastHeadingRef.current;
+    // Smooth small compass jitter
+    const smoothed =
+      prev == null
+        ? heading
+        : prev +
+          ((((heading - prev + 540) % 360) - 180) *
+            (navigation.speedMps != null && navigation.speedMps > 1.4
+              ? 0.55
+              : 0.25));
+    const camHeading = ((smoothed % 360) + 360) % 360;
+    lastHeadingRef.current = camHeading;
+
+    // Place the camera slightly ahead so the road fills the screen (user lower third)
+    const lookAheadM =
+      navigation.speedMps != null && navigation.speedMps > 8 ? 110 : 70;
+    const focus = destinationPoint(
+      navigation.position,
+      camHeading,
+      lookAheadM,
+    );
+    map.panTo(focus);
+
+    const zoom =
+      navigation.speedMps != null && navigation.speedMps > 16 ? 16 : 18;
+    if (Math.abs((map.getZoom() ?? zoom) - zoom) >= 0.5) {
+      map.setZoom(zoom);
+    }
+
+    try {
+      map.setHeading(camHeading);
+      map.setTilt(mapsMapId ? 47 : 0);
+    } catch {
+      // Raster maps without Map ID may ignore heading/tilt
+    }
+  }, [ready, navActive, navigation, mapsMapId]);
 
   if (mapsMode === "demo" || !browserMapsKey) {
     return <DemoMap />;

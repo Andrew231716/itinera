@@ -17,6 +17,8 @@ import {
 import { useEffect } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
+import { useNavigation } from "@/hooks/useNavigation";
+import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 import { useTripStore, type PanelTab } from "@/lib/store/trip-store";
 import {
   formatDistance,
@@ -34,6 +36,7 @@ import { SavedPanel } from "@/components/trip/SavedPanel";
 import { ParkingPanel } from "@/components/trip/ParkingPanel";
 import { FuelPanel } from "@/components/trip/FuelPanel";
 import { NavigatorPanel } from "@/components/trip/NavigatorPanel";
+import { DrivingHud } from "@/components/trip/DrivingHud";
 import { MapCanvas } from "@/components/map/MapCanvas";
 import { StatusBanner } from "@/components/status/StatusBanner";
 
@@ -67,9 +70,16 @@ export function AppShell() {
   const tripHistory = useTripStore((s) => s.tripHistory);
   const trip = useTripStore((s) => s.trip);
   const routes = useTripStore((s) => s.routes);
+  const navigation = useTripStore((s) => s.navigation);
   const startNavigation = useTripStore((s) => s.startNavigation);
   const { computeRoute } = useRouteCompute();
+  useNavigation();
   const hasRoute = routes.length > 0;
+  const driving =
+    navigation.status === "navigating" ||
+    navigation.status === "off_route" ||
+    navigation.status === "starting" ||
+    navigation.status === "arrived";
 
   useEffect(() => {
     fetch("/api/maps/config")
@@ -78,9 +88,10 @@ export function AppShell() {
         setMapsConfig(
           data.mapsMode === "live" ? "live" : "demo",
           data.browserKey ?? null,
+          data.mapId ?? null,
         );
       })
-      .catch(() => setMapsConfig("demo", null));
+      .catch(() => setMapsConfig("demo", null, null));
     void refreshSavedTrips();
     refreshTripHistory();
   }, [setMapsConfig, refreshSavedTrips, refreshTripHistory]);
@@ -102,19 +113,32 @@ export function AppShell() {
 
   return (
     <div className="relative flex h-[100dvh] w-full overflow-hidden bg-[var(--mist)]">
-      <div className="absolute inset-0 lg:left-[min(420px,38vw)]">
+      <div
+        className={cn(
+          "absolute inset-0",
+          isDesktop && !driving ? "lg:left-[min(420px,38vw)]" : "",
+        )}
+      >
         <MapCanvas />
-        <StatusBanner />
+        {!driving ? <StatusBanner /> : null}
+        {driving ? <DrivingHud /> : null}
       </div>
 
       <aside
         className={cn(
           "absolute z-30 flex flex-col border-[var(--line)] bg-[var(--surface)]/95 shadow-[0_20px_60px_rgba(36,52,71,0.14)] backdrop-blur-xl transition-transform duration-300 ease-out",
           isDesktop
-            ? "top-0 left-0 h-full w-[min(420px,38vw)] border-r"
+            ? cn(
+                "top-0 left-0 h-full w-[min(420px,38vw)] border-r",
+                driving && "-translate-x-full pointer-events-none",
+              )
             : cn(
                 "inset-x-0 bottom-0 max-h-[78dvh] rounded-t-3xl border-t",
-                mobilePanelOpen ? "translate-y-0" : "translate-y-[calc(100%-4.5rem)]",
+                driving
+                  ? "translate-y-full pointer-events-none"
+                  : mobilePanelOpen
+                    ? "translate-y-0"
+                    : "translate-y-[calc(100%-4.5rem)]",
               ),
         )}
       >
@@ -295,26 +319,45 @@ export function AppShell() {
           ) : null}
         </div>
 
-        <footer className="shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/90 p-3 lg:p-4">
-          {hasRoute ? (
-            <div className="flex flex-col gap-2">
+        {!driving ? (
+          <footer className="shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/90 p-3 lg:p-4">
+            {hasRoute ? (
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  size="lg"
+                  className="w-full"
+                  onClick={() => {
+                    void requestCompassPermission().finally(() => {
+                      startNavigation();
+                    });
+                  }}
+                >
+                  <Navigation className="h-4 w-4" />
+                  Avvia navigazione
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={
+                    routeMode === "loading" || !trip.origin || !trip.destination
+                  }
+                  onClick={() => {
+                    void computeRoute();
+                    setActivePanel("summary");
+                    setMobilePanelOpen(true);
+                  }}
+                >
+                  <Route className="h-3.5 w-3.5" />
+                  {routeMode === "loading" ? "Calcolo…" : "Ricalcola percorso"}
+                </Button>
+              </div>
+            ) : (
               <Button
                 type="button"
                 size="lg"
-                className="w-full"
-                onClick={() => {
-                  startNavigation();
-                  setActivePanel("navigate");
-                  setMobilePanelOpen(true);
-                }}
-              >
-                <Navigation className="h-4 w-4" />
-                Avvia navigazione
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
                 className="w-full"
                 disabled={
                   routeMode === "loading" || !trip.origin || !trip.destination
@@ -325,29 +368,12 @@ export function AppShell() {
                   setMobilePanelOpen(true);
                 }}
               >
-                <Route className="h-3.5 w-3.5" />
-                {routeMode === "loading" ? "Calcolo…" : "Ricalcola percorso"}
+                <Route className="h-4 w-4" />
+                {routeMode === "loading" ? "Calcolo…" : "Calcola percorso"}
               </Button>
-            </div>
-          ) : (
-            <Button
-              type="button"
-              size="lg"
-              className="w-full"
-              disabled={
-                routeMode === "loading" || !trip.origin || !trip.destination
-              }
-              onClick={() => {
-                void computeRoute();
-                setActivePanel("summary");
-                setMobilePanelOpen(true);
-              }}
-            >
-              <Route className="h-4 w-4" />
-              {routeMode === "loading" ? "Calcolo…" : "Calcola percorso"}
-            </Button>
-          )}
-        </footer>
+            )}
+          </footer>
+        ) : null}
       </aside>
     </div>
   );
