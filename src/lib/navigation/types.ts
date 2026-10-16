@@ -53,7 +53,14 @@ export type WakeLockUiMode =
 export interface NavigationRuntime {
   status: NavigationStatus;
   voiceEnabled: boolean;
+  /** Keep camera locked on GPS (disabled when user pans the map) */
   followMap: boolean;
+  /** North-up instead of heading-up */
+  northUp: boolean;
+  /** Brief pulse: fit remaining route in view */
+  overview: boolean;
+  /** True while recalculating from current GPS */
+  recalculating: boolean;
   position: LatLng | null;
   /** GPS course over ground when available */
   headingDeg: number | null;
