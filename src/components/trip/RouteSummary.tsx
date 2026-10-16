@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Check,
   Copy,
+  Download,
   ExternalLink,
   FileText,
   Navigation,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTripStore } from "@/lib/store/trip-store";
+import { saveOfflineTrip } from "@/lib/storage/offline-trips";
 import {
   buildGoogleMapsDirectionsLink,
   buildShareTripUrl,
@@ -248,6 +250,31 @@ export function RouteSummary() {
               esclusioni. Google Maps (sotto) è solo un’alternativa esterna e
               non trasferisce i vincoli.
             </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                const pack = saveOfflineTrip({
+                  trip,
+                  routes,
+                  selectedRouteId: trip.selectedRouteId,
+                });
+                setCopied("offline");
+                setTimeout(() => setCopied(null), 2000);
+                void pack;
+              }}
+            >
+              {copied === "offline" ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              {copied === "offline"
+                ? "Salvato offline"
+                : "Scarica per uso offline"}
+            </Button>
           </div>
 
           {selected.tolls?.hasTolls || selected.tolls?.michelin ? (

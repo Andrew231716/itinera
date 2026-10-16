@@ -13,6 +13,7 @@ import {
   Navigation,
   History,
   Eraser,
+  HardDrive,
 } from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
 import {
@@ -23,6 +24,12 @@ import {
   type SavedPlace,
   type SavedPlaceKind,
 } from "@/lib/storage/saved-places";
+import {
+  formatOfflineSize,
+  listOfflineTrips,
+  removeOfflineTrip,
+  type OfflineTripPack,
+} from "@/lib/storage/offline-trips";
 import {
   formatDistance,
   formatDuration,
@@ -53,6 +60,7 @@ export function SavedPanel() {
   const savedTrips = useTripStore((s) => s.savedTrips);
   const tripHistory = useTripStore((s) => s.tripHistory);
   const loadTrip = useTripStore((s) => s.loadTrip);
+  const loadOfflinePack = useTripStore((s) => s.loadOfflinePack);
   const persistTrip = useTripStore((s) => s.persistTrip);
   const refreshSavedTrips = useTripStore((s) => s.refreshSavedTrips);
   const refreshTripHistory = useTripStore((s) => s.refreshTripHistory);
@@ -68,6 +76,7 @@ export function SavedPanel() {
   const setTitle = useTripStore((s) => s.setTitle);
 
   const [places, setPlaces] = useState<SavedPlace[]>([]);
+  const [offlinePacks, setOfflinePacks] = useState<OfflineTripPack[]>([]);
   const [kind, setKind] = useState<SavedPlaceKind>("parking");
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
@@ -77,8 +86,13 @@ export function SavedPanel() {
     setPlaces(listSavedPlaces());
   }
 
+  function reloadOffline() {
+    setOfflinePacks(listOfflineTrips());
+  }
+
   useEffect(() => {
     reloadPlaces();
+    reloadOffline();
     void refreshSavedTrips();
     refreshTripHistory();
   }, [refreshSavedTrips, refreshTripHistory]);
@@ -93,8 +107,85 @@ export function SavedPanel() {
     <div className="space-y-6">
       <SectionTitle
         title="Salvati"
-        subtitle="Cronologia automatica, viaggi memorizzati e posti preferiti"
+        subtitle="Offline, cronologia, viaggi memorizzati e posti preferiti"
       />
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-[var(--ink)]">
+            <HardDrive className="h-4 w-4 text-[var(--brand)]" />
+            Viaggi offline
+          </h3>
+        </div>
+        <p className="text-[11px] leading-relaxed text-[var(--ink-muted)]">
+          Percorsi scaricati sul dispositivo (polyline + indicazioni). Aprili
+          senza rete e avvia la navigazione Itinera. Scarica dal Riepilogo dopo
+          aver calcolato.
+        </p>
+        {offlinePacks.length === 0 ? (
+          <EmptyHint>
+            Nessun viaggio offline. Dal Riepilogo usa «Scarica per uso offline».
+          </EmptyHint>
+        ) : (
+          <ul className="space-y-2">
+            {offlinePacks.map((pack) => {
+              const selected =
+                pack.routes.find((r) => r.id === pack.selectedRouteId) ??
+                pack.routes[0];
+              return (
+                <li
+                  key={pack.id}
+                  className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5"
+                >
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => loadOfflinePack(pack)}
+                  >
+                    <p className="text-sm font-medium text-[var(--ink)]">
+                      {pack.title}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                      {pack.trip.origin?.label ?? "?"} →{" "}
+                      {pack.trip.destination?.label ?? "?"}
+                      {selected
+                        ? ` · ${formatDistance(selected.distanceMeters)} · ${formatDuration(selected.durationSeconds)}`
+                        : ""}
+                      {` · ${formatOfflineSize(pack.sizeBytes)}`}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-[var(--ink-faint)]">
+                      Scaricato {formatRelativeIt(pack.savedAt)}
+                    </p>
+                  </button>
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => loadOfflinePack(pack)}
+                    >
+                      <Navigation className="h-3.5 w-3.5" />
+                      Apri
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        removeOfflineTrip(pack.id);
+                        reloadOffline();
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Rimuovi
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-2">

@@ -143,6 +143,12 @@ interface TripState {
     mapId?: string | null,
   ) => void;
   loadTrip: (trip: TripDraft) => void;
+  /** Restore a previously downloaded offline pack (trip + routes). */
+  loadOfflinePack: (pack: {
+    trip: TripDraft;
+    routes: ComputedRoute[];
+    selectedRouteId: string | null;
+  }) => void;
   resetTrip: () => void;
   persistTrip: () => Promise<void>;
   refreshSavedTrips: () => Promise<void>;
@@ -532,6 +538,23 @@ export const useTripStore = create<TripState>((set, get) => ({
       routeError: null,
     }),
 
+  loadOfflinePack: (pack) =>
+    set({
+      trip: {
+        ...pack.trip,
+        selectedRouteId:
+          pack.selectedRouteId ?? pack.routes[0]?.id ?? null,
+      },
+      routes: pack.routes,
+      routeLimitations: [
+        "Percorso caricato offline: le indicazioni usano i dati scaricati (senza ricalcolo live).",
+      ],
+      routeMode: pack.routes.length ? "live" : "idle",
+      routeError: null,
+      activePanel: "summary",
+      mobilePanelOpen: true,
+    }),
+
   resetTrip: () =>
     set({
       trip: createEmptyTrip("Il mio itinerario"),
@@ -778,19 +801,26 @@ export const useTripStore = create<TripState>((set, get) => ({
     })),
 
   setNavigationProgress: (progress) =>
-    set((s) => ({
-      navigation: {
-        ...s.navigation,
-        progress,
-        status: progress.arrived
-          ? "arrived"
-          : progress.offRoute
-            ? "off_route"
-            : s.navigation.status === "arrived"
-              ? "arrived"
-              : "navigating",
-      },
-    })),
+    set((s) => {
+      const wasOff = s.navigation.status === "off_route";
+      // Hysteresis: require getting closer before clearing off-route.
+      const stillOff = wasOff
+        ? progress.crossTrackMeters > 45
+        : progress.offRoute;
+      return {
+        navigation: {
+          ...s.navigation,
+          progress: { ...progress, offRoute: stillOff },
+          status: progress.arrived
+            ? "arrived"
+            : stillOff
+              ? "off_route"
+              : s.navigation.status === "arrived"
+                ? "arrived"
+                : "navigating",
+        },
+      };
+    }),
 
   markNavigationSpoken: (maneuverId) =>
     set((s) => ({

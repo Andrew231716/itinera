@@ -72,6 +72,17 @@ export function useNavigation() {
       const watcher = await watchNavigationPosition(
         (fix) => {
           if (cancelled) return;
+          // Ignore very poor fixes when we already have a tighter one
+          const prev = useTripStore.getState().navigation;
+          if (
+            prev.position &&
+            prev.accuracyMeters != null &&
+            prev.accuracyMeters < 25 &&
+            fix.accuracyMeters != null &&
+            fix.accuracyMeters > 55
+          ) {
+            return;
+          }
           updateNavigationFix({
             position: fix.position,
             headingDeg: fix.headingDeg,
