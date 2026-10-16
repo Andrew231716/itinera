@@ -31,8 +31,15 @@ function loadGoogleMaps(apiKey: string): Promise<void> {
 }
 
 function collectFocusPoints(): LatLng[] {
-  const { trip, routes, exclusionDraftPoints, parkingSpots, selectedParkingId } =
-    useTripStore.getState();
+  const {
+    trip,
+    routes,
+    exclusionDraftPoints,
+    parkingSpots,
+    selectedParkingId,
+    fuelStations,
+    selectedFuelId,
+  } = useTripStore.getState();
   const points: LatLng[] = [];
   if (trip.origin) points.push(trip.origin.location);
   if (trip.destination) points.push(trip.destination.location);
@@ -49,6 +56,9 @@ function collectFocusPoints(): LatLng[] {
   const selectedParking = parkingSpots.find((p) => p.id === selectedParkingId);
   if (selectedParking) points.push(selectedParking.location);
   else parkingSpots.slice(0, 12).forEach((p) => points.push(p.location));
+  const selectedFuel = fuelStations.find((f) => f.id === selectedFuelId);
+  if (selectedFuel) points.push(selectedFuel.location);
+  else fuelStations.slice(0, 12).forEach((f) => points.push(f.location));
   return points;
 }
 
@@ -66,6 +76,9 @@ export function MapCanvas() {
   const parkingSpots = useTripStore((s) => s.parkingSpots);
   const selectedParkingId = useTripStore((s) => s.selectedParkingId);
   const selectParking = useTripStore((s) => s.selectParking);
+  const fuelStations = useTripStore((s) => s.fuelStations);
+  const selectedFuelId = useTripStore((s) => s.selectedFuelId);
+  const selectFuel = useTripStore((s) => s.selectFuel);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -183,6 +196,24 @@ export function MapCanvas() {
       );
     });
 
+    fuelStations.slice(0, 24).forEach((station, index) => {
+      const selected = station.id === selectedFuelId;
+      addMarker(
+        station.location,
+        selected ? "F" : String(index + 1),
+        selected
+          ? "#1D4ED8"
+          : station.amenities.adblue === "yes"
+            ? "#2563EB"
+            : "#475569",
+        () => {
+          selectFuel(station.id);
+          setActivePanel("fuel");
+          setMobilePanelOpen(true);
+        },
+      );
+    });
+
     const selected =
       routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0];
     if (selected?.decodedPath.length) {
@@ -281,6 +312,9 @@ export function MapCanvas() {
     parkingSpots,
     selectedParkingId,
     selectParking,
+    fuelStations,
+    selectedFuelId,
+    selectFuel,
     setActivePanel,
     setMobilePanelOpen,
     ready,
