@@ -17,7 +17,11 @@ export function getBrowserGoogleMapsKey(): string | undefined {
   return key || undefined;
 }
 
-/** Optional Map ID — enables vector map tilt + heading-up during navigation. */
+/**
+ * Optional custom Map ID (Cloud Map Management).
+ * Without it the client uses google.maps.Map.DEMO_MAP_ID + VECTOR rendering
+ * so tilt 3D / heading-up still work.
+ */
 export function getBrowserGoogleMapsMapId(): string | undefined {
   const id = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID?.trim();
   return id || undefined;
