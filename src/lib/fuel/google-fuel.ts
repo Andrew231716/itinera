@@ -1,5 +1,6 @@
 import type { LatLng } from "@/lib/types/trip";
 import type { FuelStation } from "@/lib/fuel/types";
+import { normalizeBrandKey } from "@/lib/fuel/brands";
 import {
   mapsSearchUrl,
   textMentions24h,
@@ -194,6 +195,7 @@ function googlePlaceToStation(
   return {
     id: `ggl-fuel-${place.id ?? `${lat},${lng}`}`,
     name,
+    brandKey: normalizeBrandKey(name),
     location: { lat, lng },
     address: place.formattedAddress,
     distanceMeters: withDistance({ lat, lng }, center),

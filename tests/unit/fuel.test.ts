@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  brandLabel,
+  normalizeBrandKey,
+  stationMatchesBrand,
+} from "@/lib/fuel/brands";
+import {
   amenityLabel,
   corridorDistance,
+  mapsDirectionsUrl,
   mergeStations,
   midpoint,
+  pickHighlightPrices,
   rankStations,
   textMentions24h,
   textMentionsAdBlue,
@@ -133,5 +140,60 @@ describe("fuel helpers", () => {
       ],
     );
     expect(d).toBe(0);
+  });
+
+  it("normalizes Italian fuel brands", () => {
+    expect(normalizeBrandKey("AgipEni")).toBe("eni");
+    expect(normalizeBrandKey("Q8 easy")).toBe("q8");
+    expect(normalizeBrandKey("Api-Ip")).toBe("ip");
+    expect(brandLabel("eni")).toBe("Eni");
+    expect(
+      stationMatchesBrand({ brandKey: "q8", name: "Q8 Via Emilia" }, "q8"),
+    ).toBe(true);
+    expect(
+      stationMatchesBrand({ brandKey: "eni", name: "Eni" }, "q8"),
+    ).toBe(false);
+  });
+
+  it("builds driving directions URL", () => {
+    const url = mapsDirectionsUrl({
+      origin: { lat: 45.36, lng: 9.32 },
+      destination: { lat: 45.4, lng: 9.34 },
+    });
+    expect(url).toContain("google.com/maps/dir");
+    expect(url).toContain("travelmode=driving");
+    expect(url).toContain("45.360000");
+  });
+
+  it("picks highlight self-service prices", () => {
+    const picks = pickHighlightPrices([
+      { fuel: "Benzina", price: 2.2, isSelf: false },
+      { fuel: "Benzina", price: 1.99, isSelf: true },
+      { fuel: "Gasolio", price: 2.1, isSelf: true },
+      { fuel: "GPL", price: 0.75, isSelf: false },
+    ]);
+    expect(picks.map((p) => p.fuel)).toEqual(["Benzina", "Gasolio", "GPL"]);
+    expect(picks[0].isSelf).toBe(true);
+    expect(picks[0].price).toBe(1.99);
+  });
+
+  it("keeps MIMIT prices when merging OSM + Osservaprezzi", () => {
+    const a = station({
+      id: "osm",
+      name: "Q8",
+      sources: ["openstreetmap"],
+      amenities: { adblue: "yes" },
+    });
+    const b = station({
+      id: "ospz",
+      name: "Q8 Melegnano",
+      sources: ["osservaprezzi"],
+      prices: [{ fuel: "Benzina", price: 1.999, isSelf: true }],
+    });
+    const merged = mergeStations([a, b]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].prices?.[0]?.price).toBe(1.999);
+    expect(merged[0].amenities.adblue).toBe("yes");
+    expect(merged[0].sources).toContain("osservaprezzi");
   });
 });

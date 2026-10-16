@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     const adblue = searchParams.get("adblue") === "1";
     const open24h = searchParams.get("open24h") === "1";
     const truck = searchParams.get("truck") === "1";
+    const brand = searchParams.get("brand")?.trim() || undefined;
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       throw new AppError(
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
       adblue,
       open24h,
       truck,
+      brand,
     });
 
     return NextResponse.json(result);

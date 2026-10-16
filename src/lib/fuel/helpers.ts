@@ -3,6 +3,7 @@ import type { LatLng } from "@/lib/types/trip";
 import type {
   AmenitySignal,
   FuelAmenityKey,
+  FuelPriceQuote,
   FuelStation,
 } from "@/lib/fuel/types";
 
@@ -11,6 +12,21 @@ export function mapsSearchUrl(lat: number, lng: number, label?: string): string 
     ? encodeURIComponent(`${label} @${lat},${lng}`)
     : `${lat},${lng}`;
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
+}
+
+/** Google Maps driving directions from A → station. */
+export function mapsDirectionsUrl(params: {
+  origin: LatLng;
+  destination: LatLng;
+  destinationLabel?: string;
+}): string {
+  const search = new URLSearchParams({
+    api: "1",
+    origin: `${params.origin.lat.toFixed(6)},${params.origin.lng.toFixed(6)}`,
+    destination: `${params.destination.lat.toFixed(6)},${params.destination.lng.toFixed(6)}`,
+    travelmode: "driving",
+  });
+  return `https://www.google.com/maps/dir/?${search.toString()}`;
 }
 
 export function withDistance(location: LatLng, center: LatLng): number {
@@ -104,6 +120,10 @@ export function mergeStations(stations: FuelStation[]): FuelStation[] {
         amenities[k] = v;
       }
     }
+    const prices =
+      (existing.prices?.length ?? 0) >= (station.prices?.length ?? 0)
+        ? existing.prices
+        : station.prices;
     byKey.set(key, {
       ...existing,
       name:
@@ -111,6 +131,7 @@ export function mergeStations(stations: FuelStation[]): FuelStation[] {
           ? existing.name
           : station.name,
       brand: existing.brand ?? station.brand,
+      brandKey: existing.brandKey ?? station.brandKey,
       address: existing.address || station.address,
       phone: existing.phone ?? station.phone,
       website: existing.website ?? station.website,
@@ -119,6 +140,7 @@ export function mergeStations(stations: FuelStation[]): FuelStation[] {
       rating: existing.rating ?? station.rating,
       sources: Array.from(new Set([...existing.sources, ...station.sources])),
       amenities,
+      prices,
       notes: Array.from(new Set([...existing.notes, ...station.notes])),
       verifyByPhone: existing.verifyByPhone || station.verifyByPhone,
       distanceMeters: Math.min(
@@ -153,4 +175,26 @@ export function amenityLabel(key: FuelAmenityKey): string {
     case "open24h":
       return "H24";
   }
+}
+
+/** Compact line for cards: Benzina/Gasolio/GPL/Metano when present. */
+export function pickHighlightPrices(
+  prices: FuelPriceQuote[],
+): FuelPriceQuote[] {
+  const preferred = ["Benzina", "Gasolio", "GPL", "Metano"];
+  const out: FuelPriceQuote[] = [];
+  for (const label of preferred) {
+    const match =
+      prices.find((p) => p.fuel === label && p.isSelf) ??
+      prices.find((p) => p.fuel === label) ??
+      prices.find(
+        (p) =>
+          p.fuel.toLowerCase().includes(label.toLowerCase()) && p.isSelf,
+      ) ??
+      prices.find((p) =>
+        p.fuel.toLowerCase().includes(label.toLowerCase()),
+      );
+    if (match) out.push(match);
+  }
+  return out;
 }

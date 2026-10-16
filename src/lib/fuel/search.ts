@@ -1,6 +1,8 @@
 import { getServerGoogleMapsKey } from "@/lib/config/env";
+import { brandLabel, stationMatchesBrand } from "@/lib/fuel/brands";
 import { searchGoogleFuel } from "@/lib/fuel/google-fuel";
 import { searchOsmFuel } from "@/lib/fuel/osm-fuel";
+import { searchOsservaprezzi } from "@/lib/fuel/osservaprezzi";
 import {
   corridorDistance,
   mergeStations,
@@ -20,6 +22,7 @@ export async function searchNearbyFuel(params: {
   adblue?: boolean;
   open24h?: boolean;
   truck?: boolean;
+  brand?: string;
 }): Promise<FuelSearchResult> {
   const center = params.center;
   const alongTo = params.alongTo;
@@ -31,6 +34,7 @@ export async function searchNearbyFuel(params: {
     adblue: Boolean(params.adblue),
     open24h: Boolean(params.open24h),
     truck: Boolean(params.truck),
+    brand: params.brand?.trim().toLowerCase() || undefined,
   };
 
   const limitations: string[] = [];
@@ -44,15 +48,43 @@ export async function searchNearbyFuel(params: {
 
   const searchRadius = alongTo ? Math.max(radiusMeters, 6000) : radiusMeters;
 
-  const osmResults = await Promise.all(
-    centers.map((c) =>
-      searchOsmFuel({
-        center: c,
-        radiusMeters: searchRadius,
-        preferAdBlue: filters.adblue,
-      }),
+  const [osmResults, ospz, gglBundle] = await Promise.all([
+    Promise.all(
+      centers.map((c) =>
+        searchOsmFuel({
+          center: c,
+          radiusMeters: searchRadius,
+          preferAdBlue: filters.adblue,
+        }),
+      ),
     ),
-  );
+    searchOsservaprezzi({
+      center,
+      radiusMeters: searchRadius,
+      alongTo,
+    }),
+    (async () => {
+      const apiKey = getServerGoogleMapsKey();
+      if (!apiKey) {
+        return {
+          results: [] as Array<{ stations: FuelStation[]; error?: string }>,
+          missingKey: true,
+        };
+      }
+      const results = await Promise.all(
+        centers.map((c) =>
+          searchGoogleFuel({
+            center: c,
+            radiusMeters: searchRadius,
+            apiKey,
+            query: params.query,
+            preferAdBlue: filters.adblue,
+          }),
+        ),
+      );
+      return { results, missingKey: false };
+    })(),
+  ]);
 
   for (const osm of osmResults) {
     if (osm.stations.length) {
@@ -68,20 +100,24 @@ export async function searchNearbyFuel(params: {
     }
   }
 
-  const apiKey = getServerGoogleMapsKey();
-  if (apiKey) {
-    const gglResults = await Promise.all(
-      centers.map((c) =>
-        searchGoogleFuel({
-          center: c,
-          radiusMeters: searchRadius,
-          apiKey,
-          query: params.query,
-          preferAdBlue: filters.adblue,
-        }),
-      ),
+  if (ospz.stations.length) {
+    sourcesUsed.push("osservaprezzi");
+    collected.push(
+      ...ospz.stations.map((s) => ({
+        ...s,
+        distanceMeters: corridorDistance(s.location, centers),
+      })),
     );
-    for (const ggl of gglResults) {
+  } else if (ospz.error) {
+    limitations.push(`Osservaprezzi MIMIT: ${ospz.error}`);
+  }
+
+  if (gglBundle.missingKey) {
+    limitations.push(
+      "GOOGLE_MAPS_API_KEY assente: risultati Google Maps non disponibili (restano OSM + Osservaprezzi).",
+    );
+  } else {
+    for (const ggl of gglBundle.results) {
       if (ggl.stations.length) {
         sourcesUsed.push("google_maps");
         collected.push(
@@ -94,22 +130,41 @@ export async function searchNearbyFuel(params: {
         limitations.push(`Google Maps: ${ggl.error}`);
       }
     }
-  } else {
-    limitations.push(
-      "GOOGLE_MAPS_API_KEY assente: risultati Google Maps non disponibili (resta OSM).",
-    );
   }
 
   let stations = mergeStations(collected);
   let relaxedAdBlue = false;
+
+  // Brand counts before brand filter (for UI chips)
+  const brandCounts = new Map<string, number>();
+  for (const s of stations) {
+    const key = s.brandKey;
+    if (!key) continue;
+    brandCounts.set(key, (brandCounts.get(key) ?? 0) + 1);
+  }
+  const brandsAvailable = Array.from(brandCounts.entries())
+    .map(([key, count]) => ({ key, label: brandLabel(key), count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  if (filters.brand) {
+    stations = stations.filter((s) => stationMatchesBrand(s, filters.brand!));
+  }
+
+  if (params.query?.trim()) {
+    const q = params.query.trim().toLowerCase();
+    stations = stations.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.brand?.toLowerCase().includes(q) ||
+        s.address?.toLowerCase().includes(q),
+    );
+  }
 
   if (filters.adblue) {
     const confirmed = stations.filter((s) => s.amenities.adblue === "yes");
     if (confirmed.length > 0) {
       stations = confirmed;
     } else if (stations.length > 0) {
-      // Keep nearby stations so the panel is never a dead end when OSM/Google
-      // lack explicit AdBlue tags in the area.
       relaxedAdBlue = true;
       limitations.push(
         "Nessun AdBlue esplicitamente confermato in zona: mostro i distributori più vicini da verificare telefonicamente.",
@@ -126,12 +181,13 @@ export async function searchNearbyFuel(params: {
   stations = rankStations(stations).slice(0, 40);
 
   limitations.push(
-    "La disponibilità AdBlue/erogatori è segnalata da OSM/schede pubbliche: conferma telefonando prima di fare affidamento.",
+    "Prezzi da Osservaprezzi Carburanti (MIMIT); AdBlue da OSM/schede pubbliche. Conferma sempre in loco o telefonando.",
   );
 
   const adblueCount = stations.filter(
     (s) => s.amenities.adblue === "yes",
   ).length;
+  const withPrices = stations.filter((s) => (s.prices?.length ?? 0) > 0).length;
   const where = params.label?.trim()
     ? ` tra/vicino a ${params.label.trim()}`
     : "";
@@ -145,8 +201,10 @@ export async function searchNearbyFuel(params: {
         : filters.adblue || adblueCount > 0
           ? `Ho trovato ${stations.length} opzioni interessanti${where}${
               adblueCount ? ` (${adblueCount} con AdBlue segnalato)` : ""
-            }. Ti consiglio di telefonare prima: online risulta disponibile, ma non posso verificare che l’erogatore funzioni in questo momento.`
-          : `Ho trovato ${stations.length} distributori${where}. Usa i filtri (AdBlue, H24) per restringere.`;
+            }${withPrices ? `, ${withPrices} con prezzi MIMIT` : ""}. Ti consiglio di telefonare prima: online risulta disponibile, ma non posso verificare che l’erogatore funzioni in questo momento.`
+          : `Ho trovato ${stations.length} distributori${where}${
+              withPrices ? ` (${withPrices} con prezzi MIMIT)` : ""
+            }. Usa i filtri (AdBlue, brand, H24) per restringere.`;
 
   return {
     center,
@@ -154,6 +212,7 @@ export async function searchNearbyFuel(params: {
     query: params.query,
     filters,
     stations,
+    brandsAvailable,
     sourcesUsed: Array.from(new Set(sourcesUsed)),
     limitations: Array.from(new Set(limitations)),
     advice,

@@ -1,6 +1,12 @@
 import type { PlaceRef } from "@/lib/types/trip";
 
-export type SavedPlaceKind = "favorite" | "parking" | "home" | "work" | "other";
+export type SavedPlaceKind =
+  | "favorite"
+  | "parking"
+  | "fuel"
+  | "home"
+  | "work"
+  | "other";
 
 export interface SavedPlace {
   id: string;
@@ -65,6 +71,8 @@ export function savedPlaceKindLabel(kind: SavedPlaceKind): string {
   switch (kind) {
     case "parking":
       return "Parcheggio";
+    case "fuel":
+      return "Benzinaio";
     case "favorite":
       return "Preferito";
     case "home":

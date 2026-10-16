@@ -1,5 +1,6 @@
 import type { LatLng } from "@/lib/types/trip";
 import type { FuelStation } from "@/lib/fuel/types";
+import { normalizeBrandKey } from "@/lib/fuel/brands";
 import {
   mapsSearchUrl,
   osmAmenitySignal,
@@ -152,6 +153,7 @@ function osmElementToStation(
     id: `osm-fuel-${el.type}-${el.id}`,
     name: displayName,
     brand,
+    brandKey: normalizeBrandKey(brand, displayName),
     location: { lat, lng },
     address: address || undefined,
     distanceMeters: withDistance({ lat, lng }, center),
