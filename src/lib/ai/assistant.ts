@@ -47,6 +47,8 @@ export const AssistantStructuredSchema = z.object({
   titleSuggestion: z.string().nullable(),
   /** Location text for a parking search request (e.g. "parcheggi a Como") */
   parkingSearchText: z.string().nullable(),
+  /** Location / corridor text for a fuel search (e.g. "AdBlue tra Melegnano e San Giuliano") */
+  fuelSearchText: z.string().nullable(),
 });
 
 export type AssistantStructured = z.infer<typeof AssistantStructuredSchema>;
@@ -69,6 +71,9 @@ export interface AssistantParseResult {
   /** If set, open parking search near this resolved place */
   parkingSearchText?: string | null;
   resolvedParkingSearch?: PlaceRef | null;
+  /** If set, open fuel / AdBlue search near this resolved place */
+  fuelSearchText?: string | null;
+  resolvedFuelSearch?: PlaceRef | null;
   limitations: string[];
   /** Places resolved only via Places API — never invented by the model */
   resolvedOrigin?: PlaceRef | null;
@@ -87,6 +92,7 @@ export interface AssistantParseResult {
     travelMode?: TravelMode | null;
     title?: string | null;
     parkingSearch?: PlaceRef | null;
+    fuelSearch?: PlaceRef | null;
   };
 }
 
@@ -165,6 +171,7 @@ const OPENAI_JSON_SCHEMA = {
       reorderStops: { type: "boolean" },
       titleSuggestion: { type: ["string", "null"] },
       parkingSearchText: { type: ["string", "null"] },
+      fuelSearchText: { type: ["string", "null"] },
     },
     required: [
       "status",
@@ -180,6 +187,7 @@ const OPENAI_JSON_SCHEMA = {
       "reorderStops",
       "titleSuggestion",
       "parkingSearchText",
+      "fuelSearchText",
     ],
   },
 } as const;
@@ -243,6 +251,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     reorderStops: { type: "BOOLEAN" },
     titleSuggestion: { type: "STRING", nullable: true },
     parkingSearchText: { type: "STRING", nullable: true },
+    fuelSearchText: { type: "STRING", nullable: true },
   },
   required: [
     "status",
@@ -258,6 +267,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     "reorderStops",
     "titleSuggestion",
     "parkingSearchText",
+    "fuelSearchText",
   ],
 } as const;
 
@@ -274,7 +284,8 @@ maxExtraMinutes: converti "un'ora" in 60, "mezz'ora" in 30, ecc.
 travelMode default null se non specificato.
 Per Paesi (Svizzera/Switzerland/CH/Suisse/Schweiz) usa hardExclusions kind=geo_zone con label "Svizzera" (o il nome del paese).
 Per dogane/valichi: usa hardExclusions kind=city o address con il nome del luogo (es. "Chiasso", "dogana di Chiasso").
-Se chiede parcheggi / sosta / garage / EasyPark in una zona (es. "cerca parcheggi a Como", "dove parcheggio vicino al Duomo"), imposta parkingSearchText con la località da cercare e status=ok. Non inventare elenchi di parcheggi: Itinera li cercherà con fonti reali.`;
+Se chiede parcheggi / sosta / garage / EasyPark in una zona (es. "cerca parcheggi a Como", "dove parcheggio vicino al Duomo"), imposta parkingSearchText con la località da cercare e status=ok. Non inventare elenchi di parcheggi: Itinera li cercherà con fonti reali.
+Se chiede benzinai / distributori / AdBlue / gasolio / stazioni di servizio in una zona o lungo una tratta (es. "AdBlue tra Melegnano e San Giuliano", "benzinai H24 a Carpiano"), imposta fuelSearchText con la località o la tratta da cercare e status=ok. Non inventare elenchi di distributori né telefoni: Itinera li cercherà con OSM/Google.`;
 
 type StructuredFetch =
   | { ok: true; structured: AssistantStructured; provider: AssistantProviderId }
@@ -655,6 +666,22 @@ async function buildResultFromStructured(
     }
   }
 
+  let resolvedFuelSearch: PlaceRef | null = null;
+  if (structured.fuelSearchText?.trim()) {
+    const fuelText = structured.fuelSearchText.trim();
+    const corridorMatch =
+      fuelText.match(/(?:tra|fra)\s+(.+?)\s+e\s+(.+)$/i) ??
+      fuelText.match(/^(.+?)\s*(?:→|->|e)\s*(.+)$/i);
+    const resolveLabel = corridorMatch
+      ? corridorMatch[1].trim()
+      : fuelText.replace(/ad\s*blue|adblue|benzinai?|distributori?/gi, "").trim() ||
+        fuelText;
+    resolvedFuelSearch = await resolvePlaceText(resolveLabel);
+    if (!resolvedFuelSearch) {
+      unresolvedPlaces.push(fuelText);
+    }
+  }
+
   for (const ex of structured.hardExclusions) {
     if (!ex.label.trim()) unresolvedPlaces.push("(esclusione senza nome)");
   }
@@ -690,12 +717,14 @@ async function buildResultFromStructured(
     reorderStops: structured.reorderStops,
     titleSuggestion: structured.titleSuggestion,
     parkingSearchText: structured.parkingSearchText,
+    fuelSearchText: structured.fuelSearchText,
     limitations,
     provider,
     resolvedOrigin,
     resolvedDestination,
     resolvedStops,
     resolvedParkingSearch,
+    resolvedFuelSearch,
     unresolvedPlaces: [],
     preview: {
       origin: resolvedOrigin,
@@ -706,6 +735,7 @@ async function buildResultFromStructured(
       travelMode: structured.travelMode,
       title: structured.titleSuggestion,
       parkingSearch: resolvedParkingSearch,
+      fuelSearch: resolvedFuelSearch,
     },
   };
 }

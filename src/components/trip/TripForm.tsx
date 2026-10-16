@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownUp, CalendarClock, Car, CircleParking } from "lucide-react";
+import { ArrowDownUp, CalendarClock, Car, CircleParking, Fuel } from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
 import type { TravelMode } from "@/lib/types/trip";
 import {
@@ -30,6 +30,7 @@ export function TripForm() {
   const mapPickTarget = useTripStore((s) => s.mapPickTarget);
   const setMapPickTarget = useTripStore((s) => s.setMapPickTarget);
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
+  const requestFuelNear = useTripStore((s) => s.requestFuelNear);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
 
@@ -88,22 +89,51 @@ export function TripForm() {
       />
 
       {trip.destination ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="w-full"
-          onClick={() =>
-            requestParkingNear({
-              lat: trip.destination!.location.lat,
-              lng: trip.destination!.location.lng,
-              label: trip.destination!.label,
-            })
-          }
-        >
-          <CircleParking className="h-3.5 w-3.5" />
-          Cerca parcheggi vicino a «{trip.destination.label}»
-        </Button>
+        <div className="space-y-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={() =>
+              requestParkingNear({
+                lat: trip.destination!.location.lat,
+                lng: trip.destination!.location.lng,
+                label: trip.destination!.label,
+              })
+            }
+          >
+            <CircleParking className="h-3.5 w-3.5" />
+            Cerca parcheggi vicino a «{trip.destination.label}»
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              if (trip.origin && trip.destination) {
+                requestFuelNear({
+                  lat: trip.origin.location.lat,
+                  lng: trip.origin.location.lng,
+                  label: `${trip.origin.label} → ${trip.destination.label}`,
+                });
+              } else {
+                requestFuelNear({
+                  lat: trip.destination!.location.lat,
+                  lng: trip.destination!.location.lng,
+                  label: trip.destination!.label,
+                });
+              }
+            }}
+          >
+            <Fuel className="h-3.5 w-3.5" />
+            Cerca benzinai
+            {trip.origin
+              ? " sulla tratta"
+              : ` vicino a «${trip.destination.label}»`}
+          </Button>
+        </div>
       ) : null}
 
       <MapPickHint

@@ -25,6 +25,8 @@ import { isValidPolygon } from "@/lib/utils/geometry";
 import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
 import type { ParkingSpot } from "@/lib/parking/types";
 import { parkingSpotToPlaceRef } from "@/lib/parking/place-ref";
+import type { FuelStation } from "@/lib/fuel/types";
+import { fuelStationToPlaceRef } from "@/lib/fuel/place-ref";
 
 export type MapPickTarget =
   | "origin"
@@ -40,6 +42,7 @@ export type PanelTab =
   | "exclusions"
   | "summary"
   | "parking"
+  | "fuel"
   | "assistant"
   | "setup"
   | "saved";
@@ -65,6 +68,13 @@ interface TripState {
   parkingCenter: { lat: number; lng: number; label: string } | null;
   /** Bumps when a new parking search is requested (destination / AI / manual) */
   parkingSearchNonce: number;
+
+  /** Nearby fuel stations for the active search center / corridor */
+  fuelStations: FuelStation[];
+  selectedFuelId: string | null;
+  fuelCenter: { lat: number; lng: number; label: string } | null;
+  /** Bumps when a new fuel search is requested (AI / manual / GPS) */
+  fuelSearchNonce: number;
 
   setActivePanel: (tab: PanelTab) => void;
   setMobilePanelOpen: (open: boolean) => void;
@@ -120,6 +130,17 @@ interface TripState {
   }) => void;
   /** Apply selected parking as destination or as an intermediate stop */
   applySelectedParking: (mode: "destination" | "stop") => void;
+
+  setFuelStations: (stations: FuelStation[]) => void;
+  selectFuel: (id: string | null) => void;
+  /** Search fuel stations near a place and open the fuel panel */
+  requestFuelNear: (center: {
+    lat: number;
+    lng: number;
+    label: string;
+  }) => void;
+  /** Apply selected fuel station as destination or as an intermediate stop */
+  applySelectedFuel: (mode: "destination" | "stop") => void;
 }
 
 function touch(trip: TripDraft): TripDraft {
@@ -156,8 +177,13 @@ export const useTripStore = create<TripState>((set, get) => ({
   selectedParkingId: null,
   parkingCenter: null,
   parkingSearchNonce: 0,
+  fuelStations: [],
+  selectedFuelId: null,
+  fuelCenter: null,
+  fuelSearchNonce: 0,
 
-  setActivePanel: (tab) => set({ activePanel: tab }),  setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
+  setActivePanel: (tab) => set({ activePanel: tab }),
+  setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
   setMapPickTarget: (target) =>
     set({
       mapPickTarget: target,
@@ -540,6 +566,44 @@ export const useTripStore = create<TripState>((set, get) => ({
     const spot = parkingSpots.find((p) => p.id === selectedParkingId);
     if (!spot) return;
     const place = parkingSpotToPlaceRef(spot);
+    if (mode === "destination") {
+      set((s) => ({
+        trip: touch({ ...s.trip, destination: place }),
+        mapPickTarget: null,
+        activePanel: "itinerary",
+        mobilePanelOpen: true,
+      }));
+    } else {
+      get().addStop(place);
+      set({ activePanel: "itinerary", mobilePanelOpen: true });
+    }
+  },
+
+  setFuelStations: (stations) =>
+    set((s) => ({
+      fuelStations: stations,
+      selectedFuelId:
+        s.selectedFuelId && stations.some((f) => f.id === s.selectedFuelId)
+          ? s.selectedFuelId
+          : null,
+    })),
+
+  selectFuel: (id) => set({ selectedFuelId: id }),
+
+  requestFuelNear: (center) =>
+    set((s) => ({
+      fuelCenter: center,
+      fuelSearchNonce: s.fuelSearchNonce + 1,
+      selectedFuelId: null,
+      activePanel: "fuel",
+      mobilePanelOpen: true,
+    })),
+
+  applySelectedFuel: (mode) => {
+    const { fuelStations, selectedFuelId } = get();
+    const station = fuelStations.find((f) => f.id === selectedFuelId);
+    if (!station) return;
+    const place = fuelStationToPlaceRef(station);
     if (mode === "destination") {
       set((s) => ({
         trip: touch({ ...s.trip, destination: place }),

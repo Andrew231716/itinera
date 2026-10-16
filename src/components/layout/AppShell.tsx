@@ -6,6 +6,7 @@ import {
   Layers3,
   Map as MapIcon,
   CircleParking,
+  Fuel,
   Route,
   ShieldAlert,
   Sparkles,
@@ -30,6 +31,7 @@ import { NaturalLanguageAssistant } from "@/components/trip/NaturalLanguageAssis
 import { SetupPanel } from "@/components/trip/SetupPanel";
 import { SavedPanel } from "@/components/trip/SavedPanel";
 import { ParkingPanel } from "@/components/trip/ParkingPanel";
+import { FuelPanel } from "@/components/trip/FuelPanel";
 import { MapCanvas } from "@/components/map/MapCanvas";
 import { StatusBanner } from "@/components/status/StatusBanner";
 
@@ -38,6 +40,7 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "preferences", label: "Percorso", icon: SlidersHorizontal },
   { id: "exclusions", label: "Esclusioni", icon: ShieldAlert },
   { id: "parking", label: "Parcheggi", icon: CircleParking },
+  { id: "fuel", label: "Benzinai", icon: Fuel },
   { id: "summary", label: "Riepilogo", icon: Layers3 },
   { id: "saved", label: "Cronologia", icon: History },
   { id: "assistant", label: "Assistente", icon: Sparkles },
@@ -194,6 +197,7 @@ export function AppShell() {
           {activePanel === "exclusions" ? <ExclusionsPanel /> : null}
           {activePanel === "summary" ? <RouteSummary /> : null}
           {activePanel === "parking" ? <ParkingPanel /> : null}
+          {activePanel === "fuel" ? <FuelPanel /> : null}
           {activePanel === "assistant" ? <NaturalLanguageAssistant /> : null}
           {activePanel === "saved" ? <SavedPanel /> : null}
           {activePanel === "setup" ? <SetupPanel /> : null}
