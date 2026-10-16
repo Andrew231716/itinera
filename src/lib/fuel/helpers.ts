@@ -21,6 +21,25 @@ export function sortByDistance(stations: FuelStation[]): FuelStation[] {
   return [...stations].sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
+/** Prefer AdBlue-confirmed stations, then closer ones. */
+export function rankStations(stations: FuelStation[]): FuelStation[] {
+  return [...stations].sort((a, b) => {
+    const aAd = a.amenities.adblue === "yes" ? 0 : 1;
+    const bAd = b.amenities.adblue === "yes" ? 0 : 1;
+    if (aAd !== bAd) return aAd - bAd;
+    const a24 = a.amenities.open24h === "yes" ? 0 : 1;
+    const b24 = b.amenities.open24h === "yes" ? 0 : 1;
+    if (a24 !== b24) return a24 - b24;
+    return a.distanceMeters - b.distanceMeters;
+  });
+}
+
+/** Min distance to any corridor sample point (origin / mid / dest). */
+export function corridorDistance(location: LatLng, centers: LatLng[]): number {
+  if (centers.length === 0) return 0;
+  return Math.min(...centers.map((c) => withDistance(location, c)));
+}
+
 export function osmAmenitySignal(
   tags: Record<string, string>,
   keys: string[],
@@ -50,10 +69,26 @@ export function textMentions24h(
   );
 }
 
+const MERGE_METERS = 45;
+
+function findMergeKey(
+  station: FuelStation,
+  byKey: Map<string, FuelStation>,
+): string {
+  const exact = `${station.location.lat.toFixed(4)},${station.location.lng.toFixed(4)}`;
+  if (byKey.has(exact)) return exact;
+  for (const [key, existing] of byKey) {
+    if (withDistance(station.location, existing.location) <= MERGE_METERS) {
+      return key;
+    }
+  }
+  return exact;
+}
+
 export function mergeStations(stations: FuelStation[]): FuelStation[] {
   const byKey = new Map<string, FuelStation>();
   for (const station of stations) {
-    const key = `${station.location.lat.toFixed(5)},${station.location.lng.toFixed(5)}`;
+    const key = findMergeKey(station, byKey);
     const existing = byKey.get(key);
     if (!existing) {
       byKey.set(key, station);
@@ -76,7 +111,7 @@ export function mergeStations(stations: FuelStation[]): FuelStation[] {
           ? existing.name
           : station.name,
       brand: existing.brand ?? station.brand,
-      address: existing.address ?? station.address,
+      address: existing.address || station.address,
       phone: existing.phone ?? station.phone,
       website: existing.website ?? station.website,
       openNow: existing.openNow ?? station.openNow,
@@ -92,7 +127,7 @@ export function mergeStations(stations: FuelStation[]): FuelStation[] {
       ),
     });
   }
-  return sortByDistance(Array.from(byKey.values()));
+  return rankStations(Array.from(byKey.values()));
 }
 
 export function midpoint(a: LatLng, b: LatLng): LatLng {

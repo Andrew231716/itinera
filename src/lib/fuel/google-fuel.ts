@@ -134,7 +134,7 @@ async function placesTextSearch(
     })
     .map((p) =>
       googlePlaceToStation(p, center, {
-        adblueFromQuery: /ad\s*blue|adblue/i.test(textQuery),
+        fromAdBlueQuery: /ad\s*blue|adblue/i.test(textQuery),
       }),
     );
 }
@@ -157,7 +157,7 @@ interface GooglePlace {
 function googlePlaceToStation(
   place: GooglePlace,
   center: LatLng,
-  opts?: { adblueFromQuery?: boolean },
+  opts?: { fromAdBlueQuery?: boolean },
 ): FuelStation {
   const lat = place.location?.latitude ?? center.lat;
   const lng = place.location?.longitude ?? center.lng;
@@ -169,14 +169,27 @@ function googlePlaceToStation(
   const phone =
     place.nationalPhoneNumber || place.internationalPhoneNumber || undefined;
 
-  const adblueMention =
-    opts?.adblueFromQuery ||
-    textMentionsAdBlue(name, place.formattedAddress, place.websiteUri);
+  // Never mark AdBlue only because the search query was "AdBlue" —
+  // that produced many false positives for nearby stations.
+  const adblueMention = textMentionsAdBlue(
+    name,
+    place.formattedAddress,
+    place.websiteUri,
+  );
   const open24h = textMentions24h(hoursText, name);
 
   const notes: string[] = [];
   if (adblueMention) notes.push("AdBlue segnalato");
-  if (open24h) notes.push("Aperto 24 ore su 24 secondo la scheda del distributore");
+  else if (opts?.fromAdBlueQuery) {
+    notes.push(
+      "Trovato in ricerca AdBlue — conferma telefonando (non indicato nel nome)",
+    );
+  }
+  if (open24h) {
+    notes.push(
+      "Aperto 24 ore su 24 secondo la scheda del distributore",
+    );
+  }
 
   return {
     id: `ggl-fuel-${place.id ?? `${lat},${lng}`}`,

@@ -31,6 +31,7 @@ export function TripForm() {
   const setMapPickTarget = useTripStore((s) => s.setMapPickTarget);
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
   const requestFuelNear = useTripStore((s) => s.requestFuelNear);
+  const openFuelPanel = useTripStore((s) => s.openFuelPanel);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
 
@@ -113,11 +114,7 @@ export function TripForm() {
             className="w-full"
             onClick={() => {
               if (trip.origin && trip.destination) {
-                requestFuelNear({
-                  lat: trip.origin.location.lat,
-                  lng: trip.origin.location.lng,
-                  label: `${trip.origin.label} → ${trip.destination.label}`,
-                });
+                openFuelPanel();
               } else {
                 requestFuelNear({
                   lat: trip.destination!.location.lat,

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   amenityLabel,
+  corridorDistance,
   mergeStations,
   midpoint,
+  rankStations,
   textMentions24h,
   textMentionsAdBlue,
 } from "@/lib/fuel/helpers";
@@ -86,5 +88,50 @@ describe("fuel helpers", () => {
     expect(merged[0].sources).toContain("google_maps");
     expect(merged[0].sources).toContain("openstreetmap");
     expect(merged[0].name).toContain("Via Emilia");
+  });
+
+  it("merges stations within ~45m even with slightly different coords", () => {
+    const a = station({
+      id: "a",
+      name: "Eni",
+      location: { lat: 45.358, lng: 9.324 },
+      sources: ["google_maps"],
+    });
+    const b = station({
+      id: "b",
+      name: "Eni Station",
+      location: { lat: 45.3582, lng: 9.3241 },
+      amenities: { adblue: "yes" },
+      sources: ["openstreetmap"],
+    });
+    expect(mergeStations([a, b])).toHaveLength(1);
+  });
+
+  it("ranks AdBlue stations before others", () => {
+    const farAdblue = station({
+      id: "far",
+      name: "Q8 AdBlue",
+      distanceMeters: 5000,
+      amenities: { adblue: "yes" },
+    });
+    const near = station({
+      id: "near",
+      name: "IP",
+      distanceMeters: 200,
+      amenities: { adblue: "unknown" },
+    });
+    const ranked = rankStations([near, farAdblue]);
+    expect(ranked[0].id).toBe("far");
+  });
+
+  it("uses min corridor distance", () => {
+    const d = corridorDistance(
+      { lat: 45.4, lng: 9.34 },
+      [
+        { lat: 45.36, lng: 9.32 },
+        { lat: 45.4, lng: 9.34 },
+      ],
+    );
+    expect(d).toBe(0);
   });
 });

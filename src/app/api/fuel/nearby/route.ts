@@ -13,6 +13,7 @@ export async function GET(request: Request) {
       ? Number(searchParams.get("radius"))
       : undefined;
     const query = searchParams.get("q")?.trim() || undefined;
+    const label = searchParams.get("label")?.trim() || undefined;
     const alongLat = searchParams.get("alongLat");
     const alongLng = searchParams.get("alongLng");
     const adblue = searchParams.get("adblue") === "1";
@@ -43,6 +44,7 @@ export async function GET(request: Request) {
       center: { lat, lng },
       radiusMeters: radius,
       query,
+      label,
       alongTo,
       adblue,
       open24h,

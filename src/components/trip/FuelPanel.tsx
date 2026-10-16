@@ -43,8 +43,20 @@ export function FuelPanel() {
   const [advice, setAdvice] = useState<string | null>(null);
   const [limitations, setLimitations] = useState<string[]>([]);
 
+  // GPS / assistente set fuelCenter → point search. openFuelPanel clears it → tratta.
+  useEffect(() => {
+    if (fuelCenter) setAlongRoute(false);
+    else if (trip.origin && trip.destination) setAlongRoute(true);
+    // Only realign when a new search is requested (nonce), not on every checkbox toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [fuelSearchNonce]);
+
+  const useCorridor = Boolean(
+    alongRoute && trip.origin?.location && trip.destination?.location,
+  );
+
   const center = useMemo(() => {
-    if (alongRoute && trip.origin?.location && trip.destination?.location) {
+    if (useCorridor && trip.origin && trip.destination) {
       return {
         lat: trip.origin.location.lat,
         lng: trip.origin.location.lng,
@@ -75,9 +87,9 @@ export function FuelPanel() {
       label: "Melegnano (esempio)",
       kind: "esempio" as const,
     };
-  }, [fuelCenter, trip.origin, trip.destination, alongRoute]);
+  }, [fuelCenter, trip.origin, trip.destination, useCorridor]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
@@ -91,7 +103,7 @@ export function FuelPanel() {
       if (adblue) params.set("adblue", "1");
       if (open24h) params.set("open24h", "1");
       if (truck) params.set("truck", "1");
-      if (alongRoute && trip.origin?.location && trip.destination?.location) {
+      if (useCorridor && trip.origin?.location && trip.destination?.location) {
         params.set("lat", String(trip.origin.location.lat));
         params.set("lng", String(trip.origin.location.lng));
         params.set("alongLat", String(trip.destination.location.lat));
@@ -102,18 +114,22 @@ export function FuelPanel() {
         );
       }
 
-      const res = await fetch(`/api/fuel/nearby?${params.toString()}`);
+      const res = await fetch(`/api/fuel/nearby?${params.toString()}`, {
+        signal,
+      });
       const data = (await res.json()) as FuelSearchResult & { error?: string };
+      if (signal?.aborted) return;
       if (!res.ok) throw new Error(data.error ?? "Ricerca benzinai non riuscita.");
       setFuelStations(data.stations);
       setAdvice(data.advice ?? null);
       setLimitations(data.limitations ?? []);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setFuelStations([]);
       setAdvice(null);
       setError(err instanceof Error ? err.message : "Errore di ricerca.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [
     center,
@@ -122,14 +138,16 @@ export function FuelPanel() {
     adblue,
     open24h,
     truck,
-    alongRoute,
+    useCorridor,
     trip.origin,
     trip.destination,
     setFuelStations,
   ]);
 
   useEffect(() => {
-    void load();
+    const ac = new AbortController();
+    void load(ac.signal);
+    return () => ac.abort();
   }, [load, fuelSearchNonce]);
 
   function useGps() {
@@ -423,6 +441,11 @@ function FuelCard({
             Telefono: {station.phone}
           </p>
         ) : null}
+        {station.verifyByPhone && station.amenities.adblue === "yes" ? (
+          <p className="mt-1 text-[11px] text-amber-800">
+            Consigliato telefonare per confermare che l’erogatore AdBlue funzioni.
+          </p>
+        ) : null}
       </button>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -442,6 +465,16 @@ function FuelCard({
           >
             <Phone className="h-3.5 w-3.5" />
             Chiama
+          </a>
+        ) : null}
+        {station.website ? (
+          <a
+            href={station.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--line)] px-3 text-xs font-medium text-[var(--ink-muted)]"
+          >
+            Sito
           </a>
         ) : null}
         <button

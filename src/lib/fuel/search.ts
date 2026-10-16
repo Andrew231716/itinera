@@ -1,7 +1,12 @@
 import { getServerGoogleMapsKey } from "@/lib/config/env";
 import { searchGoogleFuel } from "@/lib/fuel/google-fuel";
 import { searchOsmFuel } from "@/lib/fuel/osm-fuel";
-import { mergeStations, midpoint, withDistance } from "@/lib/fuel/helpers";
+import {
+  corridorDistance,
+  mergeStations,
+  midpoint,
+  rankStations,
+} from "@/lib/fuel/helpers";
 import type { FuelSearchResult, FuelSource, FuelStation } from "@/lib/fuel/types";
 import type { LatLng } from "@/lib/types/trip";
 
@@ -37,18 +42,25 @@ export async function searchNearbyFuel(params: {
     centers.push(midpoint(center, alongTo), alongTo);
   }
 
-  for (const c of centers) {
-    const osm = await searchOsmFuel({
-      center: c,
-      radiusMeters: alongTo ? Math.max(radiusMeters, 6000) : radiusMeters,
-      preferAdBlue: filters.adblue,
-    });
+  const searchRadius = alongTo ? Math.max(radiusMeters, 6000) : radiusMeters;
+
+  const osmResults = await Promise.all(
+    centers.map((c) =>
+      searchOsmFuel({
+        center: c,
+        radiusMeters: searchRadius,
+        preferAdBlue: filters.adblue,
+      }),
+    ),
+  );
+
+  for (const osm of osmResults) {
     if (osm.stations.length) {
       sourcesUsed.push("openstreetmap");
       collected.push(
         ...osm.stations.map((s) => ({
           ...s,
-          distanceMeters: withDistance(s.location, center),
+          distanceMeters: corridorDistance(s.location, centers),
         })),
       );
     } else if (osm.error) {
@@ -58,20 +70,24 @@ export async function searchNearbyFuel(params: {
 
   const apiKey = getServerGoogleMapsKey();
   if (apiKey) {
-    for (const c of centers) {
-      const ggl = await searchGoogleFuel({
-        center: c,
-        radiusMeters: alongTo ? Math.max(radiusMeters, 6000) : radiusMeters,
-        apiKey,
-        query: params.query,
-        preferAdBlue: filters.adblue,
-      });
+    const gglResults = await Promise.all(
+      centers.map((c) =>
+        searchGoogleFuel({
+          center: c,
+          radiusMeters: searchRadius,
+          apiKey,
+          query: params.query,
+          preferAdBlue: filters.adblue,
+        }),
+      ),
+    );
+    for (const ggl of gglResults) {
       if (ggl.stations.length) {
         sourcesUsed.push("google_maps");
         collected.push(
           ...ggl.stations.map((s) => ({
             ...s,
-            distanceMeters: withDistance(s.location, center),
+            distanceMeters: corridorDistance(s.location, centers),
           })),
         );
       } else if (ggl.error) {
@@ -85,9 +101,20 @@ export async function searchNearbyFuel(params: {
   }
 
   let stations = mergeStations(collected);
+  let relaxedAdBlue = false;
 
   if (filters.adblue) {
-    stations = stations.filter((s) => s.amenities.adblue === "yes");
+    const confirmed = stations.filter((s) => s.amenities.adblue === "yes");
+    if (confirmed.length > 0) {
+      stations = confirmed;
+    } else if (stations.length > 0) {
+      // Keep nearby stations so the panel is never a dead end when OSM/Google
+      // lack explicit AdBlue tags in the area.
+      relaxedAdBlue = true;
+      limitations.push(
+        "Nessun AdBlue esplicitamente confermato in zona: mostro i distributori più vicini da verificare telefonicamente.",
+      );
+    }
   }
   if (filters.open24h) {
     stations = stations.filter((s) => s.amenities.open24h === "yes");
@@ -96,7 +123,7 @@ export async function searchNearbyFuel(params: {
     stations = stations.filter((s) => s.amenities.truck === "yes");
   }
 
-  stations = stations.slice(0, 40);
+  stations = rankStations(stations).slice(0, 40);
 
   limitations.push(
     "La disponibilità AdBlue/erogatori è segnalata da OSM/schede pubbliche: conferma telefonando prima di fare affidamento.",
@@ -105,16 +132,21 @@ export async function searchNearbyFuel(params: {
   const adblueCount = stations.filter(
     (s) => s.amenities.adblue === "yes",
   ).length;
+  const where = params.label?.trim()
+    ? ` tra/vicino a ${params.label.trim()}`
+    : "";
   const advice =
     stations.length === 0
       ? filters.adblue
-        ? "Nessun distributore con AdBlue segnalato in zona. Prova ad allargare il raggio o togliere il filtro."
-        : "Nessun distributore trovato in questo raggio."
-      : filters.adblue || adblueCount > 0
-        ? `Ho trovato ${stations.length} opzioni${
-            adblueCount ? ` (${adblueCount} con AdBlue segnalato)` : ""
-          }. Ti consiglio di telefonare prima: online risulta disponibile, ma non posso verificare che l’erogatore funzioni in questo momento.`
-        : `Ho trovato ${stations.length} distributori. Usa i filtri (AdBlue, H24) per restringere.`;
+        ? `Nessun distributore con AdBlue segnalato${where}. Prova ad allargare il raggio o togliere il filtro.`
+        : `Nessun distributore trovato${where || " in questo raggio"}.`
+      : relaxedAdBlue
+        ? `Ho trovato ${stations.length} distributori${where}, ma nessuno con AdBlue confermato online. Ti consiglio di telefonare prima di fare rifornimento.`
+        : filters.adblue || adblueCount > 0
+          ? `Ho trovato ${stations.length} opzioni interessanti${where}${
+              adblueCount ? ` (${adblueCount} con AdBlue segnalato)` : ""
+            }. Ti consiglio di telefonare prima: online risulta disponibile, ma non posso verificare che l’erogatore funzioni in questo momento.`
+          : `Ho trovato ${stations.length} distributori${where}. Usa i filtri (AdBlue, H24) per restringere.`;
 
   return {
     center,

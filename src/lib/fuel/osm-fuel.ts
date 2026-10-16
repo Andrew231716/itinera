@@ -9,6 +9,7 @@ import {
 } from "@/lib/fuel/helpers";
 
 const OVERPASS_ENDPOINTS = [
+  "https://overpass.private.coffee/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass-api.de/api/interpreter",
@@ -89,11 +90,8 @@ function osmElementToStation(
   if (lat == null || lng == null) return null;
   const tags = el.tags ?? {};
   const brand = tags.brand || tags.operator;
-  const name =
-    tags.name ||
-    tags["name:it"] ||
-    brand ||
-    "Distributore";
+  const rawName = tags.name || tags["name:it"] || "";
+  const name = rawName || brand || "Distributore";
 
   const adblue = osmAmenitySignal(tags, [
     "fuel:adblue",
@@ -138,18 +136,24 @@ function osmElementToStation(
     adblue === "yes" ||
     textMentionsAdBlue(tags.description, tags.name, tags.brand);
 
+  const displayName =
+    brand && rawName && !rawName.toLowerCase().includes(brand.toLowerCase())
+      ? `${brand} – ${rawName}`
+      : name;
+  const address = [
+    tags["addr:street"],
+    tags["addr:housenumber"],
+    tags["addr:city"],
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return {
     id: `osm-fuel-${el.type}-${el.id}`,
-    name: brand && !name.includes(brand) ? `${brand} – ${name}` : name,
+    name: displayName,
     brand,
     location: { lat, lng },
-    address: [
-      tags["addr:street"],
-      tags["addr:housenumber"],
-      tags["addr:city"],
-    ]
-      .filter(Boolean)
-      .join(" "),
+    address: address || undefined,
     distanceMeters: withDistance({ lat, lng }, center),
     phone,
     website: tags.website || tags["contact:website"],

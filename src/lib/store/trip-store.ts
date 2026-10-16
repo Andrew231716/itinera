@@ -133,6 +133,8 @@ interface TripState {
 
   setFuelStations: (stations: FuelStation[]) => void;
   selectFuel: (id: string | null) => void;
+  /** Open fuel panel for corridor search (uses origin→destination when set) */
+  openFuelPanel: () => void;
   /** Search fuel stations near a place and open the fuel panel */
   requestFuelNear: (center: {
     lat: number;
@@ -589,6 +591,15 @@ export const useTripStore = create<TripState>((set, get) => ({
     })),
 
   selectFuel: (id) => set({ selectedFuelId: id }),
+
+  openFuelPanel: () =>
+    set((s) => ({
+      fuelCenter: null,
+      fuelSearchNonce: s.fuelSearchNonce + 1,
+      selectedFuelId: null,
+      activePanel: "fuel",
+      mobilePanelOpen: true,
+    })),
 
   requestFuelNear: (center) =>
     set((s) => ({
