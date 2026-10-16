@@ -33,6 +33,7 @@ describe("assistant schema", () => {
       reorderStops: false,
       titleSuggestion: "Rozzano–Roma",
       parkingSearchText: null,
+      fuelSearchText: null,
     });
     expect(ok.success).toBe(true);
   });

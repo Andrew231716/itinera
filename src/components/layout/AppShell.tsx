@@ -6,6 +6,8 @@ import {
   Layers3,
   Map as MapIcon,
   CircleParking,
+  Fuel,
+  Navigation,
   Route,
   ShieldAlert,
   Sparkles,
@@ -30,6 +32,8 @@ import { NaturalLanguageAssistant } from "@/components/trip/NaturalLanguageAssis
 import { SetupPanel } from "@/components/trip/SetupPanel";
 import { SavedPanel } from "@/components/trip/SavedPanel";
 import { ParkingPanel } from "@/components/trip/ParkingPanel";
+import { FuelPanel } from "@/components/trip/FuelPanel";
+import { NavigatorPanel } from "@/components/trip/NavigatorPanel";
 import { MapCanvas } from "@/components/map/MapCanvas";
 import { StatusBanner } from "@/components/status/StatusBanner";
 
@@ -37,8 +41,10 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "itinerary", label: "Itinerario", icon: MapIcon },
   { id: "preferences", label: "Percorso", icon: SlidersHorizontal },
   { id: "exclusions", label: "Esclusioni", icon: ShieldAlert },
-  { id: "parking", label: "Parcheggi", icon: CircleParking },
   { id: "summary", label: "Riepilogo", icon: Layers3 },
+  { id: "navigate", label: "Naviga", icon: Navigation },
+  { id: "parking", label: "Parcheggi", icon: CircleParking },
+  { id: "fuel", label: "Benzinai", icon: Fuel },
   { id: "saved", label: "Cronologia", icon: History },
   { id: "assistant", label: "Assistente", icon: Sparkles },
   { id: "setup", label: "Live", icon: Settings2 },
@@ -60,7 +66,10 @@ export function AppShell() {
   const savedTrips = useTripStore((s) => s.savedTrips);
   const tripHistory = useTripStore((s) => s.tripHistory);
   const trip = useTripStore((s) => s.trip);
+  const routes = useTripStore((s) => s.routes);
+  const startNavigation = useTripStore((s) => s.startNavigation);
   const { computeRoute } = useRouteCompute();
+  const hasRoute = routes.length > 0;
 
   useEffect(() => {
     fetch("/api/maps/config")
@@ -194,6 +203,8 @@ export function AppShell() {
           {activePanel === "exclusions" ? <ExclusionsPanel /> : null}
           {activePanel === "summary" ? <RouteSummary /> : null}
           {activePanel === "parking" ? <ParkingPanel /> : null}
+          {activePanel === "fuel" ? <FuelPanel /> : null}
+          {activePanel === "navigate" ? <NavigatorPanel /> : null}
           {activePanel === "assistant" ? <NaturalLanguageAssistant /> : null}
           {activePanel === "saved" ? <SavedPanel /> : null}
           {activePanel === "setup" ? <SetupPanel /> : null}
@@ -285,22 +296,57 @@ export function AppShell() {
         </div>
 
         <footer className="shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/90 p-3 lg:p-4">
-          <Button
-            type="button"
-            size="lg"
-            className="w-full"
-            disabled={
-              routeMode === "loading" || !trip.origin || !trip.destination
-            }
-            onClick={() => {
-              void computeRoute();
-              setActivePanel("summary");
-              setMobilePanelOpen(true);
-            }}
-          >
-            <Route className="h-4 w-4" />
-            {routeMode === "loading" ? "Calcolo…" : "Calcola percorso"}
-          </Button>
+          {hasRoute ? (
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                size="lg"
+                className="w-full"
+                onClick={() => {
+                  startNavigation();
+                  setActivePanel("navigate");
+                  setMobilePanelOpen(true);
+                }}
+              >
+                <Navigation className="h-4 w-4" />
+                Avvia navigazione
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full"
+                disabled={
+                  routeMode === "loading" || !trip.origin || !trip.destination
+                }
+                onClick={() => {
+                  void computeRoute();
+                  setActivePanel("summary");
+                  setMobilePanelOpen(true);
+                }}
+              >
+                <Route className="h-3.5 w-3.5" />
+                {routeMode === "loading" ? "Calcolo…" : "Ricalcola percorso"}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              disabled={
+                routeMode === "loading" || !trip.origin || !trip.destination
+              }
+              onClick={() => {
+                void computeRoute();
+                setActivePanel("summary");
+                setMobilePanelOpen(true);
+              }}
+            >
+              <Route className="h-4 w-4" />
+              {routeMode === "loading" ? "Calcolo…" : "Calcola percorso"}
+            </Button>
+          )}
         </footer>
       </aside>
     </div>

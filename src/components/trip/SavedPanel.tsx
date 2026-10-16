@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
   CarFront,
+  Fuel,
   Heart,
   Home,
   Briefcase,
@@ -40,6 +41,7 @@ import { PlaceSearch } from "@/components/trip/PlaceSearch";
 
 const KINDS: Array<{ id: SavedPlaceKind; label: string; icon: typeof Heart }> = [
   { id: "parking", label: "Parcheggio", icon: CarFront },
+  { id: "fuel", label: "Benzinaio", icon: Fuel },
   { id: "favorite", label: "Preferito", icon: Heart },
   { id: "home", label: "Casa", icon: Home },
   { id: "work", label: "Lavoro", icon: Briefcase },

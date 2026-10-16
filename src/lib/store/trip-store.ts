@@ -25,6 +25,15 @@ import { isValidPolygon } from "@/lib/utils/geometry";
 import { createPointExclusion } from "@/lib/routing/exclusion-helpers";
 import type { ParkingSpot } from "@/lib/parking/types";
 import { parkingSpotToPlaceRef } from "@/lib/parking/place-ref";
+import type { FuelStation } from "@/lib/fuel/types";
+import { fuelStationToPlaceRef } from "@/lib/fuel/place-ref";
+import type {
+  NavigationRuntime,
+  NavProgress,
+} from "@/lib/navigation/types";
+import { stopNavigationSpeech } from "@/lib/navigation/voice";
+import { detectNavPlatform } from "@/lib/navigation/platform";
+import { releaseWakeLock } from "@/lib/navigation/wake-lock";
 
 export type MapPickTarget =
   | "origin"
@@ -40,9 +49,27 @@ export type PanelTab =
   | "exclusions"
   | "summary"
   | "parking"
+  | "fuel"
+  | "navigate"
   | "assistant"
   | "setup"
   | "saved";
+
+const IDLE_NAVIGATION: NavigationRuntime = {
+  status: "idle",
+  voiceEnabled: true,
+  followMap: true,
+  position: null,
+  headingDeg: null,
+  accuracyMeters: null,
+  speedMps: null,
+  progress: null,
+  error: null,
+  lastSpokenManeuverId: null,
+  wakeLockActive: false,
+  wakeLockMode: "inactive",
+  platform: "web",
+};
 
 interface TripState {
   trip: TripDraft;
@@ -65,6 +92,16 @@ interface TripState {
   parkingCenter: { lat: number; lng: number; label: string } | null;
   /** Bumps when a new parking search is requested (destination / AI / manual) */
   parkingSearchNonce: number;
+
+  /** Nearby fuel stations for the active search center / corridor */
+  fuelStations: FuelStation[];
+  selectedFuelId: string | null;
+  fuelCenter: { lat: number; lng: number; label: string } | null;
+  /** Bumps when a new fuel search is requested (AI / manual / GPS) */
+  fuelSearchNonce: number;
+
+  /** In-app guided navigation along the selected Itinera route */
+  navigation: NavigationRuntime;
 
   setActivePanel: (tab: PanelTab) => void;
   setMobilePanelOpen: (open: boolean) => void;
@@ -120,6 +157,36 @@ interface TripState {
   }) => void;
   /** Apply selected parking as destination or as an intermediate stop */
   applySelectedParking: (mode: "destination" | "stop") => void;
+
+  setFuelStations: (stations: FuelStation[]) => void;
+  selectFuel: (id: string | null) => void;
+  /** Open fuel panel for corridor search (uses origin→destination when set) */
+  openFuelPanel: () => void;
+  /** Search fuel stations near a place and open the fuel panel */
+  requestFuelNear: (center: {
+    lat: number;
+    lng: number;
+    label: string;
+  }) => void;
+  /** Apply selected fuel station as destination or as an intermediate stop */
+  applySelectedFuel: (mode: "destination" | "stop") => void;
+
+  startNavigation: () => void;
+  stopNavigation: () => void;
+  setNavigationVoice: (enabled: boolean) => void;
+  setNavigationFollowMap: (enabled: boolean) => void;
+  setNavigationWakeLock: (state: {
+    active: boolean;
+    mode: NavigationRuntime["wakeLockMode"];
+  }) => void;
+  updateNavigationFix: (fix: {
+    position: { lat: number; lng: number };
+    headingDeg: number | null;
+    accuracyMeters: number | null;
+    speedMps: number | null;
+  }) => void;
+  setNavigationProgress: (progress: NavProgress) => void;
+  markNavigationSpoken: (maneuverId: string) => void;
 }
 
 function touch(trip: TripDraft): TripDraft {
@@ -156,8 +223,14 @@ export const useTripStore = create<TripState>((set, get) => ({
   selectedParkingId: null,
   parkingCenter: null,
   parkingSearchNonce: 0,
+  fuelStations: [],
+  selectedFuelId: null,
+  fuelCenter: null,
+  fuelSearchNonce: 0,
+  navigation: { ...IDLE_NAVIGATION },
 
-  setActivePanel: (tab) => set({ activePanel: tab }),  setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
+  setActivePanel: (tab) => set({ activePanel: tab }),
+  setMobilePanelOpen: (open) => set({ mobilePanelOpen: open }),
   setMapPickTarget: (target) =>
     set({
       mapPickTarget: target,
@@ -178,6 +251,8 @@ export const useTripStore = create<TripState>((set, get) => ({
     set((s) => ({
       trip: touch({ ...s.trip, destination: place }),
       mapPickTarget: null,
+      // Keep a suggested parking center, but do not open the panel or
+      // trigger a search — the user starts that from Parcheggi explicitly.
       ...(place
         ? {
             parkingCenter: {
@@ -185,8 +260,6 @@ export const useTripStore = create<TripState>((set, get) => ({
               lng: place.location.lng,
               label: place.label,
             },
-            parkingSearchNonce: s.parkingSearchNonce + 1,
-            selectedParkingId: null,
           }
         : {}),
     })),
@@ -552,4 +625,155 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({ activePanel: "itinerary", mobilePanelOpen: true });
     }
   },
+
+  setFuelStations: (stations) =>
+    set((s) => ({
+      fuelStations: stations,
+      selectedFuelId:
+        s.selectedFuelId && stations.some((f) => f.id === s.selectedFuelId)
+          ? s.selectedFuelId
+          : null,
+    })),
+
+  selectFuel: (id) => set({ selectedFuelId: id }),
+
+  openFuelPanel: () =>
+    set((s) => ({
+      fuelCenter: null,
+      fuelSearchNonce: s.fuelSearchNonce + 1,
+      selectedFuelId: null,
+      activePanel: "fuel",
+      mobilePanelOpen: true,
+    })),
+
+  requestFuelNear: (center) =>
+    set((s) => ({
+      fuelCenter: center,
+      fuelSearchNonce: s.fuelSearchNonce + 1,
+      selectedFuelId: null,
+      activePanel: "fuel",
+      mobilePanelOpen: true,
+    })),
+
+  applySelectedFuel: (mode) => {
+    const { fuelStations, selectedFuelId } = get();
+    const station = fuelStations.find((f) => f.id === selectedFuelId);
+    if (!station) return;
+    const place = fuelStationToPlaceRef(station);
+    if (mode === "destination") {
+      set((s) => ({
+        trip: touch({ ...s.trip, destination: place }),
+        mapPickTarget: null,
+        activePanel: "itinerary",
+        mobilePanelOpen: true,
+      }));
+    } else {
+      get().addStop(place);
+      set({ activePanel: "itinerary", mobilePanelOpen: true });
+    }
+  },
+
+  startNavigation: () => {
+    const { routes, trip } = get();
+    const selected =
+      routes.find((r) => r.id === trip.selectedRouteId) ?? routes[0] ?? null;
+    if (!selected || selected.decodedPath.length < 2) {
+      set({
+        navigation: {
+          ...IDLE_NAVIGATION,
+          status: "error",
+          error: "Calcola prima un percorso in Itinera.",
+        },
+        activePanel: "navigate",
+        mobilePanelOpen: true,
+      });
+      return;
+    }
+    set({
+      navigation: {
+        ...IDLE_NAVIGATION,
+        status: "starting",
+        voiceEnabled: get().navigation.voiceEnabled,
+        followMap: true,
+        platform: detectNavPlatform(),
+      },
+      activePanel: "navigate",
+      mobilePanelOpen: true,
+    });
+    // Move to navigating once GPS watch attaches (hook upgrades status)
+    setTimeout(() => {
+      const nav = get().navigation;
+      if (nav.status === "starting") {
+        set({ navigation: { ...nav, status: "navigating" } });
+      }
+    }, 400);
+  },
+
+  stopNavigation: () => {
+    stopNavigationSpeech();
+    void releaseWakeLock();
+    set({
+      navigation: {
+        ...IDLE_NAVIGATION,
+        voiceEnabled: get().navigation.voiceEnabled,
+        platform: detectNavPlatform(),
+      },
+    });
+  },
+
+  setNavigationVoice: (enabled) =>
+    set((s) => {
+      if (!enabled) stopNavigationSpeech();
+      return { navigation: { ...s.navigation, voiceEnabled: enabled } };
+    }),
+
+  setNavigationFollowMap: (enabled) =>
+    set((s) => ({ navigation: { ...s.navigation, followMap: enabled } })),
+
+  setNavigationWakeLock: ({ active, mode }) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        wakeLockActive: active,
+        wakeLockMode: mode,
+      },
+    })),
+
+  updateNavigationFix: (fix) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        position: fix.position,
+        headingDeg: fix.headingDeg,
+        accuracyMeters: fix.accuracyMeters,
+        speedMps: fix.speedMps,
+        error: null,
+        status:
+          s.navigation.status === "starting"
+            ? "navigating"
+            : s.navigation.status === "idle"
+              ? "idle"
+              : s.navigation.status,
+      },
+    })),
+
+  setNavigationProgress: (progress) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        progress,
+        status: progress.arrived
+          ? "arrived"
+          : progress.offRoute
+            ? "off_route"
+            : s.navigation.status === "arrived"
+              ? "arrived"
+              : "navigating",
+      },
+    })),
+
+  markNavigationSpoken: (maneuverId) =>
+    set((s) => ({
+      navigation: { ...s.navigation, lastSpokenManeuverId: maneuverId },
+    })),
 }));

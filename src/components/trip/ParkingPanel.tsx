@@ -114,7 +114,9 @@ export function ParkingPanel() {
     }
   }, [center, radius, query, setParkingSpots]);
 
+  // Search only when the user explicitly triggers it (nonce bump or Aggiorna).
   useEffect(() => {
+    if (parkingSearchNonce === 0) return;
     void load();
   }, [load, parkingSearchNonce]);
 
@@ -183,38 +185,51 @@ export function ParkingPanel() {
     <div className="space-y-4">
       <SectionTitle
         title="Parcheggi"
-        subtitle="Gratuiti e a pagamento · OSM, Google Maps, EasyPark (ricerca gratuita)"
+        subtitle="Cerca quando vuoi · OSM, Google Maps, EasyPark"
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
-        Centro:{" "}
+        Centro suggerito:{" "}
         <span className="font-medium text-[var(--ink)]">{center.label}</span>
         <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
         <p className="mt-1">
-          Clicca un marker P sulla mappa o una card qui sotto per selezionare la
-          zona. Poi usala come destinazione o tappa.
+          La ricerca non parte da sola: usa i pulsanti qui sotto. Poi seleziona
+          un risultato come destinazione o tappa.
         </p>
       </div>
 
-      {trip.destination ? (
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          size="sm"
-          variant="outline"
+          disabled={loading}
           onClick={() =>
             requestParkingNear({
-              lat: trip.destination!.location.lat,
-              lng: trip.destination!.location.lng,
-              label: trip.destination!.label,
+              lat: center.lat,
+              lng: center.lng,
+              label: center.label,
             })
           }
         >
-          <CircleParking className="h-3.5 w-3.5" />
-          Parcheggi vicino a «{trip.destination.label}»
+          <Search className="h-4 w-4" />
+          {loading ? "Cerco…" : "Cerca parcheggi"}
         </Button>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
+        {trip.destination ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              requestParkingNear({
+                lat: trip.destination!.location.lat,
+                lng: trip.destination!.location.lng,
+                label: trip.destination!.label,
+              })
+            }
+          >
+            <CircleParking className="h-3.5 w-3.5" />
+            Vicino destinazione
+          </Button>
+        ) : null}
         <Button type="button" size="sm" variant="outline" onClick={useGps}>
           <Navigation className="h-3.5 w-3.5" />
           Usa GPS
@@ -223,7 +238,7 @@ export function ParkingPanel() {
           type="button"
           size="sm"
           variant="secondary"
-          disabled={loading}
+          disabled={loading || parkingSpots.length === 0}
           onClick={() => void load()}
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />

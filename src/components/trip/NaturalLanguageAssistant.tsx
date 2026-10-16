@@ -31,6 +31,7 @@ export function NaturalLanguageAssistant() {
   const setTitle = useTripStore((s) => s.setTitle);
   const trip = useTripStore((s) => s.trip);
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
+  const requestFuelNear = useTripStore((s) => s.requestFuelNear);
   const { computeRoute } = useRouteCompute();
 
   async function submit() {
@@ -158,6 +159,16 @@ export function NaturalLanguageAssistant() {
       return;
     }
 
+    if (p.fuelSearch) {
+      requestFuelNear({
+        lat: p.fuelSearch.location.lat,
+        lng: p.fuelSearch.location.lng,
+        label: p.fuelSearch.label,
+      });
+      setPending(null);
+      return;
+    }
+
     setPending(null);
     await computeRoute();
   }
@@ -171,7 +182,7 @@ export function NaturalLanguageAssistant() {
 
       <TextArea
         rows={5}
-        placeholder='Es. “Parti da Rozzano…”, oppure “cerca parcheggi a Como”'
+        placeholder='Es. “Parti da Rozzano…”, “cerca parcheggi a Como”, “AdBlue tra Melegnano e San Giuliano”'
         value={utterance}
         onChange={(e) => setUtterance(e.target.value)}
         aria-label="Richiesta in linguaggio naturale"
@@ -261,13 +272,20 @@ export function NaturalLanguageAssistant() {
                 Cerca parcheggi vicino a: {pending.preview.parkingSearch.label}
               </li>
             ) : null}
+            {pending.preview.fuelSearch ? (
+              <li>
+                Cerca benzinai vicino a: {pending.preview.fuelSearch.label}
+              </li>
+            ) : null}
           </ul>
           <div className="flex gap-2">
             <Button type="button" size="sm" onClick={() => void confirmPreview()}>
               <Check className="h-3.5 w-3.5" />
               {pending.preview.parkingSearch
                 ? "Conferma e cerca parcheggi"
-                : "Conferma e calcola"}
+                : pending.preview.fuelSearch
+                  ? "Conferma e cerca benzinai"
+                  : "Conferma e calcola"}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={cancelPreview}>
               <X className="h-3.5 w-3.5" />

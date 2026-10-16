@@ -37,6 +37,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Capacitor native projects (generated locally; see MOBILE_APP.md)
+/android
+/ios
+.capacitor
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
