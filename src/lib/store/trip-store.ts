@@ -62,6 +62,8 @@ const IDLE_NAVIGATION: NavigationRuntime = {
   northUp: false,
   overview: false,
   recalculating: false,
+  nextWaypointIndex: 0,
+  lastArrivedWaypointId: null,
   position: null,
   headingDeg: null,
   compassHeadingDeg: null,
@@ -212,6 +214,8 @@ interface TripState {
   }) => void;
   setNavigationProgress: (progress: NavProgress) => void;
   markNavigationSpoken: (maneuverId: string) => void;
+  /** Advance past an intermediate stop (continue toward next / destination). */
+  advancePastWaypoint: (arrivedId: string, nextIndex: number) => void;
 }
 
 function touch(trip: TripDraft): TripDraft {
@@ -883,6 +887,11 @@ export const useTripStore = create<TripState>((set, get) => ({
         navigation: {
           ...s.navigation,
           progress: { ...progress, offRoute: stillOff },
+          // Keep committed index at least as far as progress suggests
+          nextWaypointIndex: Math.max(
+            s.navigation.nextWaypointIndex,
+            progress.nextWaypointIndex,
+          ),
           status: progress.arrived
             ? "arrived"
             : stillOff
@@ -897,5 +906,14 @@ export const useTripStore = create<TripState>((set, get) => ({
   markNavigationSpoken: (maneuverId) =>
     set((s) => ({
       navigation: { ...s.navigation, lastSpokenManeuverId: maneuverId },
+    })),
+
+  advancePastWaypoint: (arrivedId, nextIndex) =>
+    set((s) => ({
+      navigation: {
+        ...s.navigation,
+        lastArrivedWaypointId: arrivedId,
+        nextWaypointIndex: Math.max(nextIndex, s.navigation.nextWaypointIndex),
+      },
     })),
 }));

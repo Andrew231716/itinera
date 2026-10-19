@@ -40,6 +40,12 @@ function progress(partial: Partial<NavProgress> = {}): NavProgress {
     metersToNextManeuver: 200,
     offRoute: false,
     arrived: false,
+    nextWaypointIndex: 0,
+    nextWaypointLabel: null,
+    nextWaypointKind: null,
+    metersToNextWaypoint: 0,
+    atIntermediateStop: false,
+    totalWaypoints: 0,
     ...partial,
   };
 }

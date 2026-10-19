@@ -289,6 +289,17 @@ export function DrivingHud() {
           </div>
         ) : null}
 
+        {progress?.atIntermediateStop && progress.nextWaypointLabel ? (
+          <div className="pointer-events-auto mx-auto w-full max-w-lg rounded-2xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 shadow-lg dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-50">
+            <p className="font-semibold">
+              Tappa raggiunta: {progress.nextWaypointLabel}
+            </p>
+            <p className="mt-0.5 text-xs opacity-90">
+              Continua verso la prossima tappa o la destinazione.
+            </p>
+          </div>
+        ) : null}
+
         {navigation.status === "arrived" ? (
           <div className="pointer-events-auto mx-auto w-full max-w-lg rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 shadow-lg dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-50">
             <p className="font-semibold">Sei arrivato</p>
@@ -321,6 +332,19 @@ export function DrivingHud() {
                 </span>
               </div>
               <div className="min-w-0 flex-1 px-3 py-3">
+                {progress && progress.totalWaypoints > 1 ? (
+                  <p className="mb-1 text-[11px] font-semibold tracking-wide text-[var(--brand)] uppercase">
+                    {progress.nextWaypointKind === "destination"
+                      ? "Destinazione"
+                      : `Tappa ${(progress.nextWaypointIndex ?? 0) + 1}/${progress.totalWaypoints}`}
+                    {progress.nextWaypointLabel
+                      ? ` · ${progress.nextWaypointLabel}`
+                      : ""}
+                    {progress.metersToNextWaypoint > 0
+                      ? ` · ${formatDistance(progress.metersToNextWaypoint)}`
+                      : ""}
+                  </p>
+                ) : null}
                 <p className="font-[family-name:var(--font-display)] text-lg leading-snug text-[var(--ink)]">
                   {navigation.status === "starting"
                     ? "Ricerca GPS…"

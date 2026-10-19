@@ -34,6 +34,14 @@ export interface NavProgress {
   metersToNextManeuver: number;
   offRoute: boolean;
   arrived: boolean;
+  /** Multi-stop: index into stops+destination of the next target */
+  nextWaypointIndex: number;
+  nextWaypointLabel: string | null;
+  nextWaypointKind: "stop" | "destination" | null;
+  metersToNextWaypoint: number;
+  /** Reached an intermediate stop (navigation continues) */
+  atIntermediateStop: boolean;
+  totalWaypoints: number;
 }
 
 export type NavigationStatus =
@@ -61,6 +69,13 @@ export interface NavigationRuntime {
   overview: boolean;
   /** True while recalculating from current GPS */
   recalculating: boolean;
+  /**
+   * Next waypoint index in [stops…, destination].
+   * Advanced when an intermediate stop is reached so navigation continues.
+   */
+  nextWaypointIndex: number;
+  /** Last intermediate stop we already announced */
+  lastArrivedWaypointId: string | null;
   position: LatLng | null;
   /** GPS course over ground when available */
   headingDeg: number | null;

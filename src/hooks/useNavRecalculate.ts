@@ -5,11 +5,12 @@ import { nanoid } from "nanoid";
 import { useTripStore } from "@/lib/store/trip-store";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { speakNavigation } from "@/lib/navigation/voice";
+import { remainingStopPlaces } from "@/lib/navigation/waypoints";
 import type { PlaceRef } from "@/lib/types/trip";
 
 /**
  * Recalculate from current GPS without leaving the driving session.
- * Keeps exclusions and destination; origin becomes the live fix.
+ * Keeps exclusions, destination, and *remaining* stops (skips visited ones).
  */
 export function useNavRecalculate() {
   const setOrigin = useTripStore((s) => s.setOrigin);
@@ -42,15 +43,36 @@ export function useNavRecalculate() {
       source: "map_click",
     };
 
+    // Drop already-visited intermediate stops so the new route continues the trip.
+    const intermediates = remainingStopPlaces(
+      trip.stops,
+      nav.nextWaypointIndex,
+    );
+
     try {
       setOrigin(origin);
-      await computeRoute({ origin });
+      // Persist trimmed stops so subsequent traffic refreshes match the live trip
+      if (intermediates.length !== trip.stops.length) {
+        useTripStore.setState((s) => ({
+          trip: {
+            ...s.trip,
+            stops: s.trip.stops.slice(nav.nextWaypointIndex),
+            meta: {
+              ...s.trip.meta,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        }));
+        useTripStore.setState((s) => ({
+          navigation: { ...s.navigation, nextWaypointIndex: 0 },
+        }));
+      }
+      await computeRoute({ origin, intermediates });
       const after = useTripStore.getState();
       if (after.routeMode === "error" || after.routes.length === 0) {
         setError(after.routeError ?? "Ricalcolo non riuscito. Riprova.");
         return false;
       }
-      // Snap camera back and clear off-route feel
       recenterNavigation();
       if (after.navigation.voiceEnabled) {
         speakNavigation("Percorso aggiornato", true);

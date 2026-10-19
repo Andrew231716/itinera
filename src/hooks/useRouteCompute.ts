@@ -7,6 +7,8 @@ import type { PlaceRef } from "@/lib/types/trip";
 type ComputeOverrides = {
   origin?: PlaceRef;
   destination?: PlaceRef;
+  /** Remaining intermediate stops (defaults to all trip.stops) */
+  intermediates?: PlaceRef[];
 };
 
 export function useRouteCompute() {
@@ -18,6 +20,8 @@ export function useRouteCompute() {
     const trip = useTripStore.getState().trip;
     const origin = overrides?.origin ?? trip.origin;
     const destination = overrides?.destination ?? trip.destination;
+    const intermediates =
+      overrides?.intermediates ?? trip.stops.map((s) => s.place);
 
     if (!origin || !destination) {
       setRouteError("Imposta partenza e destinazione prima di calcolare.");
@@ -32,7 +36,7 @@ export function useRouteCompute() {
         body: JSON.stringify({
           origin,
           destination,
-          intermediates: trip.stops.map((s) => s.place),
+          intermediates,
           travelMode: trip.travelMode,
           departureAt: trip.departureAt,
           preferences: trip.preferences,
