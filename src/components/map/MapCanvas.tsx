@@ -298,10 +298,28 @@ export function MapCanvas() {
     };
 
     if (trip.origin) addMarker(trip.origin.location, "A", "#2C5F7C");
-    trip.stops.forEach((s, i) =>
-      addMarker(s.place.location, String(i + 1), "#4A7C8C"),
-    );
-    if (trip.destination) addMarker(trip.destination.location, "B", "#D4A017");
+    trip.stops.forEach((s, i) => {
+      const isNext =
+        navActive &&
+        navigation.nextWaypointIndex === i &&
+        navigation.status !== "arrived";
+      addMarker(
+        s.place.location,
+        String(i + 1),
+        isNext ? "#0D9488" : "#4A7C8C",
+      );
+    });
+    if (trip.destination) {
+      const destIsNext =
+        navActive &&
+        navigation.nextWaypointIndex >= trip.stops.length &&
+        navigation.status !== "arrived";
+      addMarker(
+        trip.destination.location,
+        "B",
+        destIsNext ? "#0D9488" : "#D4A017",
+      );
+    }
 
     if (!navActive) {
       parkingSpots.slice(0, 24).forEach((spot, index) => {
@@ -449,6 +467,7 @@ export function MapCanvas() {
     navActive,
     navigation.status,
     navigation.followMap,
+    navigation.nextWaypointIndex,
     navigation.progress?.segmentIndex,
     navigation.progress?.snapped?.lat,
     navigation.progress?.snapped?.lng,

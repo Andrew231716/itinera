@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useTripStore } from "@/lib/store/trip-store";
 import { buildManeuvers } from "@/lib/navigation/maneuvers";
 import { computeNavProgress } from "@/lib/navigation/progress";
+import { buildNavWaypoints } from "@/lib/navigation/waypoints";
 import { speakNavigation, stopNavigationSpeech } from "@/lib/navigation/voice";
 import {
   watchNavigationPosition,
@@ -14,6 +15,7 @@ import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 
 /**
  * Watches GPS + compass while navigation is active.
+ * Supports multi-stop routes: intermediate arrivals continue the session.
  * Mount once (e.g. AppShell) so the session survives sheet collapse.
  */
 export function useNavigation() {
@@ -23,6 +25,7 @@ export function useNavigation() {
   const updateNavigationFix = useTripStore((s) => s.updateNavigationFix);
   const setNavigationProgress = useTripStore((s) => s.setNavigationProgress);
   const markNavigationSpoken = useTripStore((s) => s.markNavigationSpoken);
+  const advancePastWaypoint = useTripStore((s) => s.advancePastWaypoint);
   const setNavigationWakeLock = useTripStore((s) => s.setNavigationWakeLock);
   const setNavigationCompassHeading = useTripStore(
     (s) => s.setNavigationCompassHeading,
@@ -96,16 +99,44 @@ export function useNavigation() {
             state.routes[0];
           if (!route) return;
 
+          const waypoints = buildNavWaypoints({
+            stops: state.trip.stops,
+            destination: state.trip.destination,
+          });
           const maneuvers = buildManeuvers(route);
           const progress = computeNavProgress({
             position: fix.position,
             route,
             maneuvers,
+            waypoints,
+            committedWaypointIndex: state.navigation.nextWaypointIndex,
           });
           if (!progress) return;
           setNavigationProgress(progress);
 
           const nav = useTripStore.getState().navigation;
+
+          // Intermediate stop reached → announce and continue (do not end nav)
+          if (
+            progress.atIntermediateStop &&
+            progress.nextWaypointLabel &&
+            progress.nextWaypointKind === "stop"
+          ) {
+            const arrivedId = `wp-${progress.nextWaypointIndex}-${progress.nextWaypointLabel}`;
+            if (arrivedId !== nav.lastArrivedWaypointId) {
+              const following =
+                waypoints[progress.nextWaypointIndex + 1] ?? null;
+              const cue = following
+                ? `Tappa raggiunta: ${progress.nextWaypointLabel}. Continua verso ${following.label}`
+                : `Tappa raggiunta: ${progress.nextWaypointLabel}`;
+              if (nav.voiceEnabled) speakNavigation(cue, true);
+              advancePastWaypoint(
+                arrivedId,
+                progress.nextWaypointIndex + 1,
+              );
+            }
+          }
+
           if (
             nav.voiceEnabled &&
             progress.nextManeuver &&
@@ -163,6 +194,7 @@ export function useNavigation() {
     updateNavigationFix,
     setNavigationProgress,
     markNavigationSpoken,
+    advancePastWaypoint,
     setNavigationWakeLock,
     setNavigationCompassHeading,
   ]);

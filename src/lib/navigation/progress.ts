@@ -7,20 +7,37 @@ import {
 } from "@/lib/navigation/geometry-nav";
 import { findCurrentManeuverIndex } from "@/lib/navigation/maneuvers";
 import { haversineMeters } from "@/lib/utils/geometry";
+import {
+  ARRIVAL_THRESHOLD_M,
+  OFF_ROUTE_THRESHOLD_M,
+} from "@/lib/navigation/nav-thresholds";
+import {
+  computeWaypointProgress,
+  type NavWaypoint,
+} from "@/lib/navigation/waypoints";
 
-/** Meters away from the Itinera path before we flag off-route. */
-export const OFF_ROUTE_THRESHOLD_M = 90;
-/** Hysteresis: once off-route, need to get this close to clear the flag. */
-export const OFF_ROUTE_CLEAR_M = 45;
-/** Arrive when within this distance of the destination. */
-export const ARRIVAL_THRESHOLD_M = 35;
+export {
+  ARRIVAL_THRESHOLD_M,
+  OFF_ROUTE_CLEAR_M,
+  OFF_ROUTE_THRESHOLD_M,
+} from "@/lib/navigation/nav-thresholds";
 
 export function computeNavProgress(params: {
   position: LatLng;
   route: ComputedRoute;
   maneuvers: NavManeuver[];
+  /** Stops + destination for multi-stop in-app navigation */
+  waypoints?: NavWaypoint[];
+  /** Index of the next committed waypoint (skip already visited) */
+  committedWaypointIndex?: number;
 }): NavProgress | null {
-  const { position, route, maneuvers } = params;
+  const {
+    position,
+    route,
+    maneuvers,
+    waypoints = [],
+    committedWaypointIndex = 0,
+  } = params;
   const path = route.decodedPath;
   if (path.length < 2) return null;
 
@@ -42,14 +59,24 @@ export function computeNavProgress(params: {
     ? Math.max(0, nextManeuver.startOffsetMeters - snap.traveledMeters)
     : remainingMeters;
 
+  const wp = computeWaypointProgress({
+    position,
+    traveledMeters: snap.traveledMeters,
+    route,
+    waypoints,
+    committedIndex: committedWaypointIndex,
+  });
+
   const dest = path[path.length - 1];
   const nearPath = snap.crossTrackMeters <= OFF_ROUTE_THRESHOLD_M;
-  const arrived =
-    nearPath &&
-    (remainingMeters <= ARRIVAL_THRESHOLD_M ||
-      haversineMeters(position, dest) <= ARRIVAL_THRESHOLD_M);
+  const arrivedFinal =
+    wp.totalWaypoints > 0
+      ? wp.atFinalDestination && nearPath
+      : nearPath &&
+        (remainingMeters <= ARRIVAL_THRESHOLD_M ||
+          haversineMeters(position, dest) <= ARRIVAL_THRESHOLD_M);
 
-  const offRoute = !arrived && !nearPath;
+  const offRoute = !arrivedFinal && !wp.atIntermediateStop && !nearPath;
 
   return {
     snapped: snap.snapped,
@@ -63,6 +90,12 @@ export function computeNavProgress(params: {
     nextManeuver,
     metersToNextManeuver,
     offRoute,
-    arrived,
+    arrived: arrivedFinal,
+    nextWaypointIndex: wp.nextWaypointIndex,
+    nextWaypointLabel: wp.nextWaypoint?.label ?? null,
+    nextWaypointKind: wp.nextWaypoint?.kind ?? null,
+    metersToNextWaypoint: wp.metersToNextWaypoint,
+    atIntermediateStop: wp.atIntermediateStop,
+    totalWaypoints: wp.totalWaypoints,
   };
 }

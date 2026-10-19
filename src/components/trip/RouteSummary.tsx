@@ -246,9 +246,10 @@ export function RouteSummary() {
               Avvia navigazione Itinera
             </Button>
             <p className="text-[11px] leading-relaxed text-[var(--ink-muted)]">
-              Navigazione guidata sul sito: segue il percorso Itinera con le
-              esclusioni. Google Maps (sotto) è solo un’alternativa esterna e
-              non trasferisce i vincoli.
+              Navigazione guidata sul sito: segue il percorso Itinera con tappe
+              intermedie ed esclusioni. A ogni tappa continui verso la
+              successiva fino alla destinazione. Google Maps (sotto) è solo
+              un’alternativa esterna e non trasferisce i vincoli.
             </p>
             <Button
               type="button"
