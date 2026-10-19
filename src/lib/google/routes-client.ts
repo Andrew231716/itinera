@@ -13,6 +13,7 @@ import {
   isRouteConformant,
 } from "@/lib/routing/constraint-checker";
 import { mapPreferencesToGoogle } from "@/lib/routing/preference-mapper";
+import { resolveOptimizeWaypointRouting } from "@/lib/routing/optimize-waypoints";
 import { detectMilanTrafficZones } from "@/lib/geo/milan-traffic-zones";
 
 function parseDurationSeconds(value: unknown): number {
@@ -202,18 +203,25 @@ export async function computeRoutesWithGoogle(
 
   const limitations = [...mapped.limitations];
 
+  const optimizeResolved = resolveOptimizeWaypointRouting({
+    optimizeWaypointOrder: request.optimizeWaypointOrder,
+    routingPreference: mapped.routingPreference,
+    intermediateCount: request.intermediates.length,
+  });
+  limitations.push(...optimizeResolved.limitations);
+
   const body: Record<string, unknown> = {
     origin: toWaypoint(request.origin),
     destination: toWaypoint(request.destination),
     intermediates: request.intermediates.map(toWaypoint),
     travelMode: request.travelMode,
-    routingPreference: mapped.routingPreference,
+    routingPreference: optimizeResolved.routingPreference,
     computeAlternativeRoutes: true,
     languageCode: "it",
     units: "METRIC",
     extraComputations: ["TOLLS"],
     routeModifiers: mapped.routeModifiers,
-    optimizeWaypointOrder: request.optimizeWaypointOrder,
+    optimizeWaypointOrder: optimizeResolved.optimizeWaypointOrder,
   };
 
   if (mapped.requestedReferenceRoutes?.length) {
