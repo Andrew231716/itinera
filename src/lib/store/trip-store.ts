@@ -116,6 +116,11 @@ interface TripState {
   setDestination: (place: PlaceRef | null) => void;
   swapOriginDestination: () => void;
   addStop: (place: PlaceRef) => void;
+  /**
+   * Extend the trip: previous destination becomes the next intermediate stop,
+   * and `place` becomes the new final destination.
+   */
+  pushStopAsDestination: (place: PlaceRef) => void;
   updateStop: (id: string, place: PlaceRef) => void;
   removeStop: (id: string) => void;
   clearStops: () => void;
@@ -307,6 +312,30 @@ export const useTripStore = create<TripState>((set, get) => ({
       };
     }),
 
+  pushStopAsDestination: (place) =>
+    set((s) => {
+      const prevDest = s.trip.destination;
+      const stops = [...s.trip.stops];
+      if (prevDest) {
+        stops.push({ id: nanoid(), place: prevDest });
+      }
+      return {
+        trip: touch({
+          ...s.trip,
+          stops,
+          destination: place,
+        }),
+        mapPickTarget: null,
+        parkingCenter: {
+          lat: place.location.lat,
+          lng: place.location.lng,
+          label: place.label,
+        },
+        routes: [],
+        routeMode: "idle",
+      };
+    }),
+
   updateStop: (id, place) =>
     set((s) => ({
       trip: touch({
@@ -452,7 +481,8 @@ export const useTripStore = create<TripState>((set, get) => ({
         get().setDestination(place);
         break;
       case "stop":
-        get().addStop(place);
+        // Map-picked "tappa" extends the trip: last place becomes destination.
+        get().pushStopAsDestination(place);
         break;
       case "exclusion_point": {
         get().addExclusion(

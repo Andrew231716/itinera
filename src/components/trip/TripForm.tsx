@@ -37,7 +37,7 @@ export function TripForm() {
     <div className="space-y-5">
       <SectionTitle
         title="Itinerario"
-        subtitle="Partenza, tappe e destinazione"
+        subtitle="Partenza → tappe → destinazione finale (l’ultima tappa aggiunta)"
       />
 
       <div>

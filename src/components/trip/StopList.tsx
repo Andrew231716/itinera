@@ -92,7 +92,8 @@ function SortableStop({
 
 export function StopList() {
   const stops = useTripStore((s) => s.trip.stops);
-  const addStop = useTripStore((s) => s.addStop);
+  const destination = useTripStore((s) => s.trip.destination);
+  const pushStopAsDestination = useTripStore((s) => s.pushStopAsDestination);
   const updateStop = useTripStore((s) => s.updateStop);
   const removeStop = useTripStore((s) => s.removeStop);
   const reorderStops = useTripStore((s) => s.reorderStops);
@@ -124,7 +125,9 @@ export function StopList() {
       updateStop(editingId, place);
       setEditingId(null);
     } else {
-      addStop(place);
+      // Last inserted place becomes the final destination; previous
+      // destination (if any) is demoted to the next intermediate stop.
+      pushStopAsDestination(place);
     }
     setAdding(false);
   }
@@ -134,6 +137,7 @@ export function StopList() {
       <div className="flex items-center justify-between">
         <p className="text-xs text-[var(--ink-muted)]">
           Trascina per riordinare · {stops.length} tappe
+          {destination ? " · ultima = destinazione" : ""}
         </p>
         <Button
           type="button"
@@ -150,8 +154,9 @@ export function StopList() {
 
       {stops.length === 0 && !adding ? (
         <EmptyHint>
-          Nessuna tappa intermedia. Aggiungine quante ne servono oppure
-          selezionale sulla mappa.
+          Aggiungi una tappa: la destinazione attuale diventa la prima tappa e
+          il nuovo punto diventa la destinazione finale. Oppure seleziona sulla
+          mappa.
         </EmptyHint>
       ) : null}
 
@@ -184,7 +189,13 @@ export function StopList() {
       {adding ? (
         <div className="rounded-xl border border-[var(--brand)]/25 bg-[var(--brand-soft)]/40 p-3 animate-[fadeSlide_180ms_ease]">
           <PlaceSearch
-            label={editingId ? "Modifica tappa" : "Nuova tappa"}
+            label={
+              editingId
+                ? "Modifica tappa"
+                : destination
+                  ? "Nuova destinazione (la precedente diventa tappa)"
+                  : "Nuova destinazione"
+            }
             value={null}
             onSelect={handleAdd}
             onPickFromMap={() => setMapPickTarget("stop")}
@@ -217,7 +228,8 @@ export function StopList() {
           />
           <span>
             Consenti l’ottimizzazione dell’ordine delle tappe al calcolo
-            (solo con il tuo consenso esplicito).
+            (solo con il tuo consenso esplicito). Con ottimizzazione attiva
+            Google usa traffico standard invece di TRAFFIC_AWARE_OPTIMAL.
           </span>
         </label>
       ) : null}
