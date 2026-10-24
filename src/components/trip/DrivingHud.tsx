@@ -154,6 +154,10 @@ export function DrivingHud() {
     return getNavTripMetrics(selected, progress, nowMs);
   }, [selected, progress, nowMs]);
 
+  const landscape = useMediaQuery(
+    "(orientation: landscape) and (max-height: 520px)",
+  );
+
   if (!active) return null;
 
   function exitNav() {
@@ -166,10 +170,6 @@ export function DrivingHud() {
     navigation.speedMps != null && Number.isFinite(navigation.speedMps)
       ? Math.max(0, Math.round(navigation.speedMps * 3.6))
       : null;
-
-  const landscape = useMediaQuery(
-    "(orientation: landscape) and (max-height: 520px)",
-  );
 
   return (
     <>
