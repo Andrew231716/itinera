@@ -14,6 +14,7 @@ import type { AssistantParseResult } from "@/lib/ai/assistant";
 import { useTripStore } from "@/lib/store/trip-store";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { createExclusionFromLabel } from "@/lib/routing/exclusion-helpers";
+import { SiriGuide } from "@/components/trip/SiriGuide";
 
 export function NaturalLanguageAssistant() {
   const [utterance, setUtterance] = useState("");
@@ -179,6 +180,8 @@ export function NaturalLanguageAssistant() {
         title="Assistente"
         subtitle="Testo o microfono flottante: «Portami in Via…» usa GPS e calcola i percorsi"
       />
+
+      <SiriGuide />
 
       <TextArea
         rows={5}

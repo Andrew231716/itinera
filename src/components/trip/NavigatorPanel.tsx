@@ -20,6 +20,7 @@ import {
   SectionTitle,
 } from "@/components/ui/primitives";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
+import { SiriGuide } from "@/components/trip/SiriGuide";
 
 /** Setup / idle view for the Naviga tab. Active driving UI is DrivingHud. */
 export function NavigatorPanel() {
@@ -221,6 +222,12 @@ export function NavigatorPanel() {
         incluse). In PWA lo schermo resta acceso con Wake Lock; GPS in
         background richiede l&apos;app Capacitor (vedi MOBILE_APP.md).
       </div>
+
+      {!active ? (
+        <div className="border-t border-[var(--line)] pt-4">
+          <SiriGuide compact />
+        </div>
+      ) : null}
     </div>
   );
 }
