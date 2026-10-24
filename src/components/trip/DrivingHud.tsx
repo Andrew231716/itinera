@@ -25,7 +25,8 @@ import {
   TRAFFIC_MONITOR_INTERVAL_MS,
   type TrafficLevel,
 } from "@/lib/routing/traffic-info";
-import { Button } from "@/components/ui/primitives";
+import { Button, cn } from "@/components/ui/primitives";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 /** Auto-reroute after sustained off-route (ms) */
 const AUTO_REROUTE_AFTER_MS = 12_000;
@@ -166,10 +167,21 @@ export function DrivingHud() {
       ? Math.max(0, Math.round(navigation.speedMps * 3.6))
       : null;
 
+  const landscape = useMediaQuery(
+    "(orientation: landscape) and (max-height: 520px)",
+  );
+
   return (
     <>
       {/* Floating map controls (right) */}
-      <div className="pointer-events-none absolute top-[max(4.5rem,env(safe-area-inset-top))] right-3 z-40 flex flex-col gap-2">
+      <div
+        className={cn(
+          "pointer-events-none absolute z-40 flex flex-col gap-2",
+          landscape
+            ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[min(22rem,42vw)]"
+            : "top-[max(4.5rem,env(safe-area-inset-top))] right-3",
+        )}
+      >
         {!navigation.followMap || navigation.overview ? (
           <button
             type="button"
@@ -225,9 +237,16 @@ export function DrivingHud() {
         </button>
       </div>
 
-      {/* Speed badge (left) */}
+      {/* Speed badge */}
       {speedKmh != null ? (
-        <div className="pointer-events-none absolute bottom-[max(14rem,env(safe-area-inset-bottom))] left-3 z-40">
+        <div
+          className={cn(
+            "pointer-events-none absolute z-40 left-3",
+            landscape
+              ? "top-[max(0.5rem,env(safe-area-inset-top))]"
+              : "bottom-[max(14rem,env(safe-area-inset-bottom))]",
+          )}
+        >
           <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)]/95 px-3 py-2 text-center shadow-lg backdrop-blur-md">
             <p className="font-[family-name:var(--font-display)] text-2xl leading-none font-semibold text-[var(--ink)]">
               {speedKmh}
@@ -239,7 +258,14 @@ export function DrivingHud() {
         </div>
       ) : null}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 flex flex-col items-stretch gap-2 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div
+        className={cn(
+          "pointer-events-none absolute z-40 flex flex-col items-stretch gap-2 p-3",
+          landscape
+            ? "top-0 right-0 bottom-0 w-[min(22rem,42vw)] justify-end pb-[max(0.5rem,env(safe-area-inset-bottom))] pr-[max(0.5rem,env(safe-area-inset-right))]"
+            : "inset-x-0 bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+        )}
+      >
         {poorGps && !offRoute ? (
           <div className="pointer-events-auto mx-auto w-full max-w-lg rounded-2xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-950 shadow-lg dark:border-sky-800 dark:bg-sky-950 dark:text-sky-50">
             Segnale GPS debole
@@ -313,15 +339,27 @@ export function DrivingHud() {
             </Button>
           </div>
         ) : (
-          <div className="pointer-events-auto mx-auto w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]/95 shadow-[0_12px_40px_var(--shadow-panel)] backdrop-blur-xl">
+          <div
+            className={cn(
+              "pointer-events-auto w-full overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]/95 shadow-[0_12px_40px_var(--shadow-panel)] backdrop-blur-xl",
+              landscape ? "max-h-[calc(100dvh-1rem)] overflow-y-auto" : "mx-auto max-w-lg",
+            )}
+          >
             <div
               className={`h-1 w-full ${trafficBarClass(metrics?.level ?? "unknown")}`}
               aria-hidden
             />
 
-            <div className="flex items-stretch">
-              <div className="flex min-w-[5.25rem] flex-col items-center justify-center gap-1 bg-[var(--brand)] px-2.5 py-3 text-white">
-                <ManeuverIcon className="h-7 w-7" strokeWidth={2.25} />
+            <div className={cn("flex items-stretch", landscape && "flex-col")}>
+              <div
+                className={cn(
+                  "flex flex-col items-center justify-center gap-1 bg-[var(--brand)] px-2.5 py-3 text-white",
+                  landscape
+                    ? "min-h-0 flex-row gap-3 py-2"
+                    : "min-w-[5.25rem]",
+                )}
+              >
+                <ManeuverIcon className="h-7 w-7 shrink-0" strokeWidth={2.25} />
                 <span className="font-[family-name:var(--font-display)] text-xl leading-none font-semibold">
                   {progress
                     ? formatDistance(progress.metersToNextManeuver)
@@ -345,7 +383,12 @@ export function DrivingHud() {
                       : ""}
                   </p>
                 ) : null}
-                <p className="font-[family-name:var(--font-display)] text-lg leading-snug text-[var(--ink)]">
+                <p
+                  className={cn(
+                    "font-[family-name:var(--font-display)] leading-snug text-[var(--ink)]",
+                    landscape ? "text-base" : "text-lg",
+                  )}
+                >
                   {navigation.status === "starting"
                     ? "Ricerca GPS…"
                     : recalcBusy
@@ -361,7 +404,12 @@ export function DrivingHud() {
             </div>
 
             {metrics && !needsReroute ? (
-              <div className="grid grid-cols-4 gap-1 border-t border-[var(--line)] px-2 py-2.5 text-center">
+              <div
+                className={cn(
+                  "grid gap-1 border-t border-[var(--line)] px-2 py-2.5 text-center",
+                  landscape ? "grid-cols-2" : "grid-cols-4",
+                )}
+              >
                 <div>
                   <p className="font-[family-name:var(--font-display)] text-lg leading-none font-semibold text-[var(--ink)]">
                     {metrics.etaLabel}

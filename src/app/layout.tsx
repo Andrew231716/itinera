@@ -43,6 +43,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: "#2c5f7c",
+  // Allow landscape so the driving UI can reflow horizontally
 };
 
 export default function RootLayout({
