@@ -177,7 +177,7 @@ export function NaturalLanguageAssistant() {
     <div className="space-y-4">
       <SectionTitle
         title="Assistente"
-        subtitle="Interpreta il linguaggio naturale — conferma prima di applicare"
+        subtitle="Testo o microfono flottante: «Portami in Via…» usa GPS e calcola i percorsi"
       />
 
       <TextArea

@@ -40,6 +40,7 @@ import { ParkingPanel } from "@/components/trip/ParkingPanel";
 import { FuelPanel } from "@/components/trip/FuelPanel";
 import { NavigatorPanel } from "@/components/trip/NavigatorPanel";
 import { DrivingHud } from "@/components/trip/DrivingHud";
+import { VoiceGoControl } from "@/components/trip/VoiceGoControl";
 import { MapCanvas } from "@/components/map/MapCanvas";
 import { StatusBanner } from "@/components/status/StatusBanner";
 
@@ -58,6 +59,9 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
 
 export function AppShell() {
   const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const isLandscapeMobile = useMediaQuery(
+    "(max-width: 1023px) and (orientation: landscape)",
+  );
   const activePanel = useTripStore((s) => s.activePanel);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const mobilePanelOpen = useTripStore((s) => s.mobilePanelOpen);
@@ -114,27 +118,40 @@ export function AppShell() {
   }, [loadTrip, refreshSavedTrips]);
 
   const recentHistory = tripHistory.slice(0, 4);
+  const sidePanel = isDesktop || isLandscapeMobile;
 
   return (
     <div className="relative flex h-[100dvh] w-full overflow-hidden bg-[var(--mist)]">
       <div
         className={cn(
           "absolute inset-0",
-          isDesktop && !driving ? "lg:left-[min(420px,38vw)]" : "",
+          sidePanel && !driving
+            ? isDesktop
+              ? "left-[min(420px,38vw)]"
+              : mobilePanelOpen
+                ? "left-[min(340px,46vw)]"
+                : ""
+            : "",
         )}
       >
         <MapCanvas />
         {!driving ? <StatusBanner /> : null}
         {driving ? <DrivingHud /> : null}
+        {!driving ? <VoiceGoControl /> : null}
       </div>
 
       <aside
         className={cn(
           "absolute z-30 flex flex-col border-[var(--line)] bg-[var(--surface)]/95 shadow-[0_20px_60px_var(--shadow-panel)] backdrop-blur-xl transition-transform duration-300 ease-out",
-          isDesktop
+          sidePanel
             ? cn(
-                "top-0 left-0 h-full w-[min(420px,38vw)] border-r",
+                "top-0 left-0 h-full border-r",
+                isDesktop ? "w-[min(420px,38vw)]" : "w-[min(340px,46vw)]",
                 driving && "-translate-x-full pointer-events-none",
+                isLandscapeMobile &&
+                  !driving &&
+                  !mobilePanelOpen &&
+                  "-translate-x-[calc(100%-2.75rem)]",
               )
             : cn(
                 "inset-x-0 bottom-0 max-h-[78dvh] rounded-t-3xl border-t",
@@ -146,7 +163,7 @@ export function AppShell() {
               ),
         )}
       >
-        {!isDesktop ? (
+        {!sidePanel ? (
           <button
             type="button"
             className="flex w-full flex-col items-center pt-2 pb-1"
@@ -155,20 +172,41 @@ export function AppShell() {
           >
             <span className="h-1 w-10 rounded-full bg-[var(--surface-3)]" />
           </button>
+        ) : isLandscapeMobile ? (
+          <button
+            type="button"
+            className="absolute top-1/2 right-0 z-10 flex h-16 w-2.5 -translate-y-1/2 translate-x-full items-center justify-center rounded-r-lg border border-l-0 border-[var(--line)] bg-[var(--surface)]"
+            onClick={() => setMobilePanelOpen(!mobilePanelOpen)}
+            aria-label={mobilePanelOpen ? "Comprimi pannello" : "Espandi pannello"}
+          >
+            <span className="h-8 w-1 rounded-full bg-[var(--surface-3)]" />
+          </button>
         ) : null}
 
-        <header className="shrink-0 border-b border-[var(--line)] px-4 pt-3 pb-3 lg:px-5 lg:pt-5">
+        <header
+          className={cn(
+            "shrink-0 border-b border-[var(--line)] px-4 pt-3 pb-3 lg:px-5 lg:pt-5",
+            isLandscapeMobile && "px-3 pt-2 pb-2",
+          )}
+        >
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--brand)]">
                 Intelligent Route Planner
               </p>
-              <h1 className="font-[family-name:var(--font-display)] text-[1.75rem] leading-none tracking-tight text-[var(--ink)]">
+              <h1
+                className={cn(
+                  "font-[family-name:var(--font-display)] leading-none tracking-tight text-[var(--ink)]",
+                  isLandscapeMobile ? "text-xl" : "text-[1.75rem]",
+                )}
+              >
                 Itinera
               </h1>
-              <p className="mt-1 text-xs text-[var(--ink-muted)]">
-                Percorsi su misura, tappe e vincoli reali
-              </p>
+              {!isLandscapeMobile ? (
+                <p className="mt-1 text-xs text-[var(--ink-muted)]">
+                  Percorsi su misura, tappe e vincoli reali
+                </p>
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               <Button
