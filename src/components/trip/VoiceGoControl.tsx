@@ -12,6 +12,8 @@ import { Button, cn } from "@/components/ui/primitives";
  */
 export function VoiceGoControl() {
   const navigation = useTripStore((s) => s.navigation);
+  const setActivePanel = useTripStore((s) => s.setActivePanel);
+  const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
   const driving =
     navigation.status === "navigating" ||
     navigation.status === "off_route" ||
@@ -106,41 +108,66 @@ export function VoiceGoControl() {
           ) : null}
           {!supported ? (
             <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-              Microfono non supportato qui. Puoi aprire Itinera con{" "}
+              Microfono non supportato qui. Usa Siri / Scorciatoie (guida nel
+              tab Assistente) oppure{" "}
               <code className="rounded bg-[var(--surface-2)] px-1">
                 ?go=Via+Gardenie+Rozzano
-              </code>{" "}
-              (anche da un comando Siri / Dscorciatoia).
+              </code>
+              .
             </p>
           ) : null}
+          <button
+            type="button"
+            className="mt-2 text-left text-[11px] font-medium text-[var(--brand)] underline-offset-2 hover:underline"
+            onClick={() => {
+              setActivePanel("assistant");
+              setMobilePanelOpen(true);
+            }}
+          >
+            Guida Hey Siri + Itinera →
+          </button>
         </div>
       ) : null}
 
-      <Button
-        type="button"
-        size="sm"
-        className={cn(
-          "pointer-events-auto h-14 w-14 rounded-full p-0 shadow-lg",
-          listening && "animate-pulse bg-red-600 hover:bg-red-700",
-        )}
-        aria-label={
-          listening ? "Interrompi ascolto" : "Comando vocale: portami a…"
-        }
-        title="Di’ «Portami in Via Gardenie a Rozzano»"
-        disabled={busy && !listening}
-        onClick={() => {
-          if (listening) stopListening();
-          else startListening();
-        }}
-      >
-        {busy && !listening ? (
-          <Loader2 className="h-6 w-6 animate-spin" />
-        ) : listening ? (
-          <MicOff className="h-6 w-6" />
-        ) : (
-          <Mic className="h-6 w-6" />
-        )}
-      </Button>
+      <div className="pointer-events-auto flex flex-col items-end gap-2">
+        {!showPanel ? (
+          <button
+            type="button"
+            className="rounded-full border border-[var(--line)] bg-[var(--surface)]/95 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase shadow-md backdrop-blur-md"
+            onClick={() => {
+              setActivePanel("assistant");
+              setMobilePanelOpen(true);
+            }}
+          >
+            Guida Siri
+          </button>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          className={cn(
+            "h-14 w-14 rounded-full p-0 shadow-lg",
+            listening && "animate-pulse bg-red-600 hover:bg-red-700",
+          )}
+          aria-label={
+            listening ? "Interrompi ascolto" : "Comando vocale: portami a…"
+          }
+          title="Di’ «Portami in Via Gardenie a Rozzano»"
+          disabled={busy && !listening}
+          onClick={() => {
+            if (listening) stopListening();
+            else startListening();
+          }}
+        >
+          {busy && !listening ? (
+            <Loader2 className="h-6 w-6 animate-spin" />
+          ) : listening ? (
+            <MicOff className="h-6 w-6" />
+          ) : (
+            <Mic className="h-6 w-6" />
+          )}
+        </Button>
+      </div>
     </div>
   );
 }
