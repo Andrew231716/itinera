@@ -401,6 +401,27 @@ export function MapCanvas() {
           });
           overlaysRef.current.push(remainPoly);
         }
+
+        // Road alerts (cameras, works) near the route
+        const traveled = navigation.progress?.traveledMeters ?? 0;
+        navigation.alerts?.alerts?.slice(0, 40).forEach((alert) => {
+          if (alert.kind === "speed_limit") return;
+          const offset = alert.routeOffsetMeters;
+          if (offset != null && offset < traveled - 80) return;
+          const color =
+            alert.kind === "roadworks"
+              ? "#EA580C"
+              : alert.kind === "traffic_light_camera"
+                ? "#7C3AED"
+                : "#DC2626";
+          const glyph =
+            alert.kind === "roadworks"
+              ? "W"
+              : alert.kind === "traffic_light_camera"
+                ? "S"
+                : "A";
+          addMarker(alert.location, glyph, color);
+        });
       }
     }
 
@@ -479,6 +500,8 @@ export function MapCanvas() {
     navigation.status,
     navigation.followMap,
     navigation.nextWaypointIndex,
+    navigation.alerts?.alerts,
+    navigation.progress?.traveledMeters,
     navigation.progress?.segmentIndex,
     navigation.progress?.snapped?.lat,
     navigation.progress?.snapped?.lng,
