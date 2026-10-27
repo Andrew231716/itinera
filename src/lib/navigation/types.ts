@@ -1,4 +1,5 @@
 import type { LatLng } from "@/lib/types/trip";
+import type { NavAlertSnapshot } from "@/lib/navigation/alerts";
 
 export interface NavManeuver {
   id: string;
@@ -89,6 +90,10 @@ export interface NavigationRuntime {
   error: string | null;
   /** Last instruction spoken (to avoid repeats) */
   lastSpokenManeuverId: string | null;
+  /** Last road alert spoken (autovelox / lavori / …) */
+  lastSpokenAlertId: string | null;
+  /** OSM-backed cameras, works, speed limits along the route */
+  alerts: NavAlertSnapshot;
   /** Screen kept awake while navigating */
   wakeLockActive: boolean;
   wakeLockMode: WakeLockUiMode;

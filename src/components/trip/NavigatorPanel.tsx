@@ -218,9 +218,11 @@ export function NavigatorPanel() {
       ) : null}
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[11px] leading-relaxed text-[var(--ink-muted)]">
-        Navigatore guidato leggero: segue la polyline Itinera (esclusioni
-        incluse). In PWA lo schermo resta acceso con Wake Lock; GPS in
-        background richiede l&apos;app Capacitor (vedi MOBILE_APP.md).
+        Navigatore guidato: polyline Itinera, limite velocità e segnalazioni
+        (autovelox, semafori, controlli, lavori) da OpenStreetMap lungo il
+        percorso. In PWA lo schermo resta acceso con Wake Lock; GPS in
+        background richiede l&apos;app Capacitor (vedi MOBILE_APP.md). Dati
+        mappa © OpenStreetMap contributors.
       </div>
 
       {!active ? (

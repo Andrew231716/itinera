@@ -73,6 +73,16 @@ const IDLE_NAVIGATION: NavigationRuntime = {
   progress: null,
   error: null,
   lastSpokenManeuverId: null,
+  lastSpokenAlertId: null,
+  alerts: {
+    alerts: [],
+    speedLimitKmh: null,
+    nextAlert: null,
+    metersToNextAlert: null,
+    fetchedAt: null,
+    source: "none",
+    attribution: "© OpenStreetMap contributors",
+  },
   wakeLockActive: false,
   wakeLockMode: "inactive",
   platform: "web",
@@ -216,6 +226,8 @@ interface TripState {
   }) => void;
   setNavigationProgress: (progress: NavProgress) => void;
   markNavigationSpoken: (maneuverId: string) => void;
+  setNavigationAlerts: (alerts: import("@/lib/navigation/alerts").NavAlertSnapshot) => void;
+  markNavigationAlertSpoken: (alertId: string) => void;
   /** Advance past an intermediate stop (continue toward next / destination). */
   advancePastWaypoint: (arrivedId: string, nextIndex: number) => void;
 }
@@ -914,6 +926,16 @@ export const useTripStore = create<TripState>((set, get) => ({
   markNavigationSpoken: (maneuverId) =>
     set((s) => ({
       navigation: { ...s.navigation, lastSpokenManeuverId: maneuverId },
+    })),
+
+  setNavigationAlerts: (alerts) =>
+    set((s) => ({
+      navigation: { ...s.navigation, alerts },
+    })),
+
+  markNavigationAlertSpoken: (alertId) =>
+    set((s) => ({
+      navigation: { ...s.navigation, lastSpokenAlertId: alertId },
     })),
 
   advancePastWaypoint: (arrivedId, nextIndex) =>

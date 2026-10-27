@@ -20,6 +20,7 @@ import { useEffect } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { useNavigation } from "@/hooks/useNavigation";
+import { useNavAlerts } from "@/hooks/useNavAlerts";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 import { useTheme } from "@/hooks/useTheme";
 import { useTripStore, type PanelTab } from "@/lib/store/trip-store";
@@ -81,6 +82,7 @@ export function AppShell() {
   const startNavigation = useTripStore((s) => s.startNavigation);
   const { computeRoute } = useRouteCompute();
   useNavigation();
+  useNavAlerts();
   const { theme, toggleTheme } = useTheme();
   const hasRoute = routes.length > 0;
   const driving =

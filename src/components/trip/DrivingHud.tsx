@@ -23,6 +23,7 @@ import {
   extractRoadHint,
   maneuverIcon,
 } from "@/lib/navigation/maneuver-icons";
+import { alertKindLabel } from "@/lib/navigation/alerts";
 import {
   TRAFFIC_MONITOR_INTERVAL_MS,
   type TrafficLevel,
@@ -173,6 +174,13 @@ export function DrivingHud() {
     navigation.speedMps != null && Number.isFinite(navigation.speedMps)
       ? Math.max(0, Math.round(navigation.speedMps * 3.6))
       : null;
+  const speedLimitKmh = navigation.alerts?.speedLimitKmh ?? null;
+  const overLimit =
+    speedKmh != null &&
+    speedLimitKmh != null &&
+    speedKmh > speedLimitKmh + 2;
+  const nextAlert = navigation.alerts?.nextAlert ?? null;
+  const metersToAlert = navigation.alerts?.metersToNextAlert ?? null;
 
   const hudLeft = landscape && navigation.hudSide === "left";
 
@@ -266,11 +274,11 @@ export function DrivingHud() {
         </button>
       </div>
 
-      {/* Speed badge — away from the HUD dock */}
-      {speedKmh != null ? (
+      {/* Speed + posted limit — away from the HUD dock */}
+      {speedKmh != null || speedLimitKmh != null ? (
         <div
           className={cn(
-            "pointer-events-none absolute z-40",
+            "pointer-events-none absolute z-40 flex items-end gap-2",
             landscape
               ? cn(
                   "top-[max(0.5rem,env(safe-area-inset-top))]",
@@ -279,14 +287,39 @@ export function DrivingHud() {
               : "bottom-[max(14rem,env(safe-area-inset-bottom))] left-3",
           )}
         >
-          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)]/95 px-3 py-2 text-center shadow-lg backdrop-blur-md">
-            <p className="font-[family-name:var(--font-display)] text-2xl leading-none font-semibold text-[var(--ink)]">
-              {speedKmh}
-            </p>
-            <p className="mt-0.5 text-[10px] font-medium tracking-wide text-[var(--ink-muted)] uppercase">
-              km/h
-            </p>
-          </div>
+          {speedKmh != null ? (
+            <div
+              className={cn(
+                "rounded-2xl border px-3 py-2 text-center shadow-lg backdrop-blur-md",
+                overLimit
+                  ? "border-red-500 bg-red-600 text-white"
+                  : "border-[var(--line)] bg-[var(--surface)]/95 text-[var(--ink)]",
+              )}
+            >
+              <p className="font-[family-name:var(--font-display)] text-2xl leading-none font-semibold">
+                {speedKmh}
+              </p>
+              <p
+                className={cn(
+                  "mt-0.5 text-[10px] font-medium tracking-wide uppercase",
+                  overLimit ? "text-white/80" : "text-[var(--ink-muted)]",
+                )}
+              >
+                km/h
+              </p>
+            </div>
+          ) : null}
+          {speedLimitKmh != null ? (
+            <div
+              className="flex h-14 w-14 flex-col items-center justify-center rounded-full border-[3px] border-red-600 bg-white shadow-lg"
+              title={`Limite ${speedLimitKmh} km/h`}
+              aria-label={`Limite di velocità ${speedLimitKmh} chilometri orari`}
+            >
+              <p className="font-[family-name:var(--font-display)] text-xl leading-none font-bold text-black">
+                {speedLimitKmh}
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -303,6 +336,23 @@ export function DrivingHud() {
             : "inset-x-0 bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
         )}
       >
+        {nextAlert && metersToAlert != null && metersToAlert < 900 ? (
+          <div className="pointer-events-auto mx-auto w-full max-w-lg rounded-2xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-950 shadow-lg dark:border-rose-800 dark:bg-rose-950 dark:text-rose-50">
+            <p className="font-semibold">
+              {alertKindLabel(nextAlert.kind)}
+              {nextAlert.maxspeedKmh != null
+                ? ` · limite ${nextAlert.maxspeedKmh}`
+                : ""}
+            </p>
+            <p className="mt-0.5 text-xs opacity-90">
+              tra {formatDistance(metersToAlert)}
+              {nextAlert.label && nextAlert.label !== alertKindLabel(nextAlert.kind)
+                ? ` · ${nextAlert.label}`
+                : ""}
+            </p>
+          </div>
+        ) : null}
+
         {poorGps && !offRoute ? (
           <div className="pointer-events-auto mx-auto w-full max-w-lg rounded-2xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-950 shadow-lg dark:border-sky-800 dark:bg-sky-950 dark:text-sky-50">
             Segnale GPS debole
