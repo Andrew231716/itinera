@@ -27,12 +27,18 @@ type AlertsApiResponse = {
 export function useNavAlerts() {
   const navigationStatus = useTripStore((s) => s.navigation.status);
   const selectedRouteId = useTripStore((s) => s.trip.selectedRouteId);
-  const routes = useTripStore((s) => s.routes);
+  const routePathLen = useTripStore((s) => {
+    const r =
+      s.routes.find((x) => x.id === s.trip.selectedRouteId) ?? s.routes[0];
+    return r?.decodedPath.length ?? 0;
+  });
+  const routeDistance = useTripStore((s) => {
+    const r =
+      s.routes.find((x) => x.id === s.trip.selectedRouteId) ?? s.routes[0];
+    return r ? Math.round(r.distanceMeters) : 0;
+  });
   const setNavigationAlerts = useTripStore((s) => s.setNavigationAlerts);
   const markAlertSpoken = useTripStore((s) => s.markNavigationAlertSpoken);
-
-  const selected =
-    routes.find((r) => r.id === selectedRouteId) ?? routes[0] ?? null;
 
   const navLive =
     navigationStatus === "navigating" ||
@@ -51,9 +57,9 @@ export function useNavAlerts() {
   const routeKeyRef = useRef<string | null>(null);
   const spokenRef = useRef<Set<string>>(new Set());
 
-  // Fetch alerts when a route becomes active for navigation
+  // Stable deps (id/length/distance) so traffic refreshes don't abort the fetch
   useEffect(() => {
-    if (!navLive || !selected?.decodedPath?.length) {
+    if (!navLive || !selectedRouteId || routePathLen < 2) {
       if (!navLive) {
         setNavigationAlerts(EMPTY_ALERT_SNAPSHOT);
         samplesRef.current = [];
@@ -64,10 +70,17 @@ export function useNavAlerts() {
       return;
     }
 
-    const key = `${selected.id}:${selected.decodedPath.length}:${Math.round(selected.distanceMeters)}`;
-    if (routeKeyRef.current === key) return;
+    const key = `${selectedRouteId}:${routePathLen}:${routeDistance}`;
+    if (routeKeyRef.current === key && metaRef.current.fetchedAt) return;
     routeKeyRef.current = key;
     spokenRef.current = new Set();
+
+    const path =
+      useTripStore.getState().routes.find((r) => r.id === selectedRouteId)
+        ?.decodedPath ??
+      useTripStore.getState().routes[0]?.decodedPath ??
+      [];
+    if (path.length < 2) return;
 
     let cancelled = false;
     void (async () => {
@@ -75,10 +88,10 @@ export function useNavAlerts() {
         const res = await fetch("/api/nav/alerts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: selected.decodedPath }),
+          body: JSON.stringify({ path }),
         });
         const data = (await res.json()) as AlertsApiResponse;
-        if (cancelled) return;
+        if (cancelled || routeKeyRef.current !== key) return;
         samplesRef.current = data.speedLimitSamples ?? [];
         alertsRef.current = data.alerts ?? [];
         metaRef.current = {
@@ -95,7 +108,7 @@ export function useNavAlerts() {
           ...metaRef.current,
         });
       } catch {
-        if (!cancelled) {
+        if (!cancelled && routeKeyRef.current === key) {
           setNavigationAlerts({
             ...EMPTY_ALERT_SNAPSHOT,
             fetchedAt: new Date().toISOString(),
@@ -107,9 +120,14 @@ export function useNavAlerts() {
     return () => {
       cancelled = true;
     };
-  }, [navLive, selected, setNavigationAlerts]);
+  }, [
+    navLive,
+    selectedRouteId,
+    routePathLen,
+    routeDistance,
+    setNavigationAlerts,
+  ]);
 
-  // Live: speed limit + next alert + voice (driven by GPS progress)
   const traveledMeters = useTripStore(
     (s) => s.navigation.progress?.traveledMeters ?? null,
   );

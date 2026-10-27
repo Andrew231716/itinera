@@ -6,11 +6,12 @@ import { useTripStore } from "@/lib/store/trip-store";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { speakNavigation } from "@/lib/navigation/voice";
 import { remainingStopPlaces } from "@/lib/navigation/waypoints";
-import type { PlaceRef } from "@/lib/types/trip";
+import type { PlaceRef, TripStop } from "@/lib/types/trip";
 
 /**
  * Recalculate from current GPS without leaving the driving session.
  * Keeps exclusions, destination, and *remaining* stops (skips visited ones).
+ * Mutates trip only after a successful compute (rollback on failure).
  */
 export function useNavRecalculate() {
   const setOrigin = useTripStore((s) => s.setOrigin);
@@ -43,35 +44,36 @@ export function useNavRecalculate() {
       source: "map_click",
     };
 
-    // Drop already-visited intermediate stops so the new route continues the trip.
     const intermediates = remainingStopPlaces(
       trip.stops,
       nav.nextWaypointIndex,
     );
+    const prevOrigin = trip.origin;
+    const prevStops: TripStop[] = trip.stops;
+    const prevWaypointIndex = nav.nextWaypointIndex;
 
     try {
+      // Compute first with overrides — do not mutate trip until success
+      const ok = await computeRoute({ origin, intermediates });
+      const after = useTripStore.getState();
+      if (!ok || after.routes.length === 0) {
+        setError(after.routeError ?? "Ricalcolo non riuscito. Riprova.");
+        return false;
+      }
+
       setOrigin(origin);
-      // Persist trimmed stops so subsequent traffic refreshes match the live trip
-      if (intermediates.length !== trip.stops.length) {
+      if (intermediates.length !== prevStops.length) {
         useTripStore.setState((s) => ({
           trip: {
             ...s.trip,
-            stops: s.trip.stops.slice(nav.nextWaypointIndex),
+            stops: prevStops.slice(prevWaypointIndex),
             meta: {
               ...s.trip.meta,
               updatedAt: new Date().toISOString(),
             },
           },
-        }));
-        useTripStore.setState((s) => ({
           navigation: { ...s.navigation, nextWaypointIndex: 0 },
         }));
-      }
-      await computeRoute({ origin, intermediates });
-      const after = useTripStore.getState();
-      if (after.routeMode === "error" || after.routes.length === 0) {
-        setError(after.routeError ?? "Ricalcolo non riuscito. Riprova.");
-        return false;
       }
       recenterNavigation();
       if (after.navigation.voiceEnabled) {
@@ -79,6 +81,18 @@ export function useNavRecalculate() {
       }
       return true;
     } catch {
+      // Restore prior OD if we somehow mutated (we don't until success)
+      useTripStore.setState((s) => ({
+        trip: {
+          ...s.trip,
+          origin: prevOrigin,
+          stops: prevStops,
+        },
+        navigation: {
+          ...s.navigation,
+          nextWaypointIndex: prevWaypointIndex,
+        },
+      }));
       setError("Ricalcolo non riuscito. Riprova.");
       return false;
     } finally {

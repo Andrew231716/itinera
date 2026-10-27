@@ -525,11 +525,33 @@ export const useTripStore = create<TripState>((set, get) => ({
     })),
 
   setRoutesResult: ({ routes, limitations, mode }) => {
+    const state = get();
+    const navLive =
+      state.navigation.status === "navigating" ||
+      state.navigation.status === "off_route" ||
+      state.navigation.status === "starting" ||
+      state.navigation.status === "arrived";
+
     const preferred =
       routes.find((r) => r.isConformant === true) ?? routes[0] ?? null;
+
+    // During driving, keep the same alternative index so a quiet traffic
+    // refresh does not snap the user onto another route.
+    let selectedId = preferred?.id ?? null;
+    if (navLive && state.trip.selectedRouteId) {
+      const prevIdx = state.routes.findIndex(
+        (r) => r.id === state.trip.selectedRouteId,
+      );
+      if (prevIdx >= 0 && routes[prevIdx]) {
+        selectedId = routes[prevIdx].id;
+      }
+    }
+
+    const selected =
+      routes.find((r) => r.id === selectedId) ?? preferred ?? null;
     const nextTrip = touch({
-      ...get().trip,
-      selectedRouteId: preferred?.id ?? null,
+      ...state.trip,
+      selectedRouteId: selected?.id ?? null,
     });
 
     set({
@@ -541,20 +563,26 @@ export const useTripStore = create<TripState>((set, get) => ({
     });
 
     // Auto-cronologia: solo calcoli con almeno un percorso reale.
-    if (routes.length > 0 && nextTrip.origin && nextTrip.destination) {
+    // Skip while navigating — traffic refreshes must not spam history.
+    if (
+      !navLive &&
+      routes.length > 0 &&
+      nextTrip.origin &&
+      nextTrip.destination
+    ) {
       const toll =
-        preferred?.tolls?.estimatedPrice ??
-        preferred?.tolls?.michelin?.estimatedPrice;
+        selected?.tolls?.estimatedPrice ??
+        selected?.tolls?.michelin?.estimatedPrice;
       recordTripHistory({
         trip: nextTrip,
         routeSummary: {
-          label: preferred?.label,
-          distanceMeters: preferred?.distanceMeters,
-          durationSeconds: preferred?.durationSeconds,
+          label: selected?.label,
+          distanceMeters: selected?.distanceMeters,
+          durationSeconds: selected?.durationSeconds,
           tollEstimate: toll,
           tollCurrency:
-            preferred?.tolls?.currencyCode ??
-            preferred?.tolls?.michelin?.currencyCode,
+            selected?.tolls?.currencyCode ??
+            selected?.tolls?.michelin?.currencyCode,
           mode,
         },
       });
@@ -562,11 +590,40 @@ export const useTripStore = create<TripState>((set, get) => ({
     }
   },
 
-  setRouteLoading: () =>
-    set({ routeMode: "loading", routeError: null }),
+  setRouteLoading: () => {
+    const status = get().navigation.status;
+    const navLive =
+      status === "navigating" ||
+      status === "off_route" ||
+      status === "starting";
+    // Quiet refresh while driving: keep showing the live route (no banner flicker).
+    if (navLive) {
+      set({ routeError: null });
+      return;
+    }
+    set({ routeMode: "loading", routeError: null });
+  },
 
-  setRouteError: (message) =>
-    set({ routeMode: "error", routeError: message, routes: [] }),
+  setRouteError: (message) => {
+    const status = get().navigation.status;
+    const navLive =
+      status === "navigating" ||
+      status === "off_route" ||
+      status === "starting" ||
+      status === "arrived";
+    // Never wipe the active route under the driver on a failed refresh/recalc.
+    if (navLive) {
+      set((s) => ({
+        routeError: message,
+        routeMode:
+          s.routeMode === "loading" || s.routeMode === "error"
+            ? "live"
+            : s.routeMode,
+      }));
+      return;
+    }
+    set({ routeMode: "error", routeError: message, routes: [] });
+  },
 
   clearRoutes: () =>
     set((s) => ({

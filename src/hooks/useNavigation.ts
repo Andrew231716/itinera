@@ -5,7 +5,7 @@ import { useTripStore } from "@/lib/store/trip-store";
 import { buildManeuvers } from "@/lib/navigation/maneuvers";
 import { computeNavProgress } from "@/lib/navigation/progress";
 import { buildNavWaypoints } from "@/lib/navigation/waypoints";
-import { speakNavigation, stopNavigationSpeech } from "@/lib/navigation/voice";
+import { speakNavigation } from "@/lib/navigation/voice";
 import {
   watchNavigationPosition,
   type PositionWatcher,
@@ -112,6 +112,8 @@ export function useNavigation() {
             committedWaypointIndex: state.navigation.nextWaypointIndex,
           });
           if (!progress) return;
+          const wasArrived =
+            useTripStore.getState().navigation.status === "arrived";
           setNavigationProgress(progress);
 
           const nav = useTripStore.getState().navigation;
@@ -139,6 +141,7 @@ export function useNavigation() {
 
           // Announce earlier (~a few seconds sooner at typical city speeds)
           if (
+            !progress.arrived &&
             nav.voiceEnabled &&
             progress.nextManeuver &&
             progress.nextManeuver.id !== nav.lastSpokenManeuverId &&
@@ -152,12 +155,10 @@ export function useNavigation() {
             markNavigationSpoken(progress.nextManeuver.id);
           }
 
-          if (progress.arrived) {
+          // One-shot arrival cue (status already flipped by setNavigationProgress)
+          if (progress.arrived && !wasArrived) {
+            // Do not cancel speech here — that would kill this cue.
             speakNavigation("Sei arrivato a destinazione", nav.voiceEnabled);
-            stopNavigationSpeech();
-            useTripStore.setState((s) => ({
-              navigation: { ...s.navigation, status: "arrived" },
-            }));
           }
         },
         (message, permissionDenied) => {
