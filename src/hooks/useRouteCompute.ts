@@ -10,30 +10,41 @@ type ComputeOverrides = {
   destination?: PlaceRef;
   /** Remaining intermediate stops (defaults to all trip.stops) */
   intermediates?: PlaceRef[];
+  optimizeWaypointOrder?: boolean;
+};
+
+export type ComputeRouteResult = {
+  ok: boolean;
+  optimizedIntermediateOrder?: number[];
 };
 
 /**
  * Computes a route from the trip store (or overrides).
- * Returns false on failure. Stale overlapping responses are ignored.
+ * Stale overlapping responses are ignored.
  */
 export function useRouteCompute() {
   const setRouteLoading = useTripStore((s) => s.setRouteLoading);
   const setRoutesResult = useTripStore((s) => s.setRoutesResult);
   const setRouteError = useTripStore((s) => s.setRouteError);
+  const applyOptimizedStopOrder = useTripStore(
+    (s) => s.applyOptimizedStopOrder,
+  );
   const requestIdRef = useRef(0);
 
   async function computeRoute(
     overrides?: ComputeOverrides,
-  ): Promise<boolean> {
+  ): Promise<ComputeRouteResult> {
     const trip = useTripStore.getState().trip;
     const origin = overrides?.origin ?? trip.origin;
     const destination = overrides?.destination ?? trip.destination;
     const intermediates =
       overrides?.intermediates ?? trip.stops.map((s) => s.place);
+    const optimizeWaypointOrder =
+      overrides?.optimizeWaypointOrder ?? trip.optimizeStopOrder;
 
     if (!origin || !destination) {
       setRouteError("Imposta partenza e destinazione prima di calcolare.");
-      return false;
+      return { ok: false };
     }
 
     const requestId = ++requestIdRef.current;
@@ -49,26 +60,32 @@ export function useRouteCompute() {
           travelMode: trip.travelMode,
           departureAt: trip.departureAt,
           preferences: trip.preferences,
-          optimizeWaypointOrder: trip.optimizeStopOrder,
+          optimizeWaypointOrder,
           exclusions: trip.exclusions,
         }),
       });
       const data = await res.json();
-      if (requestId !== requestIdRef.current) return false;
+      if (requestId !== requestIdRef.current) return { ok: false };
       if (!res.ok) {
         setRouteError(data.error ?? "Calcolo percorso non riuscito.");
-        return false;
+        return { ok: false };
+      }
+      const optimized = Array.isArray(data.optimizedIntermediateOrder)
+        ? (data.optimizedIntermediateOrder as number[])
+        : undefined;
+      if (optimized && optimized.length === intermediates.length) {
+        applyOptimizedStopOrder(optimized);
       }
       setRoutesResult({
         routes: data.routes ?? [],
         limitations: data.limitations ?? [],
         mode: data.mode === "live" ? "live" : "demo",
       });
-      return true;
+      return { ok: true, optimizedIntermediateOrder: optimized };
     } catch (error) {
-      if (requestId !== requestIdRef.current) return false;
+      if (requestId !== requestIdRef.current) return { ok: false };
       setRouteError(toUserErrorMessage(error));
-      return false;
+      return { ok: false };
     }
   }
 

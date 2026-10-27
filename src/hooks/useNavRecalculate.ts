@@ -54,9 +54,9 @@ export function useNavRecalculate() {
 
     try {
       // Compute first with overrides — do not mutate trip until success
-      const ok = await computeRoute({ origin, intermediates });
+      const result = await computeRoute({ origin, intermediates });
       const after = useTripStore.getState();
-      if (!ok || after.routes.length === 0) {
+      if (!result.ok || after.routes.length === 0) {
         setError(after.routeError ?? "Ricalcolo non riuscito. Riprova.");
         return false;
       }

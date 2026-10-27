@@ -45,6 +45,7 @@ export type MapPickTarget =
 
 export type PanelTab =
   | "itinerary"
+  | "giro"
   | "preferences"
   | "exclusions"
   | "summary"
@@ -138,6 +139,17 @@ interface TripState {
   removeStop: (id: string) => void;
   clearStops: () => void;
   reorderStops: (fromIndex: number, toIndex: number) => void;
+  /**
+   * Replace OD + stops from an ordered visit list (last = destination).
+   * Used by the Giro (multi-address) planner.
+   */
+  applyGiro: (payload: {
+    origin: PlaceRef;
+    orderedVisits: PlaceRef[];
+    departureAt: string | null;
+  }) => void;
+  /** Reorder intermediate stops to match an optimized index list. */
+  applyOptimizedStopOrder: (order: number[]) => void;
   setDepartureAt: (iso: string | null) => void;
   setTravelMode: (mode: TravelMode) => void;
   setPreferences: (patch: Partial<RoadPreferences>) => void;
@@ -382,6 +394,48 @@ export const useTripStore = create<TripState>((set, get) => ({
       routes: [],
       routeMode: "idle",
     })),
+
+  applyGiro: ({ origin, orderedVisits, departureAt }) => {
+    if (orderedVisits.length === 0) return;
+    const destination = orderedVisits[orderedVisits.length - 1];
+    const middles = orderedVisits.slice(0, -1);
+    const stops: TripStop[] = middles.map((place) => ({
+      id: nanoid(),
+      place,
+    }));
+    set({
+      trip: touch({
+        ...get().trip,
+        origin,
+        destination,
+        stops,
+        departureAt,
+        // Already ordered by proximity; Google may refine middles.
+        optimizeStopOrder: middles.length >= 2,
+      }),
+      routes: [],
+      routeMode: "idle",
+      routeError: null,
+      mapPickTarget: null,
+      parkingCenter: {
+        lat: destination.location.lat,
+        lng: destination.location.lng,
+        label: destination.label,
+      },
+    });
+  },
+
+  applyOptimizedStopOrder: (order) =>
+    set((s) => {
+      if (order.length !== s.trip.stops.length) return s;
+      const next = order
+        .map((i) => s.trip.stops[i])
+        .filter((x): x is TripStop => Boolean(x));
+      if (next.length !== s.trip.stops.length) return s;
+      return {
+        trip: touch({ ...s.trip, stops: next, optimizeStopOrder: false }),
+      };
+    }),
 
   reorderStops: (fromIndex, toIndex) =>
     set((s) => {
