@@ -131,4 +131,26 @@ describe("computeWaypointProgress", () => {
     });
     expect(mid.nextWaypointIndex).toBeGreaterThanOrEqual(1);
   });
+
+  it("holds on intermediate arrival before advancing", () => {
+    const route = routeWithLegs();
+    const waypoints = buildNavWaypoints({
+      stops: [
+        { id: "s1", place: place("p1", "Stop1", 45.37, 9.33) },
+        { id: "s2", place: place("p2", "Stop2", 45.38, 9.34) },
+      ],
+      destination: place("d", "Dest", 45.39, 9.35),
+    });
+    const atStop = computeWaypointProgress({
+      position: { lat: 45.37, lng: 9.33 },
+      traveledMeters: 1000,
+      route,
+      waypoints,
+      committedIndex: 0,
+    });
+    expect(atStop.nextWaypointIndex).toBe(0);
+    expect(atStop.atIntermediateStop).toBe(true);
+    expect(atStop.nextWaypoint?.label).toBe("Stop1");
+    expect(atStop.atFinalDestination).toBe(false);
+  });
 });

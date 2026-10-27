@@ -118,20 +118,32 @@ export function computeWaypointProgress(params: {
     totalWaypoints - 1,
   );
   const offsets = waypointPathOffsets(route, waypoints);
-  let nextWaypointIndex = start;
+  const arriveR = ARRIVAL_THRESHOLD_M;
 
-  // Advance past waypoints we've clearly passed along the route
+  let nextWaypointIndex = start;
+  let atIntermediateStop = false;
+
+  // Walk intermediates: arrive → stay on that index; only advance after clearly past.
   for (let i = start; i < totalWaypoints - 1; i++) {
     const end = offsets[i] ?? 0;
+    const along = end - traveledMeters;
     const nearPlace =
-      haversineMeters(position, waypoints[i].location) <= ARRIVAL_THRESHOLD_M * 1.5;
-    const passedAlong =
-      traveledMeters >= end - ARRIVAL_THRESHOLD_M || nearPlace;
-    if (passedAlong) {
-      nextWaypointIndex = i + 1;
-    } else {
+      haversineMeters(position, waypoints[i].location) <= arriveR * 1.4;
+    const arriving = nearPlace || (along <= arriveR && along >= -arriveR);
+    const clearlyPast = along < -arriveR && !nearPlace;
+
+    if (arriving) {
+      nextWaypointIndex = i;
+      atIntermediateStop = true;
       break;
     }
+    if (clearlyPast || traveledMeters >= end + arriveR * 0.5) {
+      nextWaypointIndex = i + 1;
+      continue;
+    }
+    // Still heading to this intermediate
+    nextWaypointIndex = i;
+    break;
   }
 
   const nextWaypoint = waypoints[nextWaypointIndex] ?? null;
@@ -139,18 +151,20 @@ export function computeWaypointProgress(params: {
   const metersToNextWaypoint = Math.max(0, endOffset - traveledMeters);
   const nearNext =
     nextWaypoint != null &&
-    haversineMeters(position, nextWaypoint.location) <= ARRIVAL_THRESHOLD_M;
-
+    haversineMeters(position, nextWaypoint.location) <= arriveR;
   const isFinal = nextWaypointIndex >= totalWaypoints - 1;
-  const closeEnough =
-    nearNext || metersToNextWaypoint <= ARRIVAL_THRESHOLD_M;
+  const atFinalDestination = Boolean(
+    isFinal &&
+      nextWaypoint &&
+      (nearNext || metersToNextWaypoint <= arriveR),
+  );
 
   return {
     nextWaypointIndex,
     nextWaypoint,
     metersToNextWaypoint,
-    atIntermediateStop: Boolean(closeEnough && !isFinal && nextWaypoint),
-    atFinalDestination: Boolean(closeEnough && isFinal && nextWaypoint),
+    atIntermediateStop: Boolean(atIntermediateStop && !isFinal),
+    atFinalDestination,
     totalWaypoints,
   };
 }

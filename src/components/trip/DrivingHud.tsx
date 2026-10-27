@@ -28,6 +28,7 @@ import {
   TRAFFIC_MONITOR_INTERVAL_MS,
   type TrafficLevel,
 } from "@/lib/routing/traffic-info";
+import { remainingStopPlaces } from "@/lib/navigation/waypoints";
 import { Button, cn } from "@/components/ui/primitives";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
@@ -118,11 +119,23 @@ export function DrivingHud() {
     return () => window.clearInterval(id);
   }, [active]);
 
-  // Quiet traffic refresh while driving (skip while recalculating)
+  // Quiet traffic refresh while driving — from live GPS + remaining stops only
   useEffect(() => {
     if (!active || navigation.status === "arrived" || recalcBusy) return;
     const id = window.setInterval(() => {
-      void computeRef.current();
+      const state = useTripStore.getState();
+      const nav = state.navigation;
+      const trip = state.trip;
+      if (!nav.position || !trip.destination) return;
+      void computeRef.current({
+        origin: {
+          id: `gps-live-${Date.now()}`,
+          label: "Posizione attuale",
+          location: { ...nav.position },
+          source: "gps",
+        },
+        intermediates: remainingStopPlaces(trip.stops, nav.nextWaypointIndex),
+      });
     }, TRAFFIC_MONITOR_INTERVAL_MS);
     return () => window.clearInterval(id);
   }, [active, navigation.status, recalcBusy]);
