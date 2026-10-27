@@ -1,7 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Clock3, ListOrdered, MapPin, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bookmark,
+  Clock3,
+  FolderOpen,
+  ListOrdered,
+  MapPin,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { nanoid } from "nanoid";
 import { PlaceSearch } from "@/components/trip/PlaceSearch";
 import { useTripStore } from "@/lib/store/trip-store";
@@ -19,9 +27,17 @@ import {
   type ScheduleStop,
 } from "@/lib/routing/travel-schedule";
 import {
+  listSavedGiri,
+  removeSavedGiro,
+  saveGiro,
+  suggestGiroTitle,
+  type SavedGiro,
+} from "@/lib/storage/saved-giri";
+import {
   formatClockIt,
   formatDateTimeLocal,
   formatDuration,
+  formatRelativeIt,
   localInputToIso,
 } from "@/lib/utils/format";
 import type { PlaceRef } from "@/lib/types/trip";
@@ -71,11 +87,23 @@ export function GiroPanel() {
   const [orderWarnings, setOrderWarnings] = useState<string[]>([]);
   const [schedule, setSchedule] = useState<ScheduleStop[] | null>(null);
   const [addKey, setAddKey] = useState(0);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saveTitle, setSaveTitle] = useState("");
+  const [savedList, setSavedList] = useState<SavedGiro[]>([]);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const lineCount = useMemo(
     () => parseAddressLines(listText).length,
     [listText],
   );
+
+  function refreshSaved() {
+    setSavedList(listSavedGiri());
+  }
+
+  useEffect(() => {
+    refreshSaved();
+  }, []);
 
   function updateStop(id: string, patch: Partial<GiroStop>) {
     setStops((prev) =>
@@ -93,6 +121,48 @@ export function GiroPanel() {
       return [...prev, makeGiroStop(place)];
     });
     setAddKey((k) => k + 1);
+  }
+
+  function handleSaveGiro() {
+    setSaveMessage(null);
+    if (stops.length < 1 && !start) {
+      setError("Aggiungi almeno partenza o una tappa prima di salvare.");
+      return;
+    }
+    const departureAt = localInputToIso(departureLocal);
+    const entry = saveGiro({
+      id: savedId ?? undefined,
+      title: saveTitle,
+      origin: start,
+      departureAt,
+      stops,
+    });
+    setSavedId(entry.id);
+    setSaveTitle(entry.title);
+    refreshSaved();
+    setSaveMessage(`Salvato: ${entry.title}`);
+  }
+
+  function handleLoadGiro(entry: SavedGiro) {
+    setError(null);
+    setLineErrors([]);
+    setOrderWarnings([]);
+    setSchedule(null);
+    setListText("");
+    setSavedId(entry.id);
+    setSaveTitle(entry.title);
+    setStart(entry.origin);
+    setStops(structuredClone(entry.stops));
+    if (entry.departureAt) {
+      setDepartureLocal(formatDateTimeLocal(entry.departureAt));
+    }
+    setSaveMessage(`Caricato: ${entry.title}`);
+  }
+
+  function handleDeleteSaved(id: string) {
+    removeSavedGiro(id);
+    if (savedId === id) setSavedId(null);
+    refreshSaved();
   }
 
   async function createGiro() {
@@ -294,6 +364,30 @@ export function GiroPanel() {
         </div>
       ) : null}
 
+      <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
+          <Bookmark className="h-3.5 w-3.5" />
+          Salva questo giro
+        </p>
+        <Input
+          placeholder={suggestGiroTitle({ origin: start, stops })}
+          value={saveTitle}
+          onChange={(e) => setSaveTitle(e.target.value)}
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          onClick={handleSaveGiro}
+        >
+          <Save className="h-4 w-4" />
+          {savedId ? "Aggiorna giro salvato" : "Salva giro"}
+        </Button>
+        {saveMessage ? (
+          <p className="text-xs text-emerald-700">{saveMessage}</p>
+        ) : null}
+      </div>
+
       <Button
         type="button"
         className="w-full"
@@ -303,6 +397,51 @@ export function GiroPanel() {
         <ListOrdered className="h-4 w-4" />
         {busy ? "Creo il percorso…" : "Crea percorso ottimizzato"}
       </Button>
+
+      {savedList.length > 0 ? (
+        <div className="space-y-2 border-t border-[var(--line)] pt-4">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
+            <FolderOpen className="h-3.5 w-3.5" />
+            Giri salvati
+          </p>
+          <ul className="space-y-1.5">
+            {savedList.map((g) => (
+              <li
+                key={g.id}
+                className="flex items-start gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                    {g.title}
+                  </p>
+                  <p className="text-[11px] text-[var(--ink-muted)]">
+                    {g.stops.length} tappe
+                    {g.origin ? ` · da ${g.origin.label}` : ""}
+                    {" · "}
+                    {formatRelativeIt(g.updatedAt)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleLoadGiro(g)}
+                >
+                  Apri
+                </Button>
+                <button
+                  type="button"
+                  className="rounded-lg p-1.5 text-[var(--ink-muted)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
+                  onClick={() => handleDeleteSaved(g.id)}
+                  aria-label="Elimina giro"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {schedule && schedule.length > 0 ? (
         <div className="space-y-2 border-t border-[var(--line)] pt-4">
