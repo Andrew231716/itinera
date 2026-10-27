@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Clock3, ListOrdered, MapPin, Trash2 } from "lucide-react";
+import { nanoid } from "nanoid";
 import { PlaceSearch } from "@/components/trip/PlaceSearch";
 import { useTripStore } from "@/lib/store/trip-store";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
@@ -10,9 +11,11 @@ import {
   resolvePlaceQuery,
 } from "@/lib/places/resolve-query";
 import {
-  applyOptimizedIntermediateOrder,
   buildArrivalSchedule,
-  orderPlacesByNearestNeighbor,
+  giroHasHardLocks,
+  orderGiroStops,
+  type GiroPositionLock,
+  type GiroStop,
   type ScheduleStop,
 } from "@/lib/routing/travel-schedule";
 import {
@@ -28,10 +31,24 @@ import {
   Input,
   Label,
   SectionTitle,
+  cn,
 } from "@/components/ui/primitives";
 
+function makeGiroStop(place: PlaceRef): GiroStop {
+  return {
+    id: nanoid(),
+    place,
+    arriveBy: null,
+    positionLock: "auto",
+  };
+}
+
+function placeKey(p: PlaceRef): string {
+  return p.placeId ?? `${p.location.lat.toFixed(5)},${p.location.lng.toFixed(5)}`;
+}
+
 /**
- * Paste a list of addresses → order by proximity → route with arrival times.
+ * Paste / search addresses → order by proximity (with locks) → ETA per stop.
  */
 export function GiroPanel() {
   const applyGiro = useTripStore((s) => s.applyGiro);
@@ -47,10 +64,11 @@ export function GiroPanel() {
     return formatDateTimeLocal(d.toISOString());
   });
   const [listText, setListText] = useState("");
-  const [resolved, setResolved] = useState<PlaceRef[]>([]);
+  const [stops, setStops] = useState<GiroStop[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lineErrors, setLineErrors] = useState<string[]>([]);
+  const [orderWarnings, setOrderWarnings] = useState<string[]>([]);
   const [schedule, setSchedule] = useState<ScheduleStop[] | null>(null);
   const [addKey, setAddKey] = useState(0);
 
@@ -59,48 +77,68 @@ export function GiroPanel() {
     [listText],
   );
 
-  function removeResolved(id: string) {
-    setResolved((prev) => prev.filter((p) => p.id !== id));
+  function updateStop(id: string, patch: Partial<GiroStop>) {
+    setStops((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    );
   }
 
-  async function addFromSearch(place: PlaceRef) {
-    setResolved((prev) =>
-      prev.some((p) => p.id === place.id) ? prev : [...prev, place],
-    );
+  function removeStop(id: string) {
+    setStops((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  function addPlace(place: PlaceRef) {
+    setStops((prev) => {
+      if (prev.some((s) => placeKey(s.place) === placeKey(place))) return prev;
+      return [...prev, makeGiroStop(place)];
+    });
     setAddKey((k) => k + 1);
   }
 
   async function createGiro() {
     setError(null);
     setLineErrors([]);
+    setOrderWarnings([]);
     setSchedule(null);
     setBusy(true);
 
     try {
       const lines = parseAddressLines(listText);
-      const fromLines: PlaceRef[] = [];
+      const fromLines: GiroStop[] = [];
       const errs: string[] = [];
+      const seen = new Set(stops.map((s) => placeKey(s.place)));
 
       for (const line of lines) {
         const { place, error: resolveError } = await resolvePlaceQuery(line);
-        if (place) fromLines.push(place);
-        else if (resolveError) errs.push(resolveError);
+        if (place) {
+          const key = placeKey(place);
+          if (!seen.has(key)) {
+            seen.add(key);
+            fromLines.push(makeGiroStop(place));
+          }
+        } else if (resolveError) {
+          errs.push(resolveError);
+        }
       }
       setLineErrors(errs);
 
-      const visits = dedupePlaces([...resolved, ...fromLines]);
-      if (visits.length < 1) {
+      let working = [...stops, ...fromLines];
+      if (fromLines.length > 0) {
+        setStops(working);
+        setListText("");
+      }
+
+      if (working.length < 1) {
         setError("Aggiungi almeno un indirizzo o luogo da visitare.");
         return;
       }
 
       let origin = start;
-      let toVisit = visits;
       if (!origin) {
-        origin = visits[0];
-        toVisit = visits.slice(1);
+        origin = working[0].place;
+        working = working.slice(1);
       }
-      if (toVisit.length < 1) {
+      if (working.length < 1) {
         setError("Serve almeno una tappa oltre alla partenza.");
         return;
       }
@@ -111,16 +149,28 @@ export function GiroPanel() {
         return;
       }
 
-      const ordered = orderPlacesByNearestNeighbor(origin, toVisit);
-      applyGiro({ origin, orderedVisits: ordered, departureAt });
+      const { ordered, warnings } = orderGiroStops(origin, working);
+      setOrderWarnings(warnings);
+      setStops(ordered);
 
-      const middles = ordered.slice(0, -1);
-      const destination = ordered[ordered.length - 1];
+      const orderedPlaces = ordered.map((s) => s.place);
+      applyGiro({
+        origin,
+        orderedVisits: orderedPlaces,
+        departureAt,
+      });
+
+      const middles = orderedPlaces.slice(0, -1);
+      const destination = orderedPlaces[orderedPlaces.length - 1];
+      // Locks must not be shuffled by Google waypoint optimize
+      const allowOptimize =
+        middles.length >= 2 && !giroHasHardLocks(ordered);
+
       const result = await computeRoute({
         origin,
         destination,
         intermediates: middles,
-        optimizeWaypointOrder: middles.length >= 2,
+        optimizeWaypointOrder: allowOptimize,
       });
 
       const state = useTripStore.getState();
@@ -129,37 +179,27 @@ export function GiroPanel() {
           state.routeError ??
             "Percorso non calcolato. Controlla gli indirizzi o la chiave Maps.",
         );
-        // Still show proximity order without times
         setSchedule(
           buildArrivalSchedule({
             departureAt,
             origin,
-            orderedPlaces: ordered,
+            orderedPlaces,
             legs: [],
+            orderedGiroStops: ordered,
           }),
         );
         return;
       }
 
-      const finalMiddles = applyOptimizedIntermediateOrder(
-        state.trip.stops.map((s) => s.place),
-        result.optimizedIntermediateOrder,
-      );
-      const finalOrdered = [
-        ...finalMiddles,
-        state.trip.destination ?? destination,
-      ].filter(Boolean) as PlaceRef[];
-
       const route = state.routes[0];
       const rows = buildArrivalSchedule({
         departureAt,
         origin: state.trip.origin ?? origin,
-        orderedPlaces: finalOrdered,
+        orderedPlaces,
         legs: route.legs,
+        orderedGiroStops: ordered,
       });
       setSchedule(rows);
-      setResolved(finalOrdered);
-      setListText("");
     } finally {
       setBusy(false);
     }
@@ -169,7 +209,7 @@ export function GiroPanel() {
     <div className="space-y-4">
       <SectionTitle
         title="Giro tappe"
-        subtitle="Incolla una lista di indirizzi: li ordino per vicinanza e ti dico a che ora arrivi"
+        subtitle="Lista indirizzi, orari sulle tappe e posizioni bloccate (ultima, 9ª…)"
       />
 
       <PlaceSearch
@@ -195,14 +235,16 @@ export function GiroPanel() {
       <div>
         <Label>Lista indirizzi (uno per riga)</Label>
         <textarea
-          rows={6}
+          rows={5}
           value={listText}
           onChange={(e) => setListText(e.target.value)}
           placeholder={"Via Roma 1, Milano\nPiazza Duomo, Firenze\n..."}
           className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--brand)]"
         />
         <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-          {lineCount > 0 ? `${lineCount} righe` : "Incolla o scrivi gli indirizzi"}
+          {lineCount > 0
+            ? `${lineCount} righe — le aggiungo alle tappe al calcolo`
+            : "Incolla o scrivi gli indirizzi"}
         </p>
       </div>
 
@@ -211,35 +253,21 @@ export function GiroPanel() {
         label="Oppure aggiungi un luogo"
         placeholder="Cerca e aggiungi alla lista…"
         value={null}
-        onSelect={(p) => void addFromSearch(p)}
+        onSelect={(p) => addPlace(p)}
         allowGps={false}
       />
 
-      {resolved.length > 0 ? (
-        <ul className="space-y-1.5">
-          {resolved.map((p, i) => (
-            <li
-              key={`${p.id}-${i}`}
-              className="flex items-start gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2"
-            >
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand)]" />
-              <span className="min-w-0 flex-1 text-sm text-[var(--ink)]">
-                {p.label}
-                {p.address ? (
-                  <span className="mt-0.5 block truncate text-[11px] text-[var(--ink-muted)]">
-                    {p.address}
-                  </span>
-                ) : null}
-              </span>
-              <button
-                type="button"
-                className="rounded-lg p-1 text-[var(--ink-muted)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
-                onClick={() => removeResolved(p.id)}
-                aria-label="Rimuovi"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </li>
+      {stops.length > 0 ? (
+        <ul className="space-y-2">
+          {stops.map((s, i) => (
+            <GiroStopCard
+              key={s.id}
+              stop={s}
+              index={i}
+              total={stops.length}
+              onChange={(patch) => updateStop(s.id, patch)}
+              onRemove={() => removeStop(s.id)}
+            />
           ))}
         </ul>
       ) : null}
@@ -247,6 +275,14 @@ export function GiroPanel() {
       {lineErrors.length > 0 ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           {lineErrors.map((e) => (
+            <p key={e}>{e}</p>
+          ))}
+        </div>
+      ) : null}
+
+      {orderWarnings.length > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {orderWarnings.map((e) => (
             <p key={e}>{e}</p>
           ))}
         </div>
@@ -305,11 +341,28 @@ export function GiroPanel() {
                     <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
                       Orario di partenza scelto da te
                     </p>
-                  ) : (
-                    <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-                      Orario stimato (senza tempi di tratta)
+                  ) : null}
+                  {row.arriveBy ? (
+                    <p
+                      className={cn(
+                        "mt-1 text-[11px] font-medium",
+                        (row.vsArriveBySeconds ?? 0) > 60
+                          ? "text-red-700"
+                          : (row.vsArriveBySeconds ?? 0) < -60
+                            ? "text-emerald-700"
+                            : "text-[var(--ink-muted)]",
+                      )}
+                    >
+                      Appuntamento {formatClockIt(row.arriveBy)}
+                      {row.vsArriveBySeconds != null
+                        ? row.vsArriveBySeconds > 60
+                          ? ` · in ritardo ${formatDuration(row.vsArriveBySeconds)}`
+                          : row.vsArriveBySeconds < -60
+                            ? ` · in anticipo ${formatDuration(-row.vsArriveBySeconds)}`
+                            : " · in orario"
+                        : null}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -325,22 +378,100 @@ export function GiroPanel() {
         </div>
       ) : (
         <EmptyHint>
-          Dopo il calcolo vedi qui l’ordine delle tappe e l’ora stimata in ogni
-          indirizzo.
+          Su ogni tappa puoi impostare un orario e bloccarla (ultima, 3ª,
+          9ª…). Poi calcola il percorso.
         </EmptyHint>
       )}
     </div>
   );
 }
 
-function dedupePlaces(places: PlaceRef[]): PlaceRef[] {
-  const seen = new Set<string>();
-  const out: PlaceRef[] = [];
-  for (const p of places) {
-    const key = p.placeId ?? `${p.location.lat.toFixed(5)},${p.location.lng.toFixed(5)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(p);
+function GiroStopCard({
+  stop,
+  index,
+  total,
+  onChange,
+  onRemove,
+}: {
+  stop: GiroStop;
+  index: number;
+  total: number;
+  onChange: (patch: Partial<GiroStop>) => void;
+  onRemove: () => void;
+}) {
+  const lockValue =
+    stop.positionLock === "auto"
+      ? "auto"
+      : stop.positionLock === "last"
+        ? "last"
+        : String(stop.positionLock);
+
+  function onLockChange(value: string) {
+    let positionLock: GiroPositionLock = "auto";
+    if (value === "last") positionLock = "last";
+    else if (value !== "auto") positionLock = Number(value);
+    onChange({ positionLock });
   }
-  return out;
+
+  return (
+    <li className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand)]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[var(--ink)]">
+            <span className="mr-1.5 text-[var(--ink-muted)]">{index + 1}.</span>
+            {stop.place.label}
+          </p>
+          {stop.place.address ? (
+            <p className="truncate text-[11px] text-[var(--ink-muted)]">
+              {stop.place.address}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="rounded-lg p-1 text-[var(--ink-muted)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
+          onClick={onRemove}
+          aria-label="Rimuovi"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div>
+          <Label>Orario in questa tappa</Label>
+          <Input
+            type="datetime-local"
+            value={
+              stop.arriveBy ? formatDateTimeLocal(stop.arriveBy) : ""
+            }
+            onChange={(e) =>
+              onChange({
+                arriveBy: e.target.value
+                  ? localInputToIso(e.target.value)
+                  : null,
+              })
+            }
+          />
+        </div>
+        <div>
+          <Label>Posizione nel giro</Label>
+          <select
+            className="h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--brand)]"
+            value={lockValue}
+            onChange={(e) => onLockChange(e.target.value)}
+          >
+            <option value="auto">Libera (per vicinanza)</option>
+            <option value="last">Sempre ultima</option>
+            {Array.from({ length: total }, (_, i) => (
+              <option key={i + 1} value={String(i + 1)}>
+                Fissa come {i + 1}ª tappa
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </li>
+  );
 }

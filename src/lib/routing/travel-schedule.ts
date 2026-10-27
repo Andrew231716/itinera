@@ -2,18 +2,35 @@ import { haversineMeters } from "@/lib/utils/geometry";
 import type { RouteLeg } from "@/lib/types/route";
 import type { PlaceRef } from "@/lib/types/trip";
 
+/** Lock a visit in the sequence: free, fixed 1-based index, or always last. */
+export type GiroPositionLock = "auto" | "last" | number;
+
+export type GiroStop = {
+  /** Stable UI / schedule id */
+  id: string;
+  place: PlaceRef;
+  /** Optional desired arrival (ISO) */
+  arriveBy: string | null;
+  /** Where this stop must sit in the visit order */
+  positionLock: GiroPositionLock;
+};
+
 export type ScheduleStop = {
   kind: "origin" | "stop" | "destination";
   place: PlaceRef;
+  giroStopId?: string;
   /** ISO arrival (for origin = departure time) */
   arrivalAt: string;
   legFromPreviousSeconds: number;
   cumulativeSeconds: number;
+  /** Optional appointment the user set */
+  arriveBy?: string | null;
+  /** estimated − target (positive = late), seconds */
+  vsArriveBySeconds?: number | null;
 };
 
 /**
  * Greedy nearest-neighbor order from a fixed start through all places.
- * Simple “vicinanza l’una dall’altra” for a list of stops.
  */
 export function orderPlacesByNearestNeighbor(
   origin: PlaceRef,
@@ -41,6 +58,115 @@ export function orderPlacesByNearestNeighbor(
   return ordered;
 }
 
+function pickNearest(
+  from: { lat: number; lng: number },
+  candidates: GiroStop[],
+): { stop: GiroStop; index: number } {
+  let bestIdx = 0;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < candidates.length; i++) {
+    const d = haversineMeters(from, candidates[i].place.location);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+  return { stop: candidates[bestIdx], index: bestIdx };
+}
+
+/**
+ * Order visits by proximity while honoring position locks
+ * (`last`, or a 1-based slot like 9ª tappa).
+ */
+export function orderGiroStops(
+  origin: PlaceRef,
+  stops: GiroStop[],
+): { ordered: GiroStop[]; warnings: string[] } {
+  const n = stops.length;
+  if (n === 0) return { ordered: [], warnings: [] };
+
+  const warnings: string[] = [];
+  const slots: Array<GiroStop | null> = Array.from({ length: n }, () => null);
+  const free: GiroStop[] = [];
+
+  const lastCandidates = stops.filter((s) => s.positionLock === "last");
+  let lastStop: GiroStop | null = null;
+  if (lastCandidates.length > 0) {
+    lastStop = lastCandidates[0];
+    if (lastCandidates.length > 1) {
+      warnings.push(
+        "Più tappe impostate come «ultima»: tengo solo la prima, le altre sono libere.",
+      );
+      free.push(...lastCandidates.slice(1));
+    }
+  }
+
+  const claimed = new Set<string>();
+  if (lastStop) claimed.add(lastStop.id);
+
+  for (const s of stops) {
+    if (claimed.has(s.id)) continue;
+    if (typeof s.positionLock === "number" && Number.isFinite(s.positionLock)) {
+      const idx = Math.min(n, Math.max(1, Math.round(s.positionLock))) - 1;
+      if (slots[idx] == null) {
+        slots[idx] = s;
+        claimed.add(s.id);
+      } else {
+        warnings.push(
+          `Posizione ${idx + 1} già occupata: «${s.place.label}» resta libera.`,
+        );
+        free.push(s);
+        claimed.add(s.id);
+      }
+    }
+  }
+
+  for (const s of stops) {
+    if (!claimed.has(s.id)) free.push(s);
+  }
+
+  if (lastStop) {
+    const endSlot = slots[n - 1];
+    if (endSlot == null) {
+      slots[n - 1] = lastStop;
+    } else if (endSlot.id !== lastStop.id) {
+      warnings.push(
+        `L’ultima posizione era già bloccata: «${lastStop.place.label}» resta libera.`,
+      );
+      free.push(lastStop);
+    }
+  }
+
+  let current = origin.location;
+  for (let i = 0; i < n; i++) {
+    if (slots[i] != null) {
+      current = slots[i]!.place.location;
+      continue;
+    }
+    if (free.length === 0) break;
+    const { stop, index } = pickNearest(current, free);
+    free.splice(index, 1);
+    slots[i] = stop;
+    current = stop.place.location;
+  }
+
+  // Safety: any leftover free append / fill nulls
+  for (let i = 0; i < n; i++) {
+    if (slots[i] == null && free.length > 0) {
+      slots[i] = free.shift()!;
+    }
+  }
+
+  const ordered = slots.filter((s): s is GiroStop => s != null);
+  return { ordered, warnings };
+}
+
+export function giroHasHardLocks(stops: GiroStop[]): boolean {
+  return stops.some(
+    (s) => s.positionLock === "last" || typeof s.positionLock === "number",
+  );
+}
+
 /** Reorder intermediates using Google’s optimizedIntermediateWaypointIndex. */
 export function applyOptimizedIntermediateOrder(
   intermediates: PlaceRef[],
@@ -55,13 +181,15 @@ export function applyOptimizedIntermediateOrder(
 
 /**
  * Build clock arrivals from departure + route legs.
- * `orderedPlaces` = intermediates then destination (same order as legs).
+ * `orderedStops` = visits in route order (intermediates then destination).
  */
 export function buildArrivalSchedule(params: {
   departureAt: string;
   origin: PlaceRef;
   orderedPlaces: PlaceRef[];
   legs: RouteLeg[];
+  /** Optional giro metadata aligned with orderedPlaces */
+  orderedGiroStops?: GiroStop[];
 }): ScheduleStop[] {
   const startMs = new Date(params.departureAt).getTime();
   const safeStart = Number.isFinite(startMs) ? startMs : Date.now();
@@ -79,14 +207,29 @@ export function buildArrivalSchedule(params: {
   let cumulative = 0;
   for (let i = 0; i < params.orderedPlaces.length; i++) {
     const place = params.orderedPlaces[i];
+    const giro = params.orderedGiroStops?.[i];
     const legSeconds = Math.max(0, params.legs[i]?.durationSeconds ?? 0);
     cumulative += legSeconds;
+    const arrivalAt = new Date(safeStart + cumulative * 1000).toISOString();
+    const arriveBy = giro?.arriveBy ?? null;
+    let vsArriveBySeconds: number | null = null;
+    if (arriveBy) {
+      const target = new Date(arriveBy).getTime();
+      if (Number.isFinite(target)) {
+        vsArriveBySeconds = Math.round(
+          (new Date(arrivalAt).getTime() - target) / 1000,
+        );
+      }
+    }
     rows.push({
       kind: i === params.orderedPlaces.length - 1 ? "destination" : "stop",
       place,
-      arrivalAt: new Date(safeStart + cumulative * 1000).toISOString(),
+      giroStopId: giro?.id,
+      arrivalAt,
       legFromPreviousSeconds: legSeconds,
       cumulativeSeconds: cumulative,
+      arriveBy,
+      vsArriveBySeconds,
     });
   }
 
