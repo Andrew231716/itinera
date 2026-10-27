@@ -46,6 +46,16 @@ export function localInputToIso(value: string): string | null {
   return d.toISOString();
 }
 
+/** Clock time in Italian locale, e.g. «14:30». */
+export function formatClockIt(isoOrDate: string | Date): string {
+  const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("it-IT", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** Relative Italian time for history lists (e.g. «oggi 14:30», «ieri», «3 gg fa»). */
 export function formatRelativeIt(iso: string): string {
   const d = new Date(iso);
