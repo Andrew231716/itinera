@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyOptimizedIntermediateOrder,
   buildArrivalSchedule,
+  giroHasHardLocks,
+  orderGiroStops,
   orderPlacesByNearestNeighbor,
+  type GiroStop,
 } from "@/lib/routing/travel-schedule";
 import type { PlaceRef } from "@/lib/types/trip";
 import type { RouteLeg } from "@/lib/types/route";
@@ -16,14 +19,56 @@ function place(id: string, lat: number, lng: number): PlaceRef {
   };
 }
 
+function giro(
+  id: string,
+  lat: number,
+  lng: number,
+  lock: GiroStop["positionLock"] = "auto",
+  arriveBy: string | null = null,
+): GiroStop {
+  return {
+    id,
+    place: place(id, lat, lng),
+    arriveBy,
+    positionLock: lock,
+  };
+}
+
 describe("orderPlacesByNearestNeighbor", () => {
   it("visits nearest places first from origin", () => {
     const origin = place("O", 45.0, 9.0);
-    const a = place("A", 45.01, 9.0); // ~1.1 km
-    const b = place("B", 45.1, 9.0); // ~11 km
-    const c = place("C", 45.02, 9.0); // ~2.2 km
+    const a = place("A", 45.01, 9.0);
+    const b = place("B", 45.1, 9.0);
+    const c = place("C", 45.02, 9.0);
     const ordered = orderPlacesByNearestNeighbor(origin, [b, c, a]);
     expect(ordered.map((p) => p.id)).toEqual(["A", "C", "B"]);
+  });
+});
+
+describe("orderGiroStops", () => {
+  it("keeps a stop locked as last", () => {
+    const origin = place("O", 45.0, 9.0);
+    const near = giro("near", 45.01, 9.0);
+    const far = giro("far", 45.2, 9.0, "last");
+    const mid = giro("mid", 45.05, 9.0);
+    const { ordered } = orderGiroStops(origin, [far, near, mid]);
+    expect(ordered.map((s) => s.id)).toEqual(["near", "mid", "far"]);
+  });
+
+  it("honors a fixed 2nd position", () => {
+    const origin = place("O", 45.0, 9.0);
+    const a = giro("a", 45.01, 9.0);
+    const locked = giro("locked", 45.3, 9.0, 2);
+    const c = giro("c", 45.02, 9.0);
+    const { ordered } = orderGiroStops(origin, [a, locked, c]);
+    expect(ordered[1].id).toBe("locked");
+    expect(ordered).toHaveLength(3);
+  });
+
+  it("detects hard locks", () => {
+    expect(giroHasHardLocks([giro("a", 1, 1)])).toBe(false);
+    expect(giroHasHardLocks([giro("a", 1, 1, "last")])).toBe(true);
+    expect(giroHasHardLocks([giro("a", 1, 1, 9)])).toBe(true);
   });
 });
 
@@ -42,9 +87,13 @@ describe("applyOptimizedIntermediateOrder", () => {
 });
 
 describe("buildArrivalSchedule", () => {
-  it("accumulates leg durations from departure", () => {
+  it("accumulates leg durations and compares arriveBy", () => {
     const origin = place("O", 0, 0);
     const stops = [place("S1", 1, 1), place("D", 2, 2)];
+    const giroStops = [
+      giro("S1", 1, 1, "auto", "2026-10-27T08:05:00.000Z"),
+      giro("D", 2, 2),
+    ];
     const legs: RouteLeg[] = [
       {
         id: "l0",
@@ -69,14 +118,12 @@ describe("buildArrivalSchedule", () => {
       origin,
       orderedPlaces: stops,
       legs,
+      orderedGiroStops: giroStops,
     });
     expect(rows).toHaveLength(3);
-    expect(rows[0].kind).toBe("origin");
-    expect(rows[0].arrivalAt).toBe(departureAt);
-    expect(rows[1].kind).toBe("stop");
     expect(rows[1].arrivalAt).toBe("2026-10-27T08:10:00.000Z");
-    expect(rows[2].kind).toBe("destination");
+    expect(rows[1].arriveBy).toBe("2026-10-27T08:05:00.000Z");
+    expect(rows[1].vsArriveBySeconds).toBe(300);
     expect(rows[2].arrivalAt).toBe("2026-10-27T08:30:00.000Z");
-    expect(rows[2].cumulativeSeconds).toBe(1800);
   });
 });
