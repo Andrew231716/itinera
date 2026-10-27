@@ -137,14 +137,15 @@ export function useNavigation() {
             }
           }
 
+          // Announce earlier (~a few seconds sooner at typical city speeds)
           if (
             nav.voiceEnabled &&
             progress.nextManeuver &&
             progress.nextManeuver.id !== nav.lastSpokenManeuverId &&
-            progress.metersToNextManeuver < 280
+            progress.metersToNextManeuver < 450
           ) {
             const cue =
-              progress.metersToNextManeuver < 40
+              progress.metersToNextManeuver < 70
                 ? progress.nextManeuver.instruction
                 : `Tra ${Math.round(progress.metersToNextManeuver)} metri: ${progress.nextManeuver.instruction}`;
             speakNavigation(cue, true);

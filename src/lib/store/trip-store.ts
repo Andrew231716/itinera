@@ -61,6 +61,7 @@ const IDLE_NAVIGATION: NavigationRuntime = {
   followMap: true,
   northUp: false,
   overview: false,
+  hudSide: "right",
   recalculating: false,
   nextWaypointIndex: 0,
   lastArrivedWaypointId: null,
@@ -199,6 +200,7 @@ interface TripState {
   setNavigationFollowMap: (enabled: boolean) => void;
   setNavigationNorthUp: (enabled: boolean) => void;
   setNavigationOverview: (enabled: boolean) => void;
+  setNavigationHudSide: (side: "left" | "right") => void;
   setNavigationRecalculating: (busy: boolean) => void;
   recenterNavigation: () => void;
   setNavigationCompassHeading: (headingDeg: number | null) => void;
@@ -772,6 +774,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         voiceEnabled: get().navigation.voiceEnabled,
         followMap: true,
         northUp: get().navigation.northUp,
+        hudSide: get().navigation.hudSide,
         platform: detectNavPlatform(),
       },
       activePanel: "navigate",
@@ -828,6 +831,11 @@ export const useTripStore = create<TripState>((set, get) => ({
         overview: enabled,
         followMap: enabled ? false : s.navigation.followMap,
       },
+    })),
+
+  setNavigationHudSide: (side) =>
+    set((s) => ({
+      navigation: { ...s.navigation, hudSide: side },
     })),
 
   setNavigationRecalculating: (busy) =>

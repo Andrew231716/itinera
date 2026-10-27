@@ -368,8 +368,8 @@ export function MapCanvas() {
         map,
         path: selected.decodedPath,
         strokeColor: theme === "dark" ? "#7eb6d4" : "#2C5F7C",
-        strokeOpacity: navActive ? 0.35 : 0.9,
-        strokeWeight: navActive ? 5 : 5,
+        strokeOpacity: navActive ? 0.28 : 0.9,
+        strokeWeight: navActive ? 6 : 5,
       });
       overlaysRef.current.push(poly);
 
@@ -380,13 +380,24 @@ export function MapCanvas() {
           ...selected.decodedPath.slice(from + 1),
         ];
         if (remaining.length >= 2) {
+          const off = navigation.status === "off_route";
+          // Dark underlay for contrast, then bright direction strip
+          const underlay = new window.google.maps.Polyline({
+            map,
+            path: remaining,
+            strokeColor: off ? "#7F1D1D" : "#064E3B",
+            strokeOpacity: 0.85,
+            strokeWeight: 16,
+            zIndex: 2,
+          });
+          overlaysRef.current.push(underlay);
           const remainPoly = new window.google.maps.Polyline({
             map,
             path: remaining,
-            strokeColor:
-              navigation.status === "off_route" ? "#F87171" : "#34D399",
-            strokeOpacity: 0.95,
-            strokeWeight: 7,
+            strokeColor: off ? "#F87171" : "#22C55E",
+            strokeOpacity: 1,
+            strokeWeight: 12,
+            zIndex: 3,
           });
           overlaysRef.current.push(remainPoly);
         }
@@ -616,10 +627,14 @@ export function MapCanvas() {
       // Higher alpha when moving fast so we don't lag behind GPS
       const alpha = speed > 12 ? 0.28 : speed > 4 ? 0.18 : 0.12;
       const nextPos = lerpLatLng(cur, target, alpha);
+      // Snap heading faster when on-route so the chevron doesn't stay skewed
+      const onRoute =
+        useTripStore.getState().navigation.progress &&
+        !useTripStore.getState().navigation.progress?.offRoute;
       const nextHeading = lerpHeading(
         displayHeadingRef.current,
         targetHeadingRef.current,
-        speed > 4 ? 0.22 : 0.14,
+        onRoute ? (speed > 4 ? 0.38 : 0.28) : speed > 4 ? 0.22 : 0.14,
       );
       displayPosRef.current = nextPos;
       displayHeadingRef.current = nextHeading;

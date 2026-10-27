@@ -6,6 +6,8 @@ import {
   Crosshair,
   Loader2,
   Map as MapIcon,
+  PanelLeft,
+  PanelRight,
   RefreshCw,
   Volume2,
   VolumeX,
@@ -73,6 +75,7 @@ export function DrivingHud() {
   const setNavigationVoice = useTripStore((s) => s.setNavigationVoice);
   const setNavigationNorthUp = useTripStore((s) => s.setNavigationNorthUp);
   const setNavigationOverview = useTripStore((s) => s.setNavigationOverview);
+  const setNavigationHudSide = useTripStore((s) => s.setNavigationHudSide);
   const recenterNavigation = useTripStore((s) => s.recenterNavigation);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
@@ -171,14 +174,21 @@ export function DrivingHud() {
       ? Math.max(0, Math.round(navigation.speedMps * 3.6))
       : null;
 
+  const hudLeft = landscape && navigation.hudSide === "left";
+
   return (
     <>
-      {/* Floating map controls (right) */}
+      {/* Floating map controls — opposite side of the HUD in landscape */}
       <div
         className={cn(
           "pointer-events-none absolute z-40 flex flex-col gap-2",
           landscape
-            ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[min(22rem,42vw)]"
+            ? cn(
+                "top-[max(0.5rem,env(safe-area-inset-top))]",
+                hudLeft
+                  ? "left-[min(22rem,42vw)]"
+                  : "right-[min(22rem,42vw)]",
+              )
             : "top-[max(4.5rem,env(safe-area-inset-top))] right-3",
         )}
       >
@@ -221,6 +231,25 @@ export function DrivingHud() {
         >
           <MapIcon className="h-5 w-5" />
         </button>
+        {landscape ? (
+          <button
+            type="button"
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--surface)]/95 text-[var(--ink)] shadow-lg backdrop-blur-md"
+            aria-label={
+              hudLeft ? "Sposta pannello a destra" : "Sposta pannello a sinistra"
+            }
+            title={hudLeft ? "Pannello a destra" : "Pannello a sinistra"}
+            onClick={() =>
+              setNavigationHudSide(hudLeft ? "right" : "left")
+            }
+          >
+            {hudLeft ? (
+              <PanelRight className="h-5 w-5" />
+            ) : (
+              <PanelLeft className="h-5 w-5" />
+            )}
+          </button>
+        ) : null}
         <button
           type="button"
           className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--surface)]/95 text-[var(--ink)] shadow-lg backdrop-blur-md disabled:opacity-50"
@@ -237,14 +266,17 @@ export function DrivingHud() {
         </button>
       </div>
 
-      {/* Speed badge */}
+      {/* Speed badge — away from the HUD dock */}
       {speedKmh != null ? (
         <div
           className={cn(
-            "pointer-events-none absolute z-40 left-3",
+            "pointer-events-none absolute z-40",
             landscape
-              ? "top-[max(0.5rem,env(safe-area-inset-top))]"
-              : "bottom-[max(14rem,env(safe-area-inset-bottom))]",
+              ? cn(
+                  "top-[max(0.5rem,env(safe-area-inset-top))]",
+                  hudLeft ? "right-3" : "left-3",
+                )
+              : "bottom-[max(14rem,env(safe-area-inset-bottom))] left-3",
           )}
         >
           <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)]/95 px-3 py-2 text-center shadow-lg backdrop-blur-md">
@@ -262,7 +294,12 @@ export function DrivingHud() {
         className={cn(
           "pointer-events-none absolute z-40 flex flex-col items-stretch gap-2 p-3",
           landscape
-            ? "top-0 right-0 bottom-0 w-[min(22rem,42vw)] justify-end pb-[max(0.5rem,env(safe-area-inset-bottom))] pr-[max(0.5rem,env(safe-area-inset-right))]"
+            ? cn(
+                "top-0 bottom-0 w-[min(22rem,42vw)] justify-end pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+                hudLeft
+                  ? "left-0 pl-[max(0.5rem,env(safe-area-inset-left))]"
+                  : "right-0 pr-[max(0.5rem,env(safe-area-inset-right))]",
+              )
             : "inset-x-0 bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
         )}
       >
@@ -472,6 +509,28 @@ export function DrivingHud() {
                 <X className="h-3.5 w-3.5" />
                 Esci
               </Button>
+              {landscape ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setNavigationHudSide(hudLeft ? "right" : "left")
+                  }
+                  aria-label={
+                    hudLeft
+                      ? "Sposta pannello a destra"
+                      : "Sposta pannello a sinistra"
+                  }
+                  title="Sposta pannello"
+                >
+                  {hudLeft ? (
+                    <PanelRight className="h-3.5 w-3.5" />
+                  ) : (
+                    <PanelLeft className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              ) : null}
               {!navigation.followMap ? (
                 <Button
                   type="button"
