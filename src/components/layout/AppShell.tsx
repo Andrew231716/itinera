@@ -31,7 +31,7 @@ import {
 } from "@/lib/utils/format";
 import { Button, cn } from "@/components/ui/primitives";
 import { TripForm } from "@/components/trip/TripForm";
-import { PreferencesPanel } from "@/components/trip/PreferencesPanel";
+import { TravelRulesPanel } from "@/components/trip/TravelRulesPanel";
 import { ExclusionsPanel } from "@/components/trip/ExclusionsPanel";
 import { RouteSummary } from "@/components/trip/RouteSummary";
 import { NaturalLanguageAssistant } from "@/components/trip/NaturalLanguageAssistant";
@@ -47,7 +47,7 @@ import { StatusBanner } from "@/components/status/StatusBanner";
 
 const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
   { id: "itinerary", label: "Itinerario", icon: MapIcon },
-  { id: "preferences", label: "Percorso", icon: SlidersHorizontal },
+  { id: "preferences", label: "Regole", icon: SlidersHorizontal },
   { id: "exclusions", label: "Esclusioni", icon: ShieldAlert },
   { id: "summary", label: "Riepilogo", icon: Layers3 },
   { id: "navigate", label: "Naviga", icon: Navigation },
@@ -285,7 +285,7 @@ export function AppShell() {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-5">
           {activePanel === "itinerary" ? <TripForm /> : null}
-          {activePanel === "preferences" ? <PreferencesPanel /> : null}
+          {activePanel === "preferences" ? <TravelRulesPanel /> : null}
           {activePanel === "exclusions" ? <ExclusionsPanel /> : null}
           {activePanel === "summary" ? <RouteSummary /> : null}
           {activePanel === "parking" ? <ParkingPanel /> : null}
