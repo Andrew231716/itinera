@@ -10,6 +10,7 @@ function nav(partial: Partial<NavigationRuntime>): NavigationRuntime {
     followMap: true,
     northUp: false,
     overview: false,
+    hudSide: "right",
     recalculating: false,
     nextWaypointIndex: 0,
     lastArrivedWaypointId: null,
@@ -28,19 +29,65 @@ function nav(partial: Partial<NavigationRuntime>): NavigationRuntime {
   };
 }
 
+function onRouteProgress(bearing: number, crossTrack = 2) {
+  return {
+    snapped: { lat: 45.36, lng: 9.32 },
+    segmentIndex: 0,
+    traveledMeters: 0,
+    remainingMeters: 1000,
+    remainingSeconds: 100,
+    crossTrackMeters: crossTrack,
+    routeBearingDeg: bearing,
+    currentManeuverIndex: 0,
+    nextManeuver: null,
+    metersToNextManeuver: 100,
+    offRoute: false,
+    arrived: false,
+    nextWaypointIndex: 0,
+    nextWaypointLabel: null,
+    nextWaypointKind: null as null,
+    metersToNextWaypoint: 0,
+    atIntermediateStop: false,
+    totalWaypoints: 0,
+  };
+}
+
 describe("effectiveNavHeading", () => {
-  it("prefers GPS course when moving", () => {
+  it("prefers GPS course when moving off-route", () => {
     expect(
       effectiveNavHeading(
-        nav({ headingDeg: 90, compassHeadingDeg: 10, speedMps: 12 }),
+        nav({
+          headingDeg: 90,
+          compassHeadingDeg: 10,
+          speedMps: 12,
+          progress: onRouteProgress(0, 80),
+        }),
       ),
     ).toBe(90);
   });
 
-  it("uses compass when slow", () => {
+  it("locks to route bearing when on-route even if GPS differs a lot", () => {
     expect(
       effectiveNavHeading(
-        nav({ headingDeg: 90, compassHeadingDeg: 45, speedMps: 0.2 }),
+        nav({
+          headingDeg: 90,
+          compassHeadingDeg: 10,
+          speedMps: 12,
+          progress: onRouteProgress(0, 5),
+        }),
+      ),
+    ).toBe(0);
+  });
+
+  it("uses compass when slow and off-route", () => {
+    expect(
+      effectiveNavHeading(
+        nav({
+          headingDeg: 90,
+          compassHeadingDeg: 45,
+          speedMps: 0.2,
+          progress: onRouteProgress(0, 80),
+        }),
       ),
     ).toBe(45);
   });
@@ -49,26 +96,7 @@ describe("effectiveNavHeading", () => {
     expect(
       effectiveNavHeading(
         nav({
-          progress: {
-            snapped: { lat: 45.36, lng: 9.32 },
-            segmentIndex: 0,
-            traveledMeters: 0,
-            remainingMeters: 1000,
-            remainingSeconds: 100,
-            crossTrackMeters: 0,
-            routeBearingDeg: 180,
-            currentManeuverIndex: 0,
-            nextManeuver: null,
-            metersToNextManeuver: 100,
-            offRoute: false,
-            arrived: false,
-            nextWaypointIndex: 0,
-            nextWaypointLabel: null,
-            nextWaypointKind: null,
-            metersToNextWaypoint: 0,
-            atIntermediateStop: false,
-            totalWaypoints: 0,
-          },
+          progress: onRouteProgress(180),
         }),
       ),
     ).toBe(180);

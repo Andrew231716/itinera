@@ -67,6 +67,8 @@ export interface NavigationRuntime {
   northUp: boolean;
   /** Brief pulse: fit remaining route in view */
   overview: boolean;
+  /** Landscape driving HUD dock side */
+  hudSide: "left" | "right";
   /** True while recalculating from current GPS */
   recalculating: boolean;
   /**
