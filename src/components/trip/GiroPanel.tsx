@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
   Clock3,
+  ExternalLink,
+  FileDown,
   FolderOpen,
   ListOrdered,
   MapPin,
   Save,
+  Share2,
   Trash2,
 } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -26,6 +29,13 @@ import {
   type GiroStop,
   type ScheduleStop,
 } from "@/lib/routing/travel-schedule";
+import {
+  buildGiroMapsLink,
+  exportGiroPdf,
+  openGiroInMaps,
+  shareGiroMapsLink,
+  type GiroExportDoc,
+} from "@/lib/giro/export-giro";
 import {
   listSavedGiri,
   removeSavedGiro,
@@ -70,6 +80,8 @@ export function GiroPanel() {
   const applyGiro = useTripStore((s) => s.applyGiro);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const tripOrigin = useTripStore((s) => s.trip.origin);
+  const travelMode = useTripStore((s) => s.trip.travelMode);
+  const preferences = useTripStore((s) => s.trip.preferences);
   const { computeRoute } = useRouteCompute();
 
   const [start, setStart] = useState<PlaceRef | null>(tripOrigin);
@@ -91,6 +103,8 @@ export function GiroPanel() {
   const [saveTitle, setSaveTitle] = useState("");
   const [savedList, setSavedList] = useState<SavedGiro[]>([]);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  /** Origin used for the last computed giro (for export). */
+  const [exportOrigin, setExportOrigin] = useState<PlaceRef | null>(null);
 
   const lineCount = useMemo(
     () => parseAddressLines(listText).length,
@@ -148,15 +162,97 @@ export function GiroPanel() {
     setLineErrors([]);
     setOrderWarnings([]);
     setSchedule(null);
+    setExportOrigin(null);
     setListText("");
     setSavedId(entry.id);
     setSaveTitle(entry.title);
     setStart(entry.origin);
+    setExportOrigin(entry.origin);
     setStops(structuredClone(entry.stops));
     if (entry.departureAt) {
       setDepartureLocal(formatDateTimeLocal(entry.departureAt));
     }
     setSaveMessage(`Caricato: ${entry.title}`);
+  }
+
+  function buildExportDoc(): GiroExportDoc | null {
+    const origin = exportOrigin ?? start;
+    if (!origin || stops.length < 1) return null;
+    return {
+      title:
+        saveTitle.trim() ||
+        suggestGiroTitle({ origin, stops }),
+      origin,
+      departureAt: localInputToIso(departureLocal),
+      stops,
+      schedule,
+    };
+  }
+
+  function handleExportPdf() {
+    const doc = buildExportDoc();
+    if (!doc) {
+      setError("Calcola o carica un giro prima di esportare il PDF.");
+      return;
+    }
+    const maps = buildGiroMapsLink({
+      origin: doc.origin,
+      stops: doc.stops.map((s) => s.place),
+      travelMode,
+      preferences,
+    });
+    const ok = exportGiroPdf(doc, maps?.url);
+    if (!ok) {
+      setError("Popup bloccato: consenti le finestre per esportare il PDF.");
+    }
+  }
+
+  function handleOpenMaps() {
+    const doc = buildExportDoc();
+    if (!doc) {
+      setError("Calcola o carica un giro prima di aprirlo su Maps.");
+      return;
+    }
+    const maps = buildGiroMapsLink({
+      origin: doc.origin,
+      stops: doc.stops.map((s) => s.place),
+      travelMode,
+      preferences,
+    });
+    if (!maps) {
+      setError("Serve almeno una tappa per Maps.");
+      return;
+    }
+    openGiroInMaps(maps);
+  }
+
+  async function handleShareMaps() {
+    const doc = buildExportDoc();
+    if (!doc) {
+      setError("Calcola o carica un giro prima di condividere.");
+      return;
+    }
+    const maps = buildGiroMapsLink({
+      origin: doc.origin,
+      stops: doc.stops.map((s) => s.place),
+      travelMode,
+      preferences,
+    });
+    if (!maps) {
+      setError("Serve almeno una tappa per Maps.");
+      return;
+    }
+    const result = await shareGiroMapsLink({ title: doc.title, link: maps });
+    if (result === "copied") {
+      setSaveMessage("Link Google Maps copiato.");
+    } else if (result === "unsupported") {
+      try {
+        await navigator.clipboard.writeText(maps.url);
+        setSaveMessage("Link Google Maps copiato.");
+      } catch {
+        openGiroInMaps(maps);
+      }
+    }
   }
 
   function handleDeleteSaved(id: string) {
@@ -170,6 +266,7 @@ export function GiroPanel() {
     setLineErrors([]);
     setOrderWarnings([]);
     setSchedule(null);
+    setExportOrigin(null);
     setBusy(true);
 
     try {
@@ -222,6 +319,8 @@ export function GiroPanel() {
       const { ordered, warnings } = orderGiroStops(origin, working);
       setOrderWarnings(warnings);
       setStops(ordered);
+      setExportOrigin(origin);
+      setStart(origin);
 
       const orderedPlaces = ordered.map((s) => s.place);
       applyGiro({
@@ -506,6 +605,28 @@ export function GiroPanel() {
               </li>
             ))}
           </ol>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExportPdf}
+            >
+              <FileDown className="h-4 w-4" />
+              PDF
+            </Button>
+            <Button type="button" variant="outline" onClick={handleOpenMaps}>
+              <ExternalLink className="h-4 w-4" />
+              Maps
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleShareMaps()}
+            >
+              <Share2 className="h-4 w-4" />
+              Condividi
+            </Button>
+          </div>
           <Button
             type="button"
             variant="secondary"
@@ -521,6 +642,27 @@ export function GiroPanel() {
           9ª…). Poi calcola il percorso.
         </EmptyHint>
       )}
+
+      {!schedule && (exportOrigin ?? start) && stops.length > 0 ? (
+        <div className="grid grid-cols-1 gap-2 border-t border-[var(--line)] pt-3 sm:grid-cols-3">
+          <Button type="button" variant="outline" onClick={handleExportPdf}>
+            <FileDown className="h-4 w-4" />
+            PDF
+          </Button>
+          <Button type="button" variant="outline" onClick={handleOpenMaps}>
+            <ExternalLink className="h-4 w-4" />
+            Maps
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleShareMaps()}
+          >
+            <Share2 className="h-4 w-4" />
+            Condividi
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
