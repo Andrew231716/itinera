@@ -32,6 +32,7 @@ import {
   SectionTitle,
 } from "@/components/ui/primitives";
 import { TrafficMonitorPanel } from "@/components/trip/TrafficMonitorPanel";
+import { TravelRulesChip } from "@/components/trip/TravelRulesChip";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 
 export function RouteSummary() {
@@ -77,6 +78,7 @@ export function RouteSummary() {
         title="Riepilogo percorso"
         subtitle="Dati provenienti solo dal motore di routing — mai inventati"
       />
+      <TravelRulesChip />
 
       {routeMode === "loading" ? (
         <EmptyHint>Calcolo del percorso in corso…</EmptyHint>

@@ -29,6 +29,8 @@ import {
   type TrafficLevel,
 } from "@/lib/routing/traffic-info";
 import { remainingStopPlaces } from "@/lib/navigation/waypoints";
+import { countActiveTravelRules } from "@/lib/routing/travel-rules";
+import { TravelRulesChip } from "@/components/trip/TravelRulesChip";
 import { Button, cn } from "@/components/ui/primitives";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
@@ -73,6 +75,8 @@ export function DrivingHud() {
   const navigation = useTripStore((s) => s.navigation);
   const routes = useTripStore((s) => s.routes);
   const selectedRouteId = useTripStore((s) => s.trip.selectedRouteId);
+  const preferences = useTripStore((s) => s.trip.preferences);
+  const exclusions = useTripStore((s) => s.trip.exclusions);
   const stopNavigation = useTripStore((s) => s.stopNavigation);
   const setNavigationVoice = useTripStore((s) => s.setNavigationVoice);
   const setNavigationNorthUp = useTripStore((s) => s.setNavigationNorthUp);
@@ -560,6 +564,12 @@ export function DrivingHud() {
                 In attesa posizione GPS…
               </div>
             )}
+
+            {countActiveTravelRules(preferences, exclusions) > 0 ? (
+              <div className="border-t border-[var(--line)] px-2 py-1.5">
+                <TravelRulesChip compact className="max-w-full" />
+              </div>
+            ) : null}
 
             <div className="flex items-center gap-2 border-t border-[var(--line)] px-2 py-2">
               <Button
