@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGiroMapsLink,
   buildGiroPdfHtml,
+  exportGiroPdf,
 } from "@/lib/giro/export-giro";
 import type { GiroStop, ScheduleStop } from "@/lib/routing/travel-schedule";
 import type { PlaceRef } from "@/lib/types/trip";
@@ -76,5 +77,17 @@ describe("buildGiroPdfHtml", () => {
     expect(html).toContain("Milano");
     expect(html).toContain("Roma");
     expect(html).toContain("google.com/maps/dir");
+  });
+
+  it("returns false from exportGiroPdf without a DOM", () => {
+    expect(
+      exportGiroPdf({
+        title: "x",
+        origin: place("o", "Milano"),
+        departureAt: null,
+        stops: [stop("d", "Roma")],
+        schedule: null,
+      }),
+    ).toEqual({ ok: false });
   });
 });
