@@ -8,6 +8,7 @@ import {
   FileDown,
   FileUp,
   FolderOpen,
+  History,
   ListOrdered,
   MapPin,
   Save,
@@ -89,6 +90,11 @@ export function GiroPanel() {
   const tripOrigin = useTripStore((s) => s.trip.origin);
   const travelMode = useTripStore((s) => s.trip.travelMode);
   const preferences = useTripStore((s) => s.trip.preferences);
+  const giroSeed = useTripStore((s) => s.giroSeed);
+  const consumeGiroSeed = useTripStore((s) => s.consumeGiroSeed);
+  const openTripInGiro = useTripStore((s) => s.openTripInGiro);
+  const tripHistory = useTripStore((s) => s.tripHistory);
+  const refreshTripHistory = useTripStore((s) => s.refreshTripHistory);
   const { computeRoute } = useRouteCompute();
 
   const [start, setStart] = useState<PlaceRef | null>(tripOrigin);
@@ -126,7 +132,28 @@ export function GiroPanel() {
 
   useEffect(() => {
     refreshSaved();
-  }, []);
+    refreshTripHistory();
+  }, [refreshTripHistory]);
+
+  useEffect(() => {
+    if (!giroSeed) return;
+    const seed = consumeGiroSeed();
+    if (!seed) return;
+    setError(null);
+    setLineErrors([]);
+    setOrderWarnings([]);
+    setSchedule(null);
+    setListText("");
+    setSavedId(null);
+    setSaveTitle(seed.title);
+    setStart(seed.origin);
+    setExportOrigin(seed.origin);
+    setStops(structuredClone(seed.stops));
+    if (seed.departureAt) {
+      setDepartureLocal(formatDateTimeLocal(seed.departureAt));
+    }
+    setSaveMessage(`Aperto da cronologia: ${seed.title}`);
+  }, [giroSeed, consumeGiroSeed]);
 
   async function geocodeImportedStops(
     draft: GiroStop[],
@@ -648,6 +675,46 @@ export function GiroPanel() {
         <ListOrdered className="h-4 w-4" />
         {busy ? "Creo il percorso…" : "Crea percorso ottimizzato"}
       </Button>
+
+      {tripHistory.length > 0 ? (
+        <div className="space-y-2 border-t border-[var(--line)] pt-4">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
+            <History className="h-3.5 w-3.5" />
+            Dalla cronologia
+          </p>
+          <ul className="space-y-1.5">
+            {tripHistory.slice(0, 8).map((entry) => (
+              <li
+                key={entry.id}
+                className="flex items-start gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                    {entry.trip.origin?.label ?? "?"} →{" "}
+                    {entry.trip.destination?.label ?? "?"}
+                  </p>
+                  <p className="text-[11px] text-[var(--ink-muted)]">
+                    {entry.trip.meta.title}
+                    {entry.trip.stops.length > 0
+                      ? ` · ${entry.trip.stops.length} tappe`
+                      : ""}
+                    {" · "}
+                    {formatRelativeIt(entry.computedAt)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openTripInGiro(entry.trip)}
+                >
+                  Apri
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {savedList.length > 0 ? (
         <div className="space-y-2 border-t border-[var(--line)] pt-4">

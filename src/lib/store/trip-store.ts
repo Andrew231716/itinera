@@ -34,6 +34,10 @@ import type {
 import { stopNavigationSpeech } from "@/lib/navigation/voice";
 import { detectNavPlatform } from "@/lib/navigation/platform";
 import { releaseWakeLock } from "@/lib/navigation/wake-lock";
+import {
+  tripDraftToGiroSeed,
+  type GiroSeed,
+} from "@/lib/giro/trip-to-giro";
 
 export type MapPickTarget =
   | "origin"
@@ -104,6 +108,8 @@ interface TripState {
   exclusionDraftPoints: { lat: number; lng: number }[];
   savedTrips: TripDraft[];
   tripHistory: TripHistoryEntry[];
+  /** One-shot seed for GiroPanel (from cronologia / viaggi salvati). */
+  giroSeed: GiroSeed | null;
 
   /** Nearby parking results for the active search center */
   parkingSpots: ParkingSpot[];
@@ -189,6 +195,9 @@ interface TripState {
   removeSavedTrip: (id: string) => Promise<void>;
   refreshTripHistory: () => void;
   loadHistoryEntry: (entry: TripHistoryEntry) => void;
+  /** Open a trip in the Giro editor (cronologia / salvati). */
+  openTripInGiro: (trip: TripDraft) => void;
+  consumeGiroSeed: () => GiroSeed | null;
   removeHistoryEntry: (id: string) => void;
   clearHistory: () => void;
 
@@ -275,6 +284,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   exclusionDraftPoints: [],
   savedTrips: [],
   tripHistory: [],
+  giroSeed: null,
   parkingSpots: [],
   selectedParkingId: null,
   parkingCenter: null,
@@ -776,7 +786,23 @@ export const useTripStore = create<TripState>((set, get) => ({
       routeMode: "idle",
       routeError: null,
       activePanel: "itinerary",
+      mobilePanelOpen: true,
     });
+  },
+
+  openTripInGiro: (trip) => {
+    const seed = tripDraftToGiroSeed(structuredClone(trip));
+    set({
+      giroSeed: seed,
+      activePanel: "giro",
+      mobilePanelOpen: true,
+    });
+  },
+
+  consumeGiroSeed: () => {
+    const seed = get().giroSeed;
+    if (seed) set({ giroSeed: null });
+    return seed;
   },
 
   removeHistoryEntry: (id) => {

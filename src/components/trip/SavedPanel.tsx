@@ -66,6 +66,7 @@ export function SavedPanel() {
   const refreshTripHistory = useTripStore((s) => s.refreshTripHistory);
   const removeSavedTrip = useTripStore((s) => s.removeSavedTrip);
   const loadHistoryEntry = useTripStore((s) => s.loadHistoryEntry);
+  const openTripInGiro = useTripStore((s) => s.openTripInGiro);
   const removeHistoryEntry = useTripStore((s) => s.removeHistoryEntry);
   const clearHistory = useTripStore((s) => s.clearHistory);
   const resetTrip = useTripStore((s) => s.resetTrip);
@@ -278,6 +279,14 @@ export function SavedPanel() {
                       type="button"
                       size="sm"
                       variant="ghost"
+                      onClick={() => openTripInGiro(entry.trip)}
+                    >
+                      Apri in Giro
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
                       onClick={() => {
                         loadHistoryEntry(entry);
                         void persistTrip().then(() => refreshSavedTrips());
@@ -354,6 +363,14 @@ export function SavedPanel() {
                     onClick={() => loadTrip(t)}
                   >
                     Apri
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => openTripInGiro(t)}
+                  >
+                    Apri in Giro
                   </Button>
                   <Button
                     type="button"
