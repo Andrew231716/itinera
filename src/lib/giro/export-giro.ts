@@ -72,7 +72,12 @@ function lockLabel(lock: GiroStop["positionLock"]): string {
 }
 
 /** Printable HTML for «Salva come PDF». */
-export function buildGiroPdfHtml(doc: GiroExportDoc, mapsUrl?: string): string {
+export function buildGiroPdfHtml(
+  doc: GiroExportDoc,
+  mapsUrl?: string,
+  options?: { autoPrint?: boolean },
+): string {
+  const autoPrint = options?.autoPrint !== false;
   const depart =
     doc.departureAt != null ? formatClockIt(doc.departureAt) : "—";
   const dateLabel = doc.departureAt
@@ -182,29 +187,112 @@ export function buildGiroPdfHtml(doc: GiroExportDoc, mapsUrl?: string): string {
       : ""
   }
   <div class="foot">Generato con Itinera · gli orari sono stime di percorso</div>
-  <script>
+  ${
+    autoPrint
+      ? `<script>
     window.onload = function () {
-      setTimeout(function () { window.print(); }, 250);
+      setTimeout(function () { window.focus(); window.print(); }, 200);
     };
-  </script>
+  </script>`
+      : ""
+  }
 </body>
 </html>`;
 }
 
+function safeFileName(title: string): string {
+  const base = title
+    .trim()
+    .replace(/[^\w\u00C0-\u024F\s-]+/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 60);
+  return base || "giro-itinera";
+}
+
 /**
- * Opens a print window so the user can save as PDF.
- * Returns false if the popup was blocked.
+ * Print via a hidden iframe (no popup — works on mobile browsers that block window.open).
+ * Falls back to downloading an HTML sheet the user can open and save as PDF.
  */
 export function exportGiroPdf(
   doc: GiroExportDoc,
   mapsUrl?: string,
-): boolean {
-  if (typeof window === "undefined") return false;
-  const html = buildGiroPdfHtml(doc, mapsUrl);
-  const w = window.open("", "_blank", "noopener,noreferrer,width=800,height=900");
-  if (!w) return false;
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  return true;
+): { ok: true; mode: "print" | "download" } | { ok: false } {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return { ok: false };
+  }
+
+  const html = buildGiroPdfHtml(doc, mapsUrl, { autoPrint: true });
+
+  try {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("title", "Esporta PDF giro");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.cssText =
+      "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;";
+    document.body.appendChild(iframe);
+
+    const frameDoc = iframe.contentDocument ?? iframe.contentWindow?.document;
+    const frameWin = iframe.contentWindow;
+    if (!frameDoc || !frameWin) {
+      iframe.remove();
+      downloadGiroHtmlSheet(doc, mapsUrl);
+      return { ok: true, mode: "download" };
+    }
+
+    frameDoc.open();
+    frameDoc.write(html);
+    frameDoc.close();
+
+    const cleanup = () => {
+      try {
+        iframe.remove();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const triggerPrint = () => {
+      try {
+        frameWin.focus();
+        frameWin.print();
+      } catch {
+        downloadGiroHtmlSheet(doc, mapsUrl);
+      } finally {
+        // Keep iframe briefly so the print dialog can read it, then remove.
+        window.setTimeout(cleanup, 60_000);
+      }
+    };
+
+    if (frameDoc.readyState === "complete") {
+      window.setTimeout(triggerPrint, 150);
+    } else {
+      iframe.addEventListener("load", () => window.setTimeout(triggerPrint, 150), {
+        once: true,
+      });
+    }
+
+    return { ok: true, mode: "print" };
+  } catch {
+    downloadGiroHtmlSheet(doc, mapsUrl);
+    return { ok: true, mode: "download" };
+  }
+}
+
+/** Download a printable HTML sheet (fallback when print/iframe is unavailable). */
+export function downloadGiroHtmlSheet(
+  doc: GiroExportDoc,
+  mapsUrl?: string,
+): void {
+  if (typeof document === "undefined") return;
+  const html = buildGiroPdfHtml(doc, mapsUrl, { autoPrint: false });
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${safeFileName(doc.title)}.html`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
 }

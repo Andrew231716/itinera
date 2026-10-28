@@ -195,15 +195,24 @@ export function GiroPanel() {
       setError("Calcola o carica un giro prima di esportare il PDF.");
       return;
     }
+    setError(null);
     const maps = buildGiroMapsLink({
       origin: doc.origin,
       stops: doc.stops.map((s) => s.place),
       travelMode,
       preferences,
     });
-    const ok = exportGiroPdf(doc, maps?.url);
-    if (!ok) {
-      setError("Popup bloccato: consenti le finestre per esportare il PDF.");
+    const result = exportGiroPdf(doc, maps?.url);
+    if (!result.ok) {
+      setError("Impossibile esportare il PDF su questo dispositivo.");
+      return;
+    }
+    if (result.mode === "print") {
+      setSaveMessage("Apri la stampa e scegli «Salva come PDF».");
+    } else {
+      setSaveMessage(
+        "Foglio scaricato (.html): aprilo e usa Stampa → Salva come PDF.",
+      );
     }
   }
 
