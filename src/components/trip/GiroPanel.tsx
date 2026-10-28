@@ -172,7 +172,12 @@ export function GiroPanel() {
         error?: string;
       };
       if (!res.ok || !data.parsed) {
-        setError(data.error ?? "Import PDF non riuscito.");
+        setError(
+          data.error ??
+            (res.status >= 500
+              ? "Servizio di import PDF non disponibile. Riprova tra poco."
+              : "Import PDF non riuscito."),
+        );
         return;
       }
       const parsed = data.parsed;
