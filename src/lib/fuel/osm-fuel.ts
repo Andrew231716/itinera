@@ -33,6 +33,7 @@ export async function searchOsmFuel(params: {
   center: LatLng;
   radiusMeters: number;
   preferAdBlue?: boolean;
+  preferLpg?: boolean;
   limit?: number;
 }): Promise<{ stations: FuelStation[]; error?: string }> {
   const { center, radiusMeters } = params;
@@ -42,12 +43,17 @@ export async function searchOsmFuel(params: {
     ? `node["amenity"="fuel"]["fuel:adblue"="yes"](around:${r},${center.lat},${center.lng});
   way["amenity"="fuel"]["fuel:adblue"="yes"](around:${r},${center.lat},${center.lng});`
     : "";
+  const lpgFilter = params.preferLpg
+    ? `node["amenity"="fuel"]["fuel:lpg"="yes"](around:${r},${center.lat},${center.lng});
+  way["amenity"="fuel"]["fuel:lpg"="yes"](around:${r},${center.lat},${center.lng});`
+    : "";
   const query = `
 [out:json][timeout:25];
 (
   node["amenity"="fuel"](around:${r},${center.lat},${center.lng});
   way["amenity"="fuel"](around:${r},${center.lat},${center.lng});
   ${adblueFilter}
+  ${lpgFilter}
 );
 out center tags ${limit};
 `.trim();

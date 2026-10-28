@@ -57,6 +57,7 @@ export function FuelPanel() {
   const requestFuelNear = useTripStore((s) => s.requestFuelNear);
 
   const [adblue, setAdblue] = useState(true);
+  const [lpg, setLpg] = useState(false);
   const [open24h, setOpen24h] = useState(false);
   const [truck, setTruck] = useState(false);
   const [brand, setBrand] = useState("");
@@ -143,6 +144,7 @@ export function FuelPanel() {
         });
         if (query.trim()) params.set("q", query.trim());
         if (adblue) params.set("adblue", "1");
+        if (lpg) params.set("lpg", "1");
         if (open24h) params.set("open24h", "1");
         if (truck) params.set("truck", "1");
         if (brand) params.set("brand", brand);
@@ -190,6 +192,7 @@ export function FuelPanel() {
       radius,
       query,
       adblue,
+      lpg,
       open24h,
       truck,
       brand,
@@ -244,6 +247,7 @@ export function FuelPanel() {
         petrol ? `Benzina ${petrol.price.toFixed(3)}€` : null,
         diesel ? `Gasolio ${diesel.price.toFixed(3)}€` : null,
         station.amenities.adblue === "yes" ? "AdBlue" : null,
+        station.amenities.lpg === "yes" ? "GPL" : null,
       ].filter(Boolean);
       saveSavedPlace({
         kind: "fuel",
@@ -290,7 +294,7 @@ export function FuelPanel() {
     <div className="space-y-4">
       <SectionTitle
         title="Benzinai"
-        subtitle="Prezzi MIMIT, AdBlue, telefono e indicazioni — OSM + Google + Osservaprezzi"
+        subtitle="Prezzi MIMIT, AdBlue, GPL, telefono e indicazioni — OSM + Google + Osservaprezzi"
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
@@ -298,8 +302,8 @@ export function FuelPanel() {
         <span className="font-medium text-[var(--ink)]">{center.label}</span>
         <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
         <p className="mt-1">
-          Prezzi ufficiali da Osservaprezzi Carburanti. Conferma sempre AdBlue e
-          disponibilità telefonando.
+          Prezzi ufficiali da Osservaprezzi Carburanti. Conferma sempre AdBlue,
+          GPL e disponibilità telefonando.
         </p>
       </div>
 
@@ -319,6 +323,11 @@ export function FuelPanel() {
           active={adblue}
           onClick={() => setAdblue((v) => !v)}
           label="AdBlue"
+        />
+        <FilterChip
+          active={lpg}
+          onClick={() => setLpg((v) => !v)}
+          label="GPL"
         />
         <FilterChip
           active={open24h}
@@ -377,7 +386,7 @@ export function FuelPanel() {
           <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-[var(--ink-faint)]" />
           <Input
             className="pl-9"
-            placeholder="Es. Q8, Eni, AdBlue…"
+            placeholder="Es. Q8, Eni, AdBlue, GPL…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -499,7 +508,7 @@ export function FuelPanel() {
       {!loading && fuelStations.length === 0 ? (
         <EmptyHint>
           Nessun risultato con questi filtri. Prova ad allargare il raggio o
-          togliere AdBlue / brand.
+          togliere AdBlue / GPL / brand.
         </EmptyHint>
       ) : null}
 

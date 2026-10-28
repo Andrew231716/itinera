@@ -60,6 +60,7 @@ export interface FuelSearchResult {
   query?: string;
   filters: {
     adblue?: boolean;
+    lpg?: boolean;
     open24h?: boolean;
     truck?: boolean;
     brand?: string;

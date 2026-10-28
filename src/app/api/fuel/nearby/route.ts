@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     const alongLat = searchParams.get("alongLat");
     const alongLng = searchParams.get("alongLng");
     const adblue = searchParams.get("adblue") === "1";
+    const lpg = searchParams.get("lpg") === "1";
     const open24h = searchParams.get("open24h") === "1";
     const truck = searchParams.get("truck") === "1";
     const brand = searchParams.get("brand")?.trim() || undefined;
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
       label,
       alongTo,
       adblue,
+      lpg,
       open24h,
       truck,
       brand,

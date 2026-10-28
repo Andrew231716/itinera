@@ -8,6 +8,7 @@ import {
   mergeStations,
   midpoint,
   rankStations,
+  stationHasLpg,
 } from "@/lib/fuel/helpers";
 import type { FuelSearchResult, FuelSource, FuelStation } from "@/lib/fuel/types";
 import type { LatLng } from "@/lib/types/trip";
@@ -20,6 +21,7 @@ export async function searchNearbyFuel(params: {
   /** Optional second point: search also along the corridor (origin→destination). */
   alongTo?: LatLng;
   adblue?: boolean;
+  lpg?: boolean;
   open24h?: boolean;
   truck?: boolean;
   brand?: string;
@@ -32,6 +34,7 @@ export async function searchNearbyFuel(params: {
   );
   const filters = {
     adblue: Boolean(params.adblue),
+    lpg: Boolean(params.lpg),
     open24h: Boolean(params.open24h),
     truck: Boolean(params.truck),
     brand: params.brand?.trim().toLowerCase() || undefined,
@@ -55,6 +58,7 @@ export async function searchNearbyFuel(params: {
           center: c,
           radiusMeters: searchRadius,
           preferAdBlue: filters.adblue,
+          preferLpg: filters.lpg,
         }),
       ),
     ),
@@ -79,6 +83,7 @@ export async function searchNearbyFuel(params: {
             apiKey,
             query: params.query,
             preferAdBlue: filters.adblue,
+            preferLpg: filters.lpg,
           }),
         ),
       );
@@ -171,6 +176,18 @@ export async function searchNearbyFuel(params: {
       );
     }
   }
+  let relaxedLpg = false;
+  if (filters.lpg) {
+    const withLpg = stations.filter((s) => stationHasLpg(s));
+    if (withLpg.length > 0) {
+      stations = withLpg;
+    } else if (stations.length > 0) {
+      relaxedLpg = true;
+      limitations.push(
+        "Nessun GPL esplicitamente segnalato in zona: mostro i distributori più vicini da verificare.",
+      );
+    }
+  }
   if (filters.open24h) {
     stations = stations.filter((s) => s.amenities.open24h === "yes");
   }
@@ -181,30 +198,40 @@ export async function searchNearbyFuel(params: {
   stations = rankStations(stations).slice(0, 40);
 
   limitations.push(
-    "Prezzi da Osservaprezzi Carburanti (MIMIT); AdBlue da OSM/schede pubbliche. Conferma sempre in loco o telefonando.",
+    "Prezzi da Osservaprezzi Carburanti (MIMIT); AdBlue/GPL da OSM/schede pubbliche. Conferma sempre in loco o telefonando.",
   );
 
   const adblueCount = stations.filter(
     (s) => s.amenities.adblue === "yes",
   ).length;
+  const lpgCount = stations.filter((s) => stationHasLpg(s)).length;
   const withPrices = stations.filter((s) => (s.prices?.length ?? 0) > 0).length;
   const where = params.label?.trim()
     ? ` tra/vicino a ${params.label.trim()}`
     : "";
   const advice =
     stations.length === 0
-      ? filters.adblue
-        ? `Nessun distributore con AdBlue segnalato${where}. Prova ad allargare il raggio o togliere il filtro.`
-        : `Nessun distributore trovato${where || " in questo raggio"}.`
-      : relaxedAdBlue
-        ? `Ho trovato ${stations.length} distributori${where}, ma nessuno con AdBlue confermato online. Ti consiglio di telefonare prima di fare rifornimento.`
-        : filters.adblue || adblueCount > 0
+      ? filters.lpg
+        ? `Nessun distributore con GPL segnalato${where}. Prova ad allargare il raggio o togliere il filtro.`
+        : filters.adblue
+          ? `Nessun distributore con AdBlue segnalato${where}. Prova ad allargare il raggio o togliere il filtro.`
+          : `Nessun distributore trovato${where || " in questo raggio"}.`
+      : relaxedAdBlue || relaxedLpg
+        ? `Ho trovato ${stations.length} distributori${where}${
+            relaxedAdBlue ? ", ma nessuno con AdBlue confermato online" : ""
+          }${relaxedLpg ? ", ma nessuno con GPL confermato online" : ""}. Ti consiglio di verificare prima di fare rifornimento.`
+        : filters.adblue ||
+            filters.lpg ||
+            adblueCount > 0 ||
+            lpgCount > 0
           ? `Ho trovato ${stations.length} opzioni interessanti${where}${
-              adblueCount ? ` (${adblueCount} con AdBlue segnalato)` : ""
-            }${withPrices ? `, ${withPrices} con prezzi MIMIT` : ""}. Ti consiglio di telefonare prima: online risulta disponibile, ma non posso verificare che l’erogatore funzioni in questo momento.`
+              adblueCount ? ` (${adblueCount} con AdBlue)` : ""
+            }${lpgCount ? ` (${lpgCount} con GPL)` : ""}${
+              withPrices ? `, ${withPrices} con prezzi MIMIT` : ""
+            }. Ti consiglio di telefonare prima: online risulta disponibile, ma non posso verificare che l’erogatore funzioni in questo momento.`
           : `Ho trovato ${stations.length} distributori${where}${
               withPrices ? ` (${withPrices} con prezzi MIMIT)` : ""
-            }. Usa i filtri (AdBlue, brand, H24) per restringere.`;
+            }. Usa i filtri (AdBlue, GPL, brand, H24) per restringere.`;
 
   return {
     center,
