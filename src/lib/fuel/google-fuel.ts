@@ -5,12 +5,13 @@ import {
   mapsSearchUrl,
   textMentions24h,
   textMentionsAdBlue,
+  textMentionsLpg,
   withDistance,
 } from "@/lib/fuel/helpers";
 
 /**
  * Google Places (New) nearby + text search for gas stations.
- * AdBlue is inferred from name/text queries — always verify by phone.
+ * AdBlue / GPL are inferred from name/text queries — always verify by phone.
  */
 export async function searchGoogleFuel(params: {
   center: LatLng;
@@ -18,6 +19,7 @@ export async function searchGoogleFuel(params: {
   apiKey: string;
   query?: string;
   preferAdBlue?: boolean;
+  preferLpg?: boolean;
   limit?: number;
 }): Promise<{ stations: FuelStation[]; error?: string }> {
   const { center, apiKey } = params;
@@ -31,6 +33,9 @@ export async function searchGoogleFuel(params: {
         : "distributore di benzina",
       ...(params.preferAdBlue || !params.query
         ? ["AdBlue", "distributore AdBlue", "Q8 AdBlue", "Eni AdBlue"]
+        : []),
+      ...(params.preferLpg
+        ? ["distributore GPL", "GPL", "Q8 GPL", "Eni GPL"]
         : []),
     ];
 
@@ -128,7 +133,7 @@ async function placesTextSearch(
       const name = p.displayName?.text ?? "";
       return (
         types.includes("gas_station") ||
-        /q8|eni|ip|esso|shell|tamoil|distributore|benzina|adblue|gasolio/i.test(
+        /q8|eni|ip|esso|shell|tamoil|distributore|benzina|adblue|gasolio|\bgpl\b|\blpg\b/i.test(
           name,
         )
       );
@@ -177,6 +182,11 @@ function googlePlaceToStation(
     place.formattedAddress,
     place.websiteUri,
   );
+  const lpgMention = textMentionsLpg(
+    name,
+    place.formattedAddress,
+    place.websiteUri,
+  );
   const open24h = textMentions24h(hoursText, name);
 
   const notes: string[] = [];
@@ -186,6 +196,7 @@ function googlePlaceToStation(
       "Trovato in ricerca AdBlue — conferma telefonando (non indicato nel nome)",
     );
   }
+  if (lpgMention) notes.push("GPL segnalato");
   if (open24h) {
     notes.push(
       "Aperto 24 ore su 24 secondo la scheda del distributore",
@@ -208,6 +219,7 @@ function googlePlaceToStation(
     sources: ["google_maps"],
     amenities: {
       adblue: adblueMention ? "yes" : "unknown",
+      lpg: lpgMention ? "yes" : "unknown",
       open24h: open24h ? "yes" : "unknown",
     },
     notes,

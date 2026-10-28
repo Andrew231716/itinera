@@ -12,8 +12,10 @@ import {
   midpoint,
   pickHighlightPrices,
   rankStations,
+  stationHasLpg,
   textMentions24h,
   textMentionsAdBlue,
+  textMentionsLpg,
 } from "@/lib/fuel/helpers";
 import { fuelStationToPlaceRef } from "@/lib/fuel/place-ref";
 import type { FuelStation } from "@/lib/fuel/types";
@@ -38,6 +40,32 @@ describe("fuel helpers", () => {
     expect(textMentionsAdBlue("Q8 AdBlue pompa")).toBe(true);
     expect(textMentionsAdBlue("urea disponibili")).toBe(true);
     expect(textMentionsAdBlue("solo benzina")).toBe(false);
+  });
+
+  it("detects GPL / LPG mentions and station signal", () => {
+    expect(textMentionsLpg("Distributore GPL Eni")).toBe(true);
+    expect(textMentionsLpg("LPG available")).toBe(true);
+    expect(textMentionsLpg("solo gasolio")).toBe(false);
+    expect(
+      stationHasLpg(
+        station({
+          id: "lpg1",
+          name: "Eni",
+          amenities: { lpg: "yes" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      stationHasLpg(
+        station({
+          id: "lpg2",
+          name: "IP",
+          prices: [
+            { fuel: "GPL", price: 0.7, isSelf: true },
+          ],
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("detects H24 mentions", () => {

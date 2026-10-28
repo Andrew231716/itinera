@@ -75,6 +75,18 @@ export function textMentionsAdBlue(
   return parts.some((p) => /ad\s*blue|adblue|urea/i.test(p ?? ""));
 }
 
+export function textMentionsLpg(
+  ...parts: Array<string | undefined | null>
+): boolean {
+  return parts.some((p) => /\bgpl\b|\blpg\b|gas\s*liquido/i.test(p ?? ""));
+}
+
+/** True when OSM/Google mark LPG or Osservaprezzi lists a GPL price. */
+export function stationHasLpg(station: FuelStation): boolean {
+  if (station.amenities.lpg === "yes") return true;
+  return (station.prices ?? []).some((p) => /gpl|\blpg\b/i.test(p.fuel));
+}
+
 export function textMentions24h(
   ...parts: Array<string | undefined | null>
 ): boolean {
