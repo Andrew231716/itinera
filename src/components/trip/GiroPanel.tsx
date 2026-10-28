@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
   Clock3,
   ExternalLink,
   FileDown,
+  FileUp,
   FolderOpen,
   ListOrdered,
   MapPin,
@@ -36,6 +37,10 @@ import {
   shareGiroMapsLink,
   type GiroExportDoc,
 } from "@/lib/giro/export-giro";
+import {
+  pianoFermateToGiroStops,
+  type ParsedPianoFermate,
+} from "@/lib/giro/parse-piano-fermate";
 import {
   listSavedGiri,
   removeSavedGiro,
@@ -105,6 +110,8 @@ export function GiroPanel() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   /** Origin used for the last computed giro (for export). */
   const [exportOrigin, setExportOrigin] = useState<PlaceRef | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lineCount = useMemo(
     () => parseAddressLines(listText).length,
@@ -118,6 +125,85 @@ export function GiroPanel() {
   useEffect(() => {
     refreshSaved();
   }, []);
+
+  async function geocodeImportedStops(
+    draft: GiroStop[],
+  ): Promise<{ stops: GiroStop[]; errors: string[] }> {
+    const errors: string[] = [];
+    const next: GiroStop[] = [];
+    for (const s of draft) {
+      const query =
+        s.place.address?.trim() ||
+        `${s.place.label}, Milano`;
+      const { place, error: resolveError } = await resolvePlaceQuery(query);
+      if (place) {
+        next.push({
+          ...s,
+          place: {
+            ...place,
+            label: s.place.label || place.label,
+            address: s.place.address ?? place.address,
+          },
+        });
+      } else {
+        errors.push(resolveError ?? `Non trovato: ${s.place.label}`);
+        next.push(s);
+      }
+    }
+    return { stops: next, errors };
+  }
+
+  async function handleImportPdf(file: File) {
+    setError(null);
+    setLineErrors([]);
+    setOrderWarnings([]);
+    setSchedule(null);
+    setImporting(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/giro/import-pdf", {
+        method: "POST",
+        body,
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        parsed?: ParsedPianoFermate;
+        error?: string;
+      };
+      if (!res.ok || !data.parsed) {
+        setError(data.error ?? "Import PDF non riuscito.");
+        return;
+      }
+      const parsed = data.parsed;
+      const draft = pianoFermateToGiroStops(parsed, () => nanoid());
+      const { stops: geocoded, errors } = await geocodeImportedStops(draft);
+      setStops(geocoded);
+      setLineErrors(errors);
+      setSaveTitle(parsed.title);
+      setSavedId(null);
+      setListText("");
+      if (parsed.departureAt) {
+        setDepartureLocal(formatDateTimeLocal(parsed.departureAt));
+      }
+      const entry = saveGiro({
+        title: parsed.title,
+        origin: start,
+        departureAt: parsed.departureAt,
+        stops: geocoded,
+      });
+      setSavedId(entry.id);
+      refreshSaved();
+      setSaveMessage(
+        `Importato e salvato: ${parsed.stops.length} fermate · ${parsed.dateLabel}. Puoi modificare orari e posizioni, poi calcolare.`,
+      );
+    } catch {
+      setError("Errore durante l’import del PDF.");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   function updateStop(id: string, patch: Partial<GiroStop>) {
     setStops((prev) =>
@@ -387,8 +473,39 @@ export function GiroPanel() {
     <div className="space-y-4">
       <SectionTitle
         title="Giro tappe"
-        subtitle="Lista indirizzi, orari sulle tappe e posizioni bloccate (ultima, 9ª…)"
+        subtitle="Importa un piano fermate PDF, oppure crea un giro e modificalo"
       />
+
+      <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
+          <FileUp className="h-3.5 w-3.5" />
+          Importa piano fermate (PDF)
+        </p>
+        <p className="text-[11px] text-[var(--ink-muted)]">
+          Riconosco i PDF «Piano fermate driver» (LogiTrack) con data, orari e
+          fermate. Li carico come giro modificabile e li salvo.
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void handleImportPdf(f);
+          }}
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          disabled={importing || busy}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <FileUp className="h-4 w-4" />
+          {importing ? "Importo PDF…" : "Scegli PDF fermate"}
+        </Button>
+      </div>
 
       <PlaceSearch
         label="Partenza"

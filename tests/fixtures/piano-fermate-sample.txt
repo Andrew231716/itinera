@@ -1,0 +1,59 @@
+
+
+Piano fermate driver
+Data: 29/10/2026
+Giri: AA Milano Centro Est (Jolly 2)
+Totale elementi: 12
+Scarico parziale / finaleStaffetta
+#OraFermata / destinazioneTipoGiroDettagli
+110:30Cerba Milano Viale MonzaFermataAA Milano Centro Est
+(Jolly 2)
+
+210:55Cerba Milano BrocchiFermataAA Milano Centro Est
+(Jolly 2)
+
+311:10Trust Medical via BazziniFermataAA Milano Centro Est
+(Jolly 2)
+
+411:15Istituto Clinico Città StudiFermataAA Milano Centro Est
+(Jolly 2)
+
+511:40IMBIO GallinaFermataAA Milano Centro Est
+(Jolly 2)
+
+611:45Centro Medico Milano Tree
+Of Life Srl
+FermataAA Milano Centro Est
+(Jolly 2)
+
+711:45CM Milano Tree Of Life Srl
+IMBIO
+FermataAA Milano Centro Est
+(Jolly 2)
+
+812:00Cerba Milano Bianca MariaFermataAA Milano Centro Est
+(Jolly 2)
+
+912:15Istituto Stomatologico
+Italiano
+FermataAA Milano Centro Est
+(Jolly 2)
+
+1012:30Cerba Milano Monte
+Palombino
+FermataAA Milano Centro Est
+(Jolly 2)
+
+1112:30Imbio LabFermataAA Milano Centro Est
+(Jolly 2)
+
+1213:00Cerbahealthcare Lombardia
+Srl
+Scarico
+finale
+AA Milano Centro Est
+(Jolly 2)
+Cerbahealthcare Lombardia Srl · Via
+Bernardo Quaranta, 57, 20137 Milano MI
+, Milano
+Documento generato da LogiTrack Pro
