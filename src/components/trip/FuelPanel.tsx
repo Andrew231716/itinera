@@ -318,27 +318,32 @@ export function FuelPanel() {
         </label>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        <FilterChip
-          active={adblue}
-          onClick={() => setAdblue((v) => !v)}
-          label="AdBlue"
-        />
-        <FilterChip
-          active={lpg}
-          onClick={() => setLpg((v) => !v)}
-          label="GPL"
-        />
-        <FilterChip
-          active={open24h}
-          onClick={() => setOpen24h((v) => !v)}
-          label="H24"
-        />
-        <FilterChip
-          active={truck}
-          onClick={() => setTruck((v) => !v)}
-          label="Camion"
-        />
+      <div className="space-y-1.5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+          Filtri
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <FilterChip
+            active={adblue}
+            onClick={() => setAdblue((v) => !v)}
+            label="AdBlue"
+          />
+          <FilterChip
+            active={lpg}
+            onClick={() => setLpg((v) => !v)}
+            label="GPL"
+          />
+          <FilterChip
+            active={open24h}
+            onClick={() => setOpen24h((v) => !v)}
+            label="H24"
+          />
+          <FilterChip
+            active={truck}
+            onClick={() => setTruck((v) => !v)}
+            label="Camion"
+          />
+        </div>
       </div>
 
       {brandChips.length > 0 ? (
