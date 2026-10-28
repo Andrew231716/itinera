@@ -37,7 +37,9 @@ import {
   shareGiroMapsLink,
   type GiroExportDoc,
 } from "@/lib/giro/export-giro";
+import { extractPdfText } from "@/lib/giro/extract-pdf-text";
 import {
+  parsePianoFermateText,
   pianoFermateToGiroStops,
   type ParsedPianoFermate,
 } from "@/lib/giro/parse-piano-fermate";
@@ -153,6 +155,30 @@ export function GiroPanel() {
     return { stops: next, errors };
   }
 
+  async function importParsedPiano(parsed: ParsedPianoFermate) {
+    const draft = pianoFermateToGiroStops(parsed, () => nanoid());
+    const { stops: geocoded, errors } = await geocodeImportedStops(draft);
+    setStops(geocoded);
+    setLineErrors(errors);
+    setSaveTitle(parsed.title);
+    setSavedId(null);
+    setListText("");
+    if (parsed.departureAt) {
+      setDepartureLocal(formatDateTimeLocal(parsed.departureAt));
+    }
+    const entry = saveGiro({
+      title: parsed.title,
+      origin: start,
+      departureAt: parsed.departureAt,
+      stops: geocoded,
+    });
+    setSavedId(entry.id);
+    refreshSaved();
+    setSaveMessage(
+      `Importato e salvato: ${parsed.stops.length} fermate · ${parsed.dateLabel}. Puoi modificare orari e posizioni, poi calcolare.`,
+    );
+  }
+
   async function handleImportPdf(file: File) {
     setError(null);
     setLineErrors([]);
@@ -160,6 +186,20 @@ export function GiroPanel() {
     setSchedule(null);
     setImporting(true);
     try {
+      // 1) Prefer client-side extract (works offline / no Vercel PDF crash)
+      try {
+        const buf = await file.arrayBuffer();
+        const { text } = await extractPdfText(buf);
+        const parsed = parsePianoFermateText(text);
+        if (parsed) {
+          await importParsedPiano(parsed);
+          return;
+        }
+      } catch (clientErr) {
+        console.warn("[giro] client PDF extract failed, trying API", clientErr);
+      }
+
+      // 2) Server fallback
       const body = new FormData();
       body.append("file", file);
       const res = await fetch("/api/giro/import-pdf", {
@@ -180,30 +220,11 @@ export function GiroPanel() {
         );
         return;
       }
-      const parsed = data.parsed;
-      const draft = pianoFermateToGiroStops(parsed, () => nanoid());
-      const { stops: geocoded, errors } = await geocodeImportedStops(draft);
-      setStops(geocoded);
-      setLineErrors(errors);
-      setSaveTitle(parsed.title);
-      setSavedId(null);
-      setListText("");
-      if (parsed.departureAt) {
-        setDepartureLocal(formatDateTimeLocal(parsed.departureAt));
-      }
-      const entry = saveGiro({
-        title: parsed.title,
-        origin: start,
-        departureAt: parsed.departureAt,
-        stops: geocoded,
-      });
-      setSavedId(entry.id);
-      refreshSaved();
-      setSaveMessage(
-        `Importato e salvato: ${parsed.stops.length} fermate · ${parsed.dateLabel}. Puoi modificare orari e posizioni, poi calcolare.`,
-      );
+      await importParsedPiano(data.parsed);
     } catch {
-      setError("Errore durante l’import del PDF.");
+      setError(
+        "Errore durante l’import del PDF. Usa un «Piano fermate driver» LogiTrack.",
+      );
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";

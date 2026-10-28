@@ -73,3 +73,16 @@ Totale elementi: 2
     );
   });
 });
+
+describe("parsePianoFermateText (unpdf spaced extract)", () => {
+  it("parses unpdf fixture with 12 stops", () => {
+    const text = readFileSync(
+      "tests/fixtures/piano-fermate-unpdf.txt",
+      "utf8",
+    );
+    const parsed = parsePianoFermateText(text);
+    expect(parsed?.stops).toHaveLength(12);
+    expect(parsed?.stops[0].name).toContain("Cerba Milano Viale Monza");
+    expect(parsed?.stops[11].tipo).toBe("Scarico finale");
+  });
+});
