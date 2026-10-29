@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { nanoid } from "nanoid";
 import {
   createEmptyTrip,
+  DEFAULT_ROAD_PREFERENCES,
   type CustomExclusion,
   type GeoZoneExclusion,
   type PlaceRef,
@@ -144,6 +145,10 @@ interface TripState {
   updateStop: (id: string, place: PlaceRef) => void;
   removeStop: (id: string) => void;
   clearStops: () => void;
+  clearExclusions: () => void;
+  resetPreferences: () => void;
+  clearParkingResults: () => void;
+  clearFuelResults: () => void;
   reorderStops: (fromIndex: number, toIndex: number) => void;
   /**
    * Replace OD + stops from an ordered visit list (last = destination).
@@ -404,6 +409,35 @@ export const useTripStore = create<TripState>((set, get) => ({
       routes: [],
       routeMode: "idle",
     })),
+
+  clearExclusions: () =>
+    set((s) => ({
+      trip: touch({ ...s.trip, exclusions: [] }),
+      exclusionDraftPoints: [],
+      mapPickTarget: null,
+    })),
+
+  resetPreferences: () =>
+    set((s) => ({
+      trip: touch({
+        ...s.trip,
+        preferences: { ...DEFAULT_ROAD_PREFERENCES },
+      }),
+    })),
+
+  clearParkingResults: () =>
+    set({
+      parkingSpots: [],
+      selectedParkingId: null,
+      parkingCenter: null,
+    }),
+
+  clearFuelResults: () =>
+    set({
+      fuelStations: [],
+      selectedFuelId: null,
+      fuelCenter: null,
+    }),
 
   applyGiro: ({ origin, orderedVisits, departureAt }) => {
     if (orderedVisits.length === 0) return;
@@ -731,7 +765,8 @@ export const useTripStore = create<TripState>((set, get) => ({
       mobilePanelOpen: true,
     }),
 
-  resetTrip: () =>
+  resetTrip: () => {
+    stopNavigationSpeech();
     set({
       trip: createEmptyTrip("Il mio itinerario"),
       routes: [],
@@ -740,7 +775,16 @@ export const useTripStore = create<TripState>((set, get) => ({
       routeError: null,
       exclusionDraftPoints: [],
       mapPickTarget: null,
-    }),
+      parkingSpots: [],
+      selectedParkingId: null,
+      parkingCenter: null,
+      fuelStations: [],
+      selectedFuelId: null,
+      fuelCenter: null,
+      navigation: { ...IDLE_NAVIGATION },
+      giroSeed: null,
+    });
+  },
 
   persistTrip: async () => {
     const repo = getTripRepository();

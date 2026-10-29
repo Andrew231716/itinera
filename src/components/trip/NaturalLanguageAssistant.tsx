@@ -10,6 +10,7 @@ import {
   SectionTitle,
   TextArea,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import type { AssistantParseResult } from "@/lib/ai/assistant";
 import { useTripStore } from "@/lib/store/trip-store";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
@@ -174,11 +175,27 @@ export function NaturalLanguageAssistant() {
     await computeRoute();
   }
 
+  function handleReset() {
+    setUtterance("");
+    setResult(null);
+    setPending(null);
+  }
+
   return (
     <div className="space-y-4">
       <SectionTitle
         title="Assistente"
         subtitle="Testo o microfono flottante: «Portami in Via…» usa GPS e calcola i percorsi"
+        action={
+          <PanelResetButton
+            disabled={
+              loading ||
+              (!utterance.trim() && !result && !pending)
+            }
+            onClick={handleReset}
+            label="Reset"
+          />
+        }
       />
 
       <SiriGuide />

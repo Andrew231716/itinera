@@ -19,6 +19,7 @@ import {
   EmptyHint,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 import { SiriGuide } from "@/components/trip/SiriGuide";
 
@@ -49,6 +50,13 @@ export function NavigatorPanel() {
       <SectionTitle
         title="Navigazione"
         subtitle="Guidato Itinera: segue il percorso calcolato (esclusioni incluse)"
+        action={
+          <PanelResetButton
+            disabled={!active}
+            onClick={stopNavigation}
+            label="Reset"
+          />
+        }
       />
 
       {!selected ? (

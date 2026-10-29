@@ -13,6 +13,7 @@ import {
   Label,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { PlaceSearch, MapPickHint } from "@/components/trip/PlaceSearch";
 import { createExclusionFromLabel, createPointExclusion } from "@/lib/routing/exclusion-helpers";
 
@@ -36,6 +37,7 @@ export function ExclusionsPanel() {
   const addExclusion = useTripStore((s) => s.addExclusion);
   const updateExclusion = useTripStore((s) => s.updateExclusion);
   const removeExclusion = useTripStore((s) => s.removeExclusion);
+  const clearExclusions = useTripStore((s) => s.clearExclusions);
   const mapPickTarget = useTripStore((s) => s.mapPickTarget);
   const setMapPickTarget = useTripStore((s) => s.setMapPickTarget);
   const exclusionDraftPoints = useTripStore((s) => s.exclusionDraftPoints);
@@ -45,11 +47,26 @@ export function ExclusionsPanel() {
   const [kind, setKind] = useState<"city" | "address" | "road">("city");
   const [zoneLabel, setZoneLabel] = useState("Zona da evitare");
 
+  function handleReset() {
+    clearExclusions();
+    setKind("city");
+    setZoneLabel("Zona da evitare");
+  }
+
   return (
     <div className="space-y-4">
       <SectionTitle
         title="Strade e zone da evitare"
         subtitle="Vincoli obbligatori (hard) separati dalle semplici preferenze"
+        action={
+          <PanelResetButton
+            disabled={
+              exclusions.length === 0 && exclusionDraftPoints.length === 0
+            }
+            onClick={handleReset}
+            label="Reset"
+          />
+        }
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3 space-y-3">

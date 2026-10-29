@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, ShieldAlert } from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
 import { useRouteCompute } from "@/hooks/useRouteCompute";
 import { summarizeTravelRules } from "@/lib/routing/travel-rules";
+import { DEFAULT_ROAD_PREFERENCES } from "@/lib/types/trip";
 import {
   Button,
   Input,
@@ -13,6 +14,7 @@ import {
   ToggleRow,
   cn,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 /**
  * Simple trip rules: a few clear switches. Advanced prefs stay collapsed.
@@ -25,6 +27,7 @@ export function TravelRulesPanel() {
   const routes = useTripStore((s) => s.routes);
   const routeMode = useTripStore((s) => s.routeMode);
   const setPreferences = useTripStore((s) => s.setPreferences);
+  const resetPreferences = useTripStore((s) => s.resetPreferences);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const { computeRoute } = useRouteCompute();
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -33,6 +36,10 @@ export function TravelRulesPanel() {
   const summary = summarizeTravelRules(preferences, exclusions);
   const canCompute = Boolean(origin && destination);
   const needsRefresh = canCompute && routes.length === 0;
+  const prefsDirty = Object.entries(DEFAULT_ROAD_PREFERENCES).some(
+    ([key, value]) =>
+      preferences[key as keyof typeof preferences] !== value,
+  );
 
   async function refreshRoute() {
     if (!canCompute || computing) return;
@@ -49,6 +56,13 @@ export function TravelRulesPanel() {
       <SectionTitle
         title="Regole del viaggio"
         subtitle="Cosa deve restare vero fino a destinazione"
+        action={
+          <PanelResetButton
+            disabled={!prefsDirty}
+            onClick={resetPreferences}
+            label="Reset"
+          />
+        }
       />
 
       <p className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--ink-muted)]">
