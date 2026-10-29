@@ -27,6 +27,7 @@ import {
 } from "@/lib/places/resolve-query";
 import {
   applyGiroWindowOrder,
+  assignGiroPositionLock,
   buildArrivalSchedule,
   findGiroFlexibleWindows,
   formatLegTravelLabel,
@@ -280,9 +281,12 @@ export function GiroPanel() {
   }
 
   function updateStop(id: string, patch: Partial<GiroStop>) {
-    setStops((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
-    );
+    setStops((prev) => {
+      if (patch.positionLock !== undefined) {
+        return assignGiroPositionLock(prev, id, patch.positionLock);
+      }
+      return prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+    });
   }
 
   function removeStop(id: string) {

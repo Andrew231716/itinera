@@ -81,8 +81,108 @@ function pickNearest(
 }
 
 /**
+ * Insert/replace a position lock: the chosen stop takes `lock`, and any
+ * stop already numbered at that slot (or after) shifts forward by one.
+ * Example: A=1, B=2, C=3 → set D as 2 → A=1, D=2, B=3, C=4.
+ */
+export function assignGiroPositionLock(
+  stops: GiroStop[],
+  stopId: string,
+  lock: GiroPositionLock,
+): GiroStop[] {
+  const n = stops.length;
+  if (n === 0) return stops;
+  if (!stops.some((s) => s.id === stopId)) return stops;
+
+  if (lock === "auto") {
+    return stops.map((s) =>
+      s.id === stopId ? { ...s, positionLock: "auto" } : { ...s },
+    );
+  }
+
+  if (lock === "last") {
+    return stops.map((s) => {
+      if (s.id === stopId) return { ...s, positionLock: "last" };
+      if (s.positionLock === "last") return { ...s, positionLock: "auto" };
+      return { ...s };
+    });
+  }
+
+  const pos = Math.min(n, Math.max(1, Math.round(Number(lock))));
+  const shifted: GiroStop[] = stops.map((s) => {
+    if (s.id === stopId) return { ...s, positionLock: pos };
+    if (typeof s.positionLock === "number" && s.positionLock >= pos) {
+      const next = s.positionLock + 1;
+      // Overflow past the tour length → keep as free (list order will settle).
+      const positionLock: GiroPositionLock = next <= n ? next : "auto";
+      return { ...s, positionLock };
+    }
+    return { ...s };
+  });
+
+  return sortGiroStopsByLock(shifted);
+}
+
+/** Stable list order: numeric locks ascending, then free, then «last». */
+export function sortGiroStopsByLock(stops: GiroStop[]): GiroStop[] {
+  const numbered: GiroStop[] = [];
+  const free: GiroStop[] = [];
+  const lasts: GiroStop[] = [];
+  for (const s of stops) {
+    if (s.positionLock === "last") lasts.push(s);
+    else if (typeof s.positionLock === "number") numbered.push(s);
+    else free.push(s);
+  }
+  numbered.sort(
+    (a, b) => (a.positionLock as number) - (b.positionLock as number),
+  );
+  // Keep at most one «last»
+  return [...numbered, ...free, ...lasts.slice(0, 1), ...lasts.slice(1).map((s) => ({ ...s, positionLock: "auto" as const }))];
+}
+
+/**
+ * Place a stop into `slots` at `idx`, shifting existing occupants to the right
+ * into the next empty slot (or the end).
+ */
+function insertSlotWithShift(
+  slots: Array<GiroStop | null>,
+  stop: GiroStop,
+  idx: number,
+): void {
+  const n = slots.length;
+  const i = Math.min(n - 1, Math.max(0, idx));
+  if (slots[i] == null) {
+    slots[i] = stop;
+    return;
+  }
+  // Find first free slot at or after i; if none, find before end.
+  let hole = -1;
+  for (let j = i; j < n; j++) {
+    if (slots[j] == null) {
+      hole = j;
+      break;
+    }
+  }
+  if (hole === -1) {
+    // All filled from i..end — should not happen if we place ≤ n stops.
+    // Drop into first null anywhere.
+    hole = slots.findIndex((s) => s == null);
+    if (hole === -1) return;
+    if (hole < i) {
+      slots[hole] = stop;
+      return;
+    }
+  }
+  for (let j = hole; j > i; j--) {
+    slots[j] = slots[j - 1];
+  }
+  slots[i] = stop;
+}
+
+/**
  * Order visits by proximity while honoring position locks
  * (`last`, or a 1-based slot like 9ª tappa).
+ * Duplicate lock numbers shift the previous occupant forward.
  */
 export function orderGiroStops(
   origin: PlaceRef,
@@ -101,30 +201,39 @@ export function orderGiroStops(
     lastStop = lastCandidates[0];
     if (lastCandidates.length > 1) {
       warnings.push(
-        "Più tappe impostate come «ultima»: tengo solo la prima, le altre sono libere.",
+        "Più tappe impostate come «ultima»: tengo solo l’ultima scelta, le altre sono libere.",
       );
-      free.push(...lastCandidates.slice(1));
+      free.push(...lastCandidates.slice(0, -1));
+      lastStop = lastCandidates[lastCandidates.length - 1];
     }
   }
 
   const claimed = new Set<string>();
   if (lastStop) claimed.add(lastStop.id);
 
-  for (const s of stops) {
-    if (claimed.has(s.id)) continue;
-    if (typeof s.positionLock === "number" && Number.isFinite(s.positionLock)) {
-      const idx = Math.min(n, Math.max(1, Math.round(s.positionLock))) - 1;
-      if (slots[idx] == null) {
-        slots[idx] = s;
-        claimed.add(s.id);
-      } else {
-        warnings.push(
-          `Posizione ${idx + 1} già occupata: «${s.place.label}» resta libera.`,
-        );
-        free.push(s);
-        claimed.add(s.id);
-      }
+  // Place higher lock numbers first so lower inserts can shift them right.
+  const numbered = stops
+    .filter(
+      (s) =>
+        !claimed.has(s.id) &&
+        typeof s.positionLock === "number" &&
+        Number.isFinite(s.positionLock),
+    )
+    .sort(
+      (a, b) => (b.positionLock as number) - (a.positionLock as number),
+    );
+
+  for (const s of numbered) {
+    const idx = Math.min(n, Math.max(1, Math.round(s.positionLock as number))) - 1;
+    if (slots[idx] == null) {
+      slots[idx] = s;
+    } else {
+      insertSlotWithShift(slots, s, idx);
+      warnings.push(
+        `Posizione ${idx + 1}: «${s.place.label}» inserita, le tappe successive scorrono avanti.`,
+      );
     }
+    claimed.add(s.id);
   }
 
   for (const s of stops) {
@@ -136,10 +245,15 @@ export function orderGiroStops(
     if (endSlot == null) {
       slots[n - 1] = lastStop;
     } else if (endSlot.id !== lastStop.id) {
-      warnings.push(
-        `L’ultima posizione era già bloccata: «${lastStop.place.label}» resta libera.`,
-      );
-      free.push(lastStop);
+      // Shift last occupant left into a hole if possible, else demote to free.
+      insertSlotWithShift(slots, lastStop, n - 1);
+      // Ensure lastStop ends at the end: swap if needed
+      const at = slots.findIndex((x) => x?.id === lastStop!.id);
+      if (at >= 0 && at !== n - 1) {
+        const tmp = slots[n - 1];
+        slots[n - 1] = slots[at];
+        slots[at] = tmp;
+      }
     }
   }
 
@@ -156,7 +270,6 @@ export function orderGiroStops(
     current = stop.place.location;
   }
 
-  // Safety: any leftover free append / fill nulls
   for (let i = 0; i < n; i++) {
     if (slots[i] == null && free.length > 0) {
       slots[i] = free.shift()!;

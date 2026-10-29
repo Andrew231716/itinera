@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyGiroWindowOrder,
   applyOptimizedIntermediateOrder,
+  assignGiroPositionLock,
   buildArrivalSchedule,
   findGiroFlexibleWindows,
   formatLegTravelLabel,
@@ -72,6 +73,33 @@ describe("orderGiroStops", () => {
     expect(giroHasHardLocks([giro("a", 1, 1)])).toBe(false);
     expect(giroHasHardLocks([giro("a", 1, 1, "last")])).toBe(true);
     expect(giroHasHardLocks([giro("a", 1, 1, 9)])).toBe(true);
+  });
+});
+
+describe("assignGiroPositionLock", () => {
+  it("inserts at a taken number and shifts the rest forward", () => {
+    const a = giro("a", 45.01, 9.0, 1);
+    const b = giro("b", 45.02, 9.0, 2);
+    const c = giro("c", 45.03, 9.0, 3);
+    const d = giro("d", 45.04, 9.0);
+    const next = assignGiroPositionLock([a, b, c, d], "d", 2);
+    const byId = Object.fromEntries(next.map((s) => [s.id, s.positionLock]));
+    expect(byId.a).toBe(1);
+    expect(byId.d).toBe(2);
+    expect(byId.b).toBe(3);
+    expect(byId.c).toBe(4);
+    expect(next.map((s) => s.id)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("keeps orderGiroStops aligned after a shifted insert", () => {
+    const origin = place("O", 45.0, 9.0);
+    const a = giro("a", 45.01, 9.0, 1);
+    const b = giro("b", 45.02, 9.0, 2);
+    const c = giro("c", 45.03, 9.0, 3);
+    const d = giro("d", 45.04, 9.0);
+    const locked = assignGiroPositionLock([a, b, c, d], "d", 2);
+    const { ordered } = orderGiroStops(origin, locked);
+    expect(ordered.map((s) => s.id)).toEqual(["a", "d", "b", "c"]);
   });
 });
 
