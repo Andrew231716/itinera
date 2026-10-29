@@ -29,6 +29,10 @@ export type GiroExportDoc = {
 
 export type GiroPdfKind = "list" | "map";
 
+export type GiroPdfExportResult =
+  | { ok: true; fileName: string; opened: boolean; downloaded: boolean }
+  | { ok: false; error: string };
+
 export function buildGiroMapsLink(params: {
   origin: PlaceRef;
   stops: PlaceRef[];
@@ -62,10 +66,19 @@ export async function shareGiroMapsLink(params: {
   });
 }
 
+/** jsPDF Helvetica is WinAnsi — strip characters that can crash .text(). */
+export function pdfSafeText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[^\u0020-\u007E\u00A0-\u00FF]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function lockLabel(lock: GiroStop["positionLock"]): string {
   if (lock === "auto") return "Libera";
   if (lock === "last") return "Ultima";
-  return `${lock}ª`;
+  return `${lock}a`;
 }
 
 function safeFileName(title: string): string {
@@ -92,51 +105,58 @@ function dateLine(iso: string | null): string {
   });
 }
 
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
+function write(
+  pdf: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  options?: { maxWidth?: number },
+): number {
+  const safe = pdfSafeText(text);
+  if (!safe) return 0;
+  if (options?.maxWidth) {
+    const lines = pdf.splitTextToSize(safe, options.maxWidth) as string[];
+    pdf.text(lines, x, y);
+    return lines.length;
+  }
+  pdf.text(safe, x, y);
+  return 1;
 }
 
 function addHeader(pdf: jsPDF, doc: GiroExportDoc, subtitle: string): number {
   let y = 16;
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(16);
-  pdf.text(doc.title, 14, y);
-  y += 7;
+  y += write(pdf, doc.title, 14, y, { maxWidth: 180 }) * 6;
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
   pdf.setTextColor(80);
-  pdf.text(`Giro Itinera · ${subtitle}`, 14, y);
-  y += 6;
+  y += write(pdf, `Giro Itinera - ${subtitle}`, 14, y) * 5;
   const date = dateLine(doc.departureAt);
   if (date) {
-    pdf.text(date, 14, y);
-    y += 5;
+    y += write(pdf, date, 14, y, { maxWidth: 180 }) * 5;
   }
-  pdf.text(`Partenza: ${doc.origin.label}`, 14, y);
-  y += 5;
-  pdf.text(
-    `Ora partenza: ${doc.departureAt ? formatClockIt(doc.departureAt) : "—"}`,
-    14,
-    y,
-  );
-  y += 5;
-  pdf.text(`Tappe: ${doc.stops.length} · Regole: ${prefsLine(doc)}`, 14, y);
-  y += 5;
+  y += write(pdf, `Partenza: ${doc.origin.label}`, 14, y, { maxWidth: 180 }) * 5;
+  y +=
+    write(
+      pdf,
+      `Ora partenza: ${doc.departureAt ? formatClockIt(doc.departureAt) : "-"}`,
+      14,
+      y,
+    ) * 5;
+  y +=
+    write(
+      pdf,
+      `Tappe: ${doc.stops.length} - Regole: ${prefsLine(doc)}`,
+      14,
+      y,
+      { maxWidth: 180 },
+    ) * 5;
   if (doc.travelMode) {
-    pdf.text(`Mezzo: ${doc.travelMode}`, 14, y);
-    y += 5;
+    y += write(pdf, `Mezzo: ${doc.travelMode}`, 14, y) * 5;
   }
   pdf.setTextColor(0);
-  y += 3;
-  return y;
+  return y + 3;
 }
 
 function buildListRows(doc: GiroExportDoc): Array<{
@@ -161,8 +181,8 @@ function buildListRows(doc: GiroExportDoc): Array<{
       }
       return {
         left: formatClockIt(row.arrivalAt),
-        title: `${role} · ${row.place.label}`,
-        detail: bits.join(" · "),
+        title: `${role} - ${row.place.label}`,
+        detail: bits.join(" - "),
       };
     });
   }
@@ -170,7 +190,7 @@ function buildListRows(doc: GiroExportDoc): Array<{
   const rows = [
     {
       left: "P",
-      title: `Partenza · ${doc.origin.label}`,
+      title: `Partenza - ${doc.origin.label}`,
       detail: doc.origin.address ?? "",
     },
   ];
@@ -184,14 +204,13 @@ function buildListRows(doc: GiroExportDoc): Array<{
     rows.push({
       left: String(i + 1),
       title: s.place.label,
-      detail: bits.join(" · "),
+      detail: bits.join(" - "),
     });
   }
   return rows;
 }
 
-/** Build a real PDF (elenco orari / tappe). */
-export function buildGiroListPdfBlob(doc: GiroExportDoc): Blob {
+export function buildGiroListPdf(doc: GiroExportDoc): jsPDF {
   const pdf = new jsPDF({ unit: "mm", format: "a4" });
   let y = addHeader(pdf, doc, "PDF elenco");
   const rows = buildListRows(doc);
@@ -204,18 +223,22 @@ export function buildGiroListPdfBlob(doc: GiroExportDoc): Blob {
     }
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(12);
-    pdf.text(row.left, 14, y);
+    write(pdf, row.left, 14, y);
     pdf.setFontSize(11);
-    const titleLines = pdf.splitTextToSize(row.title, 160);
-    pdf.text(titleLines, 36, y);
-    y += titleLines.length * 5;
+    const titleLines = Math.max(
+      1,
+      write(pdf, row.title, 36, y, { maxWidth: 160 }),
+    );
+    y += titleLines * 5;
     if (row.detail) {
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(9);
       pdf.setTextColor(90);
-      const detailLines = pdf.splitTextToSize(row.detail, 160);
-      pdf.text(detailLines, 36, y);
-      y += detailLines.length * 4 + 3;
+      const detailLines = Math.max(
+        1,
+        write(pdf, row.detail, 36, y, { maxWidth: 160 }),
+      );
+      y += detailLines * 4 + 3;
       pdf.setTextColor(0);
     } else {
       y += 4;
@@ -229,21 +252,18 @@ export function buildGiroListPdfBlob(doc: GiroExportDoc): Blob {
     }
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
-    pdf.text("Google Maps", 14, y);
-    y += 5;
+    y += write(pdf, "Google Maps", 14, y) * 5;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8);
     pdf.setTextColor(60);
-    const urlLines = pdf.splitTextToSize(doc.mapsUrl, 180);
-    pdf.text(urlLines, 14, y);
+    write(pdf, doc.mapsUrl, 14, y, { maxWidth: 180 });
     pdf.setTextColor(0);
   }
 
-  return pdf.output("blob");
+  return pdf;
 }
 
-/** Build a PDF with schematic map + ordered labeled stops. */
-export function buildGiroMapPdfBlob(doc: GiroExportDoc): Blob {
+export function buildGiroMapPdf(doc: GiroExportDoc): jsPDF {
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   let y = addHeader(pdf, doc, "PDF mappa tappe");
 
@@ -257,18 +277,16 @@ export function buildGiroMapPdfBlob(doc: GiroExportDoc): Blob {
     const pageW = pdf.internal.pageSize.getWidth();
     const imgW = pageW - 28;
     const imgH = (imgW * canvas.height) / canvas.width;
-    pdf.addImage(img, "PNG", 14, y, imgW, imgH);
-    y += imgH + 8;
+    pdf.addImage(img, "PNG", 14, y, imgW, Math.min(imgH, 120));
+    y += Math.min(imgH, 120) + 8;
   } else {
     pdf.setFontSize(10);
-    pdf.text("Mappa non disponibile su questo dispositivo.", 14, y);
-    y += 8;
+    y += write(pdf, "Mappa non disponibile su questo dispositivo.", 14, y) * 6;
   }
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
-  pdf.text("Legenda tappe (in ordine)", 14, y);
-  y += 6;
+  y += write(pdf, "Legenda tappe (in ordine)", 14, y) * 6;
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
 
@@ -281,36 +299,133 @@ export function buildGiroMapPdfBlob(doc: GiroExportDoc): Blob {
     const time =
       doc.schedule?.find(
         (s) =>
-          s.place.id === (p.index === 0 ? doc.origin.id : doc.stops[p.index - 1]?.place.id),
+          s.place.id ===
+          (p.index === 0 ? doc.origin.id : doc.stops[p.index - 1]?.place.id),
       )?.arrivalAt ?? null;
     const line = `${p.index + 1}. ${p.label}${
-      time ? ` · ${formatClockIt(time)}` : ""
+      time ? ` - ${formatClockIt(time)}` : ""
     }`;
-    const lines = pdf.splitTextToSize(line, 180);
-    pdf.text(lines, 14, y);
-    y += lines.length * 4.5 + 1;
+    const lines = Math.max(1, write(pdf, line, 14, y, { maxWidth: 180 }));
+    y += lines * 4.5 + 1;
   }
 
-  return pdf.output("blob");
+  return pdf;
+}
+
+/** @deprecated use buildGiroListPdf — kept for tests */
+export function buildGiroListPdfBlob(doc: GiroExportDoc): Blob {
+  return buildGiroListPdf(doc).output("blob");
+}
+
+/** @deprecated use buildGiroMapPdf — kept for tests */
+export function buildGiroMapPdfBlob(doc: GiroExportDoc): Blob {
+  return buildGiroMapPdf(doc).output("blob");
 }
 
 /**
- * Generate and download a real PDF (elenco or mappa).
+ * Open the PDF in a new tab (so the user sees it) and also download the file.
+ * Mobile browsers often hide silent downloads — opening is the reliable path.
+ */
+export function deliverPdf(
+  pdf: jsPDF,
+  fileName: string,
+): { opened: boolean; downloaded: boolean } {
+  const blob = pdf.output("blob");
+  const url = URL.createObjectURL(blob);
+  let opened = false;
+  let downloaded = false;
+
+  // 1) Open in a new tab / viewer (what users expect when they tap PDF)
+  try {
+    const openLink = document.createElement("a");
+    openLink.href = url;
+    openLink.target = "_blank";
+    openLink.rel = "noopener noreferrer";
+    openLink.type = "application/pdf";
+    document.body.appendChild(openLink);
+    openLink.click();
+    openLink.remove();
+    opened = true;
+  } catch {
+    try {
+      const win = window.open(url, "_blank");
+      if (win) {
+        opened = true;
+        try {
+          win.opener = null;
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* popup blocked */
+    }
+  }
+
+  // 2) Also save via jsPDF (more reliable than a synthetic <a download>)
+  try {
+    pdf.save(fileName);
+    downloaded = true;
+  } catch {
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.rel = "noopener";
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      downloaded = true;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 3) Last resort: navigate same tab to the blob
+  if (!opened && !downloaded) {
+    try {
+      window.location.assign(url);
+      opened = true;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  window.setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  }, opened ? 120_000 : 4_000);
+
+  return { opened, downloaded };
+}
+
+/**
+ * Generate a real PDF and open/download it.
  */
 export function exportGiroPdf(
   doc: GiroExportDoc,
   kind: GiroPdfKind = "list",
-): { ok: true; fileName: string } | { ok: false; error: string } {
+): GiroPdfExportResult {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return { ok: false, error: "PDF disponibile solo nel browser." };
   }
   try {
-    const blob =
-      kind === "map" ? buildGiroMapPdfBlob(doc) : buildGiroListPdfBlob(doc);
+    const pdf = kind === "map" ? buildGiroMapPdf(doc) : buildGiroListPdf(doc);
     const suffix = kind === "map" ? "mappa" : "elenco";
     const fileName = `${safeFileName(doc.title)}-${suffix}.pdf`;
-    downloadBlob(blob, fileName);
-    return { ok: true, fileName };
+    const { opened, downloaded } = deliverPdf(pdf, fileName);
+    if (!opened && !downloaded) {
+      return {
+        ok: false,
+        error:
+          "Impossibile aprire o scaricare il PDF. Controlla il blocco popup del browser.",
+      };
+    }
+    return { ok: true, fileName, opened, downloaded };
   } catch (err) {
     return {
       ok: false,
@@ -319,7 +434,7 @@ export function exportGiroPdf(
   }
 }
 
-/** @deprecated kept for tests of printable HTML content */
+/** Kept for tests of printable HTML content */
 export function buildGiroPdfHtml(
   doc: GiroExportDoc,
   mapsUrl?: string,

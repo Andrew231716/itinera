@@ -4,6 +4,7 @@ import {
   buildGiroMapsLink,
   buildGiroPdfHtml,
   exportGiroPdf,
+  pdfSafeText,
 } from "@/lib/giro/export-giro";
 import type { GiroStop, ScheduleStop } from "@/lib/routing/travel-schedule";
 import type { PlaceRef } from "@/lib/types/trip";
@@ -100,5 +101,12 @@ describe("exportGiroPdf", () => {
       ok: false,
       error: "PDF disponibile solo nel browser.",
     });
+  });
+});
+
+describe("pdfSafeText", () => {
+  it("keeps latin accented letters and strips exotic symbols", () => {
+    expect(pdfSafeText("Città · Milano ✅")).toContain("Citt");
+    expect(pdfSafeText("Città · Milano ✅")).not.toContain("✅");
   });
 });
