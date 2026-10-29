@@ -38,6 +38,7 @@ import {
   openGiroInMaps,
   shareGiroMapsLink,
   type GiroExportDoc,
+  type GiroPdfKind,
 } from "@/lib/giro/export-giro";
 import { extractPdfText } from "@/lib/giro/extract-pdf-text";
 import {
@@ -99,6 +100,8 @@ export function GiroPanel() {
   const tripOrigin = useTripStore((s) => s.trip.origin);
   const travelMode = useTripStore((s) => s.trip.travelMode);
   const preferences = useTripStore((s) => s.trip.preferences);
+  const setPreferences = useTripStore((s) => s.setPreferences);
+  const setTravelMode = useTripStore((s) => s.setTravelMode);
   const giroSeed = useTripStore((s) => s.giroSeed);
   const consumeGiroSeed = useTripStore((s) => s.consumeGiroSeed);
   const openTripInGiro = useTripStore((s) => s.openTripInGiro);
@@ -202,6 +205,9 @@ export function GiroPanel() {
       origin: start,
       departureAt: parsed.departureAt,
       stops: geocoded,
+      preferences,
+      travelMode,
+      schedule: null,
     });
     setSavedId(entry.id);
     refreshSaved();
@@ -297,47 +303,84 @@ export function GiroPanel() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  function handleSaveGiro() {
-    setSaveMessage(null);
-    if (stops.length < 1 && !start) {
-      setError("Aggiungi almeno partenza o una tappa prima di salvare.");
-      return;
+  function persistCurrentGiro(opts?: {
+    origin?: PlaceRef | null;
+    stops?: GiroStop[];
+    schedule?: ScheduleStop[] | null;
+    quiet?: boolean;
+  }) {
+    const origin = opts?.origin !== undefined ? opts.origin : start;
+    const nextStops = opts?.stops ?? stops;
+    const nextSchedule =
+      opts?.schedule !== undefined ? opts.schedule : schedule;
+    if (nextStops.length < 1 && !origin) {
+      if (!opts?.quiet) {
+        setError("Aggiungi almeno partenza o una tappa prima di salvare.");
+      }
+      return null;
     }
     const departureAt = localInputToIso(departureLocal);
     const entry = saveGiro({
       id: savedId ?? undefined,
       title: saveTitle,
-      origin: start,
+      origin,
       departureAt,
-      stops,
+      stops: nextStops,
+      preferences,
+      travelMode,
+      schedule: nextSchedule,
     });
     setSavedId(entry.id);
     setSaveTitle(entry.title);
     refreshSaved();
-    setSaveMessage(`Salvato: ${entry.title}`);
+    if (!opts?.quiet) {
+      const timed = nextStops.filter((s) => s.arriveBy).length;
+      const locked = nextStops.filter((s) => s.positionLock !== "auto").length;
+      setSaveMessage(
+        `Salvato: ${entry.title} · ${nextStops.length} tappe` +
+          (timed ? ` · ${timed} orari` : "") +
+          (locked ? ` · ${locked} posizioni fisse` : "") +
+          " · regole e orari inclusi",
+      );
+    }
+    return entry;
+  }
+
+  function handleSaveGiro() {
+    setSaveMessage(null);
+    persistCurrentGiro();
   }
 
   function handleLoadGiro(entry: SavedGiro) {
     setError(null);
     setLineErrors([]);
     setOrderWarnings([]);
-    setSchedule(null);
-    setExportOrigin(null);
     setListText("");
     setSavedId(entry.id);
     setSaveTitle(entry.title);
     setStart(entry.origin);
     setExportOrigin(entry.origin);
     setStops(structuredClone(entry.stops));
+    setSchedule(entry.schedule ? structuredClone(entry.schedule) : null);
     if (entry.departureAt) {
       setDepartureLocal(formatDateTimeLocal(entry.departureAt));
     }
-    setSaveMessage(`Caricato: ${entry.title}`);
+    if (entry.preferences) setPreferences(entry.preferences);
+    if (entry.travelMode) setTravelMode(entry.travelMode);
+    setSaveMessage(
+      `Caricato: ${entry.title} (orari, posizioni e regole ripristinati)`,
+    );
   }
 
   function buildExportDoc(): GiroExportDoc | null {
     const origin = exportOrigin ?? start;
     if (!origin || stops.length < 1) return null;
+    const maps = buildGiroMapsLink({
+      origin,
+      stops: stops.map((s) => s.place),
+      travelMode,
+      preferences,
+    });
     return {
       title:
         saveTitle.trim() ||
@@ -346,34 +389,29 @@ export function GiroPanel() {
       departureAt: localInputToIso(departureLocal),
       stops,
       schedule,
+      preferences,
+      travelMode,
+      mapsUrl: maps?.url,
     };
   }
 
-  function handleExportPdf() {
+  function handleExportPdf(kind: GiroPdfKind) {
     const doc = buildExportDoc();
     if (!doc) {
-      setError("Calcola o carica un giro prima di esportare il PDF.");
+      setError("Aggiungi partenza e almeno una tappa, oppure calcola il giro.");
       return;
     }
     setError(null);
-    const maps = buildGiroMapsLink({
-      origin: doc.origin,
-      stops: doc.stops.map((s) => s.place),
-      travelMode,
-      preferences,
-    });
-    const result = exportGiroPdf(doc, maps?.url);
+    const result = exportGiroPdf(doc, kind);
     if (!result.ok) {
-      setError("Impossibile esportare il PDF su questo dispositivo.");
+      setError(result.error || "Impossibile generare il PDF.");
       return;
     }
-    if (result.mode === "print") {
-      setSaveMessage("Apri la stampa e scegli «Salva come PDF».");
-    } else {
-      setSaveMessage(
-        "Foglio scaricato (.html): aprilo e usa Stampa → Salva come PDF.",
-      );
-    }
+    setSaveMessage(
+      kind === "map"
+        ? `PDF mappa scaricato: ${result.fileName}`
+        : `PDF elenco scaricato: ${result.fileName}`,
+    );
   }
 
   function handleOpenMaps() {
@@ -517,15 +555,20 @@ export function GiroPanel() {
           state.routeError ??
             "Percorso non calcolato. Controlla gli indirizzi o la chiave Maps.",
         );
-        setSchedule(
-          buildArrivalSchedule({
-            departureAt,
-            origin,
-            orderedPlaces,
-            legs: [],
-            orderedGiroStops: ordered,
-          }),
-        );
+        const fallbackSchedule = buildArrivalSchedule({
+          departureAt,
+          origin,
+          orderedPlaces,
+          legs: [],
+          orderedGiroStops: ordered,
+        });
+        setSchedule(fallbackSchedule);
+        persistCurrentGiro({
+          origin,
+          stops: ordered,
+          schedule: fallbackSchedule,
+          quiet: true,
+        });
         return;
       }
 
@@ -538,6 +581,13 @@ export function GiroPanel() {
         orderedGiroStops: ordered,
       });
       setSchedule(rows);
+      persistCurrentGiro({
+        origin: state.trip.origin ?? origin,
+        stops: ordered,
+        schedule: rows,
+        quiet: true,
+      });
+      setSaveMessage("Percorso pronto · giro salvato con orari e regole.");
     } finally {
       setBusy(false);
     }
@@ -787,6 +837,11 @@ export function GiroPanel() {
                   <p className="text-[11px] text-[var(--ink-muted)]">
                     {g.stops.length} tappe
                     {g.origin ? ` · da ${g.origin.label}` : ""}
+                    {g.stops.some((s) => s.arriveBy) ? " · orari" : ""}
+                    {g.stops.some((s) => s.positionLock !== "auto")
+                      ? " · fissate"
+                      : ""}
+                    {g.schedule ? " · ETA" : ""}
                     {" · "}
                     {formatRelativeIt(g.updatedAt)}
                   </p>
@@ -876,14 +931,22 @@ export function GiroPanel() {
               </li>
             ))}
           </ol>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button
               type="button"
               variant="outline"
-              onClick={handleExportPdf}
+              onClick={() => handleExportPdf("list")}
             >
               <FileDown className="h-4 w-4" />
-              PDF
+              PDF elenco
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleExportPdf("map")}
+            >
+              <FileDown className="h-4 w-4" />
+              PDF mappa
             </Button>
             <Button type="button" variant="outline" onClick={handleOpenMaps}>
               <ExternalLink className="h-4 w-4" />
@@ -915,10 +978,22 @@ export function GiroPanel() {
       )}
 
       {!schedule && (exportOrigin ?? start) && stops.length > 0 ? (
-        <div className="grid grid-cols-1 gap-2 border-t border-[var(--line)] pt-3 sm:grid-cols-3">
-          <Button type="button" variant="outline" onClick={handleExportPdf}>
+        <div className="grid grid-cols-1 gap-2 border-t border-[var(--line)] pt-3 sm:grid-cols-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleExportPdf("list")}
+          >
             <FileDown className="h-4 w-4" />
-            PDF
+            PDF elenco
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleExportPdf("map")}
+          >
+            <FileDown className="h-4 w-4" />
+            PDF mappa
           </Button>
           <Button type="button" variant="outline" onClick={handleOpenMaps}>
             <ExternalLink className="h-4 w-4" />

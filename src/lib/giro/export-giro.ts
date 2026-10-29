@@ -1,3 +1,4 @@
+import { jsPDF } from "jspdf";
 import {
   buildGoogleMapsDirectionsLink,
   openMapsDirectionsUrl,
@@ -5,16 +6,15 @@ import {
   type MapsLinkResult,
 } from "@/lib/google/maps-links";
 import type { GiroStop, ScheduleStop } from "@/lib/routing/travel-schedule";
+import { drawGiroMapCanvas, placesToMapPoints } from "@/lib/giro/giro-map-draw";
+import { summarizeTravelRules } from "@/lib/routing/travel-rules";
 import {
   DEFAULT_ROAD_PREFERENCES,
   type PlaceRef,
   type RoadPreferences,
   type TravelMode,
 } from "@/lib/types/trip";
-import {
-  formatClockIt,
-  formatDuration,
-} from "@/lib/utils/format";
+import { formatClockIt, formatDuration } from "@/lib/utils/format";
 
 export type GiroExportDoc = {
   title: string;
@@ -22,7 +22,12 @@ export type GiroExportDoc = {
   departureAt: string | null;
   stops: GiroStop[];
   schedule: ScheduleStop[] | null;
+  preferences?: RoadPreferences;
+  travelMode?: TravelMode;
+  mapsUrl?: string;
 };
+
+export type GiroPdfKind = "list" | "map";
 
 export function buildGiroMapsLink(params: {
   origin: PlaceRef;
@@ -57,147 +62,10 @@ export async function shareGiroMapsLink(params: {
   });
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function lockLabel(lock: GiroStop["positionLock"]): string {
   if (lock === "auto") return "Libera";
   if (lock === "last") return "Ultima";
   return `${lock}ª`;
-}
-
-/** Printable HTML for «Salva come PDF». */
-export function buildGiroPdfHtml(
-  doc: GiroExportDoc,
-  mapsUrl?: string,
-  options?: { autoPrint?: boolean },
-): string {
-  const autoPrint = options?.autoPrint !== false;
-  const depart =
-    doc.departureAt != null ? formatClockIt(doc.departureAt) : "—";
-  const dateLabel = doc.departureAt
-    ? new Date(doc.departureAt).toLocaleDateString("it-IT", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-    : "";
-
-  const scheduleRows =
-    doc.schedule && doc.schedule.length > 0
-      ? doc.schedule
-          .map((row, idx) => {
-            const role =
-              row.kind === "origin"
-                ? "Partenza"
-                : row.kind === "destination"
-                  ? "Arrivo"
-                  : `Tappa ${idx}`;
-            const appt = row.arriveBy
-              ? `<div class="muted">Appuntamento ${escapeHtml(formatClockIt(row.arriveBy))}${
-                  row.vsArriveBySeconds != null
-                    ? row.vsArriveBySeconds > 60
-                      ? ` · ritardo ${escapeHtml(formatDuration(row.vsArriveBySeconds))}`
-                      : row.vsArriveBySeconds < -60
-                        ? ` · anticipo ${escapeHtml(formatDuration(-row.vsArriveBySeconds))}`
-                        : " · in orario"
-                    : ""
-                }</div>`
-              : "";
-            const travel =
-              row.legFromPreviousSeconds > 0
-                ? `<div class="muted">+${escapeHtml(formatDuration(row.legFromPreviousSeconds))} dal precedente</div>`
-                : "";
-            return `<tr>
-              <td class="time">${escapeHtml(formatClockIt(row.arrivalAt))}</td>
-              <td>
-                <div class="role">${escapeHtml(role)}</div>
-                <div class="place">${escapeHtml(row.place.label)}</div>
-                ${row.place.address ? `<div class="muted">${escapeHtml(row.place.address)}</div>` : ""}
-                ${travel}${appt}
-              </td>
-            </tr>`;
-          })
-          .join("")
-      : doc.stops
-          .map((s, i) => {
-            const appt = s.arriveBy
-              ? `<div class="muted">Appuntamento ${escapeHtml(formatClockIt(s.arriveBy))}</div>`
-              : "";
-            return `<tr>
-              <td class="time">${i + 1}</td>
-              <td>
-                <div class="place">${escapeHtml(s.place.label)}</div>
-                ${s.place.address ? `<div class="muted">${escapeHtml(s.place.address)}</div>` : ""}
-                <div class="muted">Posizione: ${escapeHtml(lockLabel(s.positionLock))}</div>
-                ${appt}
-              </td>
-            </tr>`;
-          })
-          .join("");
-
-  return `<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(doc.title)}</title>
-  <style>
-    @page { margin: 16mm; }
-    body { font-family: Georgia, "Times New Roman", serif; color: #1a1a1a; margin: 0; padding: 24px; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
-    .sub { color: #555; font-size: 13px; margin-bottom: 18px; }
-    .meta { font-size: 13px; margin-bottom: 20px; line-height: 1.5; }
-    table { width: 100%; border-collapse: collapse; }
-    tr { page-break-inside: avoid; }
-    td { vertical-align: top; padding: 10px 8px; border-bottom: 1px solid #ddd; }
-    .time { width: 64px; font-weight: 700; font-size: 16px; }
-    .role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #666; }
-    .place { font-size: 15px; font-weight: 600; margin-top: 2px; }
-    .muted { font-size: 12px; color: #666; margin-top: 2px; }
-    .maps { margin-top: 22px; font-size: 12px; word-break: break-all; }
-    .foot { margin-top: 28px; font-size: 11px; color: #888; }
-  </style>
-</head>
-<body>
-  <h1>${escapeHtml(doc.title)}</h1>
-  <div class="sub">Giro Itinera${dateLabel ? ` · ${escapeHtml(dateLabel)}` : ""}</div>
-  <div class="meta">
-    <div><strong>Partenza:</strong> ${escapeHtml(doc.origin.label)}</div>
-    <div><strong>Ora partenza:</strong> ${escapeHtml(depart)}</div>
-    <div><strong>Tappe:</strong> ${doc.stops.length}</div>
-  </div>
-  <table>
-    <tbody>
-      ${
-        doc.schedule && doc.schedule.length > 0
-          ? scheduleRows
-          : `<tr><td class="time">—</td><td><div class="place">${escapeHtml(doc.origin.label)}</div><div class="role">Partenza</div></td></tr>${scheduleRows}`
-      }
-    </tbody>
-  </table>
-  ${
-    mapsUrl
-      ? `<div class="maps"><strong>Google Maps:</strong><br/>${escapeHtml(mapsUrl)}</div>`
-      : ""
-  }
-  <div class="foot">Generato con Itinera · gli orari sono stime di percorso</div>
-  ${
-    autoPrint
-      ? `<script>
-    window.onload = function () {
-      setTimeout(function () { window.focus(); window.print(); }, 200);
-    };
-  </script>`
-      : ""
-  }
-</body>
-</html>`;
 }
 
 function safeFileName(title: string): string {
@@ -209,90 +77,272 @@ function safeFileName(title: string): string {
   return base || "giro-itinera";
 }
 
-/**
- * Print via a hidden iframe (no popup — works on mobile browsers that block window.open).
- * Falls back to downloading an HTML sheet the user can open and save as PDF.
- */
-export function exportGiroPdf(
-  doc: GiroExportDoc,
-  mapsUrl?: string,
-): { ok: true; mode: "print" | "download" } | { ok: false } {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return { ok: false };
-  }
-
-  const html = buildGiroPdfHtml(doc, mapsUrl, { autoPrint: true });
-
-  try {
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute("title", "Esporta PDF giro");
-    iframe.setAttribute("aria-hidden", "true");
-    iframe.style.cssText =
-      "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;";
-    document.body.appendChild(iframe);
-
-    const frameDoc = iframe.contentDocument ?? iframe.contentWindow?.document;
-    const frameWin = iframe.contentWindow;
-    if (!frameDoc || !frameWin) {
-      iframe.remove();
-      downloadGiroHtmlSheet(doc, mapsUrl);
-      return { ok: true, mode: "download" };
-    }
-
-    frameDoc.open();
-    frameDoc.write(html);
-    frameDoc.close();
-
-    const cleanup = () => {
-      try {
-        iframe.remove();
-      } catch {
-        /* ignore */
-      }
-    };
-
-    const triggerPrint = () => {
-      try {
-        frameWin.focus();
-        frameWin.print();
-      } catch {
-        downloadGiroHtmlSheet(doc, mapsUrl);
-      } finally {
-        // Keep iframe briefly so the print dialog can read it, then remove.
-        window.setTimeout(cleanup, 60_000);
-      }
-    };
-
-    if (frameDoc.readyState === "complete") {
-      window.setTimeout(triggerPrint, 150);
-    } else {
-      iframe.addEventListener("load", () => window.setTimeout(triggerPrint, 150), {
-        once: true,
-      });
-    }
-
-    return { ok: true, mode: "print" };
-  } catch {
-    downloadGiroHtmlSheet(doc, mapsUrl);
-    return { ok: true, mode: "download" };
-  }
+function prefsLine(doc: GiroExportDoc): string {
+  const prefs = doc.preferences ?? DEFAULT_ROAD_PREFERENCES;
+  return summarizeTravelRules(prefs, []);
 }
 
-/** Download a printable HTML sheet (fallback when print/iframe is unavailable). */
-export function downloadGiroHtmlSheet(
-  doc: GiroExportDoc,
-  mapsUrl?: string,
-): void {
-  if (typeof document === "undefined") return;
-  const html = buildGiroPdfHtml(doc, mapsUrl, { autoPrint: false });
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+function dateLine(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("it-IT", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${safeFileName(doc.title)}.html`;
+  a.download = fileName;
   a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
+}
+
+function addHeader(pdf: jsPDF, doc: GiroExportDoc, subtitle: string): number {
+  let y = 16;
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(16);
+  pdf.text(doc.title, 14, y);
+  y += 7;
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(10);
+  pdf.setTextColor(80);
+  pdf.text(`Giro Itinera · ${subtitle}`, 14, y);
+  y += 6;
+  const date = dateLine(doc.departureAt);
+  if (date) {
+    pdf.text(date, 14, y);
+    y += 5;
+  }
+  pdf.text(`Partenza: ${doc.origin.label}`, 14, y);
+  y += 5;
+  pdf.text(
+    `Ora partenza: ${doc.departureAt ? formatClockIt(doc.departureAt) : "—"}`,
+    14,
+    y,
+  );
+  y += 5;
+  pdf.text(`Tappe: ${doc.stops.length} · Regole: ${prefsLine(doc)}`, 14, y);
+  y += 5;
+  if (doc.travelMode) {
+    pdf.text(`Mezzo: ${doc.travelMode}`, 14, y);
+    y += 5;
+  }
+  pdf.setTextColor(0);
+  y += 3;
+  return y;
+}
+
+function buildListRows(doc: GiroExportDoc): Array<{
+  left: string;
+  title: string;
+  detail: string;
+}> {
+  if (doc.schedule && doc.schedule.length > 0) {
+    return doc.schedule.map((row, idx) => {
+      const role =
+        row.kind === "origin"
+          ? "Partenza"
+          : row.kind === "destination"
+            ? "Arrivo"
+            : `Tappa ${idx}`;
+      const bits = [row.place.address].filter(Boolean) as string[];
+      if (row.legFromPreviousSeconds > 0) {
+        bits.push(`+${formatDuration(row.legFromPreviousSeconds)} dal precedente`);
+      }
+      if (row.arriveBy) {
+        bits.push(`Appuntamento ${formatClockIt(row.arriveBy)}`);
+      }
+      return {
+        left: formatClockIt(row.arrivalAt),
+        title: `${role} · ${row.place.label}`,
+        detail: bits.join(" · "),
+      };
+    });
+  }
+
+  const rows = [
+    {
+      left: "P",
+      title: `Partenza · ${doc.origin.label}`,
+      detail: doc.origin.address ?? "",
+    },
+  ];
+  for (let i = 0; i < doc.stops.length; i++) {
+    const s = doc.stops[i];
+    const bits = [
+      s.place.address,
+      `Posizione: ${lockLabel(s.positionLock)}`,
+      s.arriveBy ? `Appuntamento ${formatClockIt(s.arriveBy)}` : null,
+    ].filter(Boolean) as string[];
+    rows.push({
+      left: String(i + 1),
+      title: s.place.label,
+      detail: bits.join(" · "),
+    });
+  }
+  return rows;
+}
+
+/** Build a real PDF (elenco orari / tappe). */
+export function buildGiroListPdfBlob(doc: GiroExportDoc): Blob {
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  let y = addHeader(pdf, doc, "PDF elenco");
+  const rows = buildListRows(doc);
+  const pageH = pdf.internal.pageSize.getHeight();
+
+  for (const row of rows) {
+    if (y > pageH - 24) {
+      pdf.addPage();
+      y = 16;
+    }
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text(row.left, 14, y);
+    pdf.setFontSize(11);
+    const titleLines = pdf.splitTextToSize(row.title, 160);
+    pdf.text(titleLines, 36, y);
+    y += titleLines.length * 5;
+    if (row.detail) {
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(90);
+      const detailLines = pdf.splitTextToSize(row.detail, 160);
+      pdf.text(detailLines, 36, y);
+      y += detailLines.length * 4 + 3;
+      pdf.setTextColor(0);
+    } else {
+      y += 4;
+    }
+  }
+
+  if (doc.mapsUrl) {
+    if (y > pageH - 30) {
+      pdf.addPage();
+      y = 16;
+    }
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.text("Google Maps", 14, y);
+    y += 5;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(60);
+    const urlLines = pdf.splitTextToSize(doc.mapsUrl, 180);
+    pdf.text(urlLines, 14, y);
+    pdf.setTextColor(0);
+  }
+
+  return pdf.output("blob");
+}
+
+/** Build a PDF with schematic map + ordered labeled stops. */
+export function buildGiroMapPdfBlob(doc: GiroExportDoc): Blob {
+  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  let y = addHeader(pdf, doc, "PDF mappa tappe");
+
+  const mapPoints = placesToMapPoints(
+    doc.origin,
+    doc.stops.map((s) => s.place),
+  );
+  const canvas = drawGiroMapCanvas(mapPoints, 1100, 780);
+  if (canvas) {
+    const img = canvas.toDataURL("image/png");
+    const pageW = pdf.internal.pageSize.getWidth();
+    const imgW = pageW - 28;
+    const imgH = (imgW * canvas.height) / canvas.width;
+    pdf.addImage(img, "PNG", 14, y, imgW, imgH);
+    y += imgH + 8;
+  } else {
+    pdf.setFontSize(10);
+    pdf.text("Mappa non disponibile su questo dispositivo.", 14, y);
+    y += 8;
+  }
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(11);
+  pdf.text("Legenda tappe (in ordine)", 14, y);
+  y += 6;
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(9);
+
+  const pageH = pdf.internal.pageSize.getHeight();
+  for (const p of mapPoints) {
+    if (y > pageH - 16) {
+      pdf.addPage();
+      y = 16;
+    }
+    const time =
+      doc.schedule?.find(
+        (s) =>
+          s.place.id === (p.index === 0 ? doc.origin.id : doc.stops[p.index - 1]?.place.id),
+      )?.arrivalAt ?? null;
+    const line = `${p.index + 1}. ${p.label}${
+      time ? ` · ${formatClockIt(time)}` : ""
+    }`;
+    const lines = pdf.splitTextToSize(line, 180);
+    pdf.text(lines, 14, y);
+    y += lines.length * 4.5 + 1;
+  }
+
+  return pdf.output("blob");
+}
+
+/**
+ * Generate and download a real PDF (elenco or mappa).
+ */
+export function exportGiroPdf(
+  doc: GiroExportDoc,
+  kind: GiroPdfKind = "list",
+): { ok: true; fileName: string } | { ok: false; error: string } {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return { ok: false, error: "PDF disponibile solo nel browser." };
+  }
+  try {
+    const blob =
+      kind === "map" ? buildGiroMapPdfBlob(doc) : buildGiroListPdfBlob(doc);
+    const suffix = kind === "map" ? "mappa" : "elenco";
+    const fileName = `${safeFileName(doc.title)}-${suffix}.pdf`;
+    downloadBlob(blob, fileName);
+    return { ok: true, fileName };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Generazione PDF fallita.",
+    };
+  }
+}
+
+/** @deprecated kept for tests of printable HTML content */
+export function buildGiroPdfHtml(
+  doc: GiroExportDoc,
+  mapsUrl?: string,
+): string {
+  const prefs = prefsLine(doc);
+  const rows = buildListRows(doc)
+    .map(
+      (r) =>
+        `<tr><td>${escapeHtml(r.left)}</td><td><strong>${escapeHtml(r.title)}</strong><div>${escapeHtml(r.detail)}</div></td></tr>`,
+    )
+    .join("");
+  return `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"/><title>${escapeHtml(doc.title)}</title></head><body>
+  <h1>${escapeHtml(doc.title)}</h1>
+  <p>${escapeHtml(prefs)}</p>
+  <table>${rows}</table>
+  ${mapsUrl ? `<p>${escapeHtml(mapsUrl)}</p>` : ""}
+  </body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

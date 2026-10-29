@@ -1,5 +1,10 @@
-import type { GiroStop } from "@/lib/routing/travel-schedule";
-import type { PlaceRef } from "@/lib/types/trip";
+import type { GiroStop, ScheduleStop } from "@/lib/routing/travel-schedule";
+import {
+  DEFAULT_ROAD_PREFERENCES,
+  type PlaceRef,
+  type RoadPreferences,
+  type TravelMode,
+} from "@/lib/types/trip";
 
 export type SavedGiro = {
   id: string;
@@ -9,18 +14,59 @@ export type SavedGiro = {
   origin: PlaceRef | null;
   departureAt: string | null;
   stops: GiroStop[];
+  /** Snapshot of travel rules at save time */
+  preferences: RoadPreferences;
+  travelMode: TravelMode;
+  /** ETA / appointment schedule when the giro was last computed */
+  schedule: ScheduleStop[] | null;
 };
 
-const STORAGE_KEY = "itinera.savedGiri.v1";
+const STORAGE_KEY = "itinera.savedGiri.v2";
+const LEGACY_KEY = "itinera.savedGiri.v1";
 const MAX_ENTRIES = 40;
+
+function normalizeEntry(raw: Partial<SavedGiro> & { id?: string }): SavedGiro | null {
+  if (!raw || typeof raw !== "object" || !raw.id) return null;
+  const stops = Array.isArray(raw.stops) ? raw.stops : [];
+  return {
+    id: raw.id,
+    title: typeof raw.title === "string" && raw.title.trim() ? raw.title : "Giro",
+    createdAt: raw.createdAt ?? new Date().toISOString(),
+    updatedAt: raw.updatedAt ?? raw.createdAt ?? new Date().toISOString(),
+    origin: raw.origin ?? null,
+    departureAt: raw.departureAt ?? null,
+    stops: structuredClone(stops),
+    preferences: {
+      ...DEFAULT_ROAD_PREFERENCES,
+      ...(raw.preferences ?? {}),
+    },
+    travelMode: raw.travelMode ?? "DRIVE",
+    schedule: Array.isArray(raw.schedule) ? structuredClone(raw.schedule) : null,
+  };
+}
 
 function readAll(): SavedGiro[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as SavedGiro[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown[];
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((e) => normalizeEntry(e as Partial<SavedGiro>))
+        .filter((e): e is SavedGiro => e != null);
+    }
+    // Migrate v1 → v2 once
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (!legacy) return [];
+    const parsed = JSON.parse(legacy) as unknown[];
+    if (!Array.isArray(parsed)) return [];
+    const migrated = parsed
+      .map((e) => normalizeEntry(e as Partial<SavedGiro>))
+      .filter((e): e is SavedGiro => e != null);
+    writeAll(migrated);
+    localStorage.removeItem(LEGACY_KEY);
+    return migrated;
   } catch {
     return [];
   }
@@ -61,6 +107,9 @@ export function saveGiro(input: {
   origin: PlaceRef | null;
   departureAt: string | null;
   stops: GiroStop[];
+  preferences?: RoadPreferences;
+  travelMode?: TravelMode;
+  schedule?: ScheduleStop[] | null;
 }): SavedGiro {
   const now = new Date().toISOString();
   const all = readAll();
@@ -78,6 +127,19 @@ export function saveGiro(input: {
     origin: input.origin ? structuredClone(input.origin) : null,
     departureAt: input.departureAt,
     stops: structuredClone(input.stops),
+    preferences: {
+      ...DEFAULT_ROAD_PREFERENCES,
+      ...(input.preferences ?? existing?.preferences ?? {}),
+    },
+    travelMode: input.travelMode ?? existing?.travelMode ?? "DRIVE",
+    schedule:
+      input.schedule !== undefined
+        ? input.schedule
+          ? structuredClone(input.schedule)
+          : null
+        : existing?.schedule
+          ? structuredClone(existing.schedule)
+          : null,
   };
 
   const next = [entry, ...all.filter((g) => g.id !== entry.id)];
