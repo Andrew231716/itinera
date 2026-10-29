@@ -8,6 +8,7 @@ import {
 } from "@/lib/storage/saved-giri";
 import type { GiroStop } from "@/lib/routing/travel-schedule";
 import type { PlaceRef } from "@/lib/types/trip";
+import { DEFAULT_ROAD_PREFERENCES } from "@/lib/types/trip";
 
 function place(label: string, lat: number, lng: number): PlaceRef {
   return {
@@ -62,18 +63,30 @@ describe("saved giri", () => {
     ).toBe("Milano → Roma");
   });
 
-  it("saves, lists, updates and removes", () => {
+  it("saves times, locks, preferences and schedule", () => {
     const first = saveGiro({
       title: "Giro clienti",
       origin: place("Base", 45, 9),
       departureAt: "2026-10-28T08:00:00.000Z",
       stops: [stop("Cliente A", 45.1, 9.1), stop("Cliente B", 45.2, 9.2)],
+      preferences: { ...DEFAULT_ROAD_PREFERENCES, avoidTolls: true },
+      travelMode: "DRIVE",
+      schedule: [
+        {
+          kind: "origin",
+          place: place("Base", 45, 9),
+          arrivalAt: "2026-10-28T08:00:00.000Z",
+          legFromPreviousSeconds: 0,
+          cumulativeSeconds: 0,
+        },
+      ],
     });
-    expect(listSavedGiri()).toHaveLength(1);
-    expect(listSavedGiri()[0].stops[0].positionLock).toBe("last");
-    expect(listSavedGiri()[0].stops[0].arriveBy).toBe(
-      "2026-10-28T10:00:00.000Z",
-    );
+    const listed = listSavedGiri()[0];
+    expect(listed.stops[0].positionLock).toBe("last");
+    expect(listed.stops[0].arriveBy).toBe("2026-10-28T10:00:00.000Z");
+    expect(listed.preferences.avoidTolls).toBe(true);
+    expect(listed.travelMode).toBe("DRIVE");
+    expect(listed.schedule).toHaveLength(1);
 
     const updated = saveGiro({
       id: first.id,
@@ -81,6 +94,9 @@ describe("saved giri", () => {
       origin: first.origin,
       departureAt: first.departureAt,
       stops: first.stops,
+      preferences: first.preferences,
+      travelMode: first.travelMode,
+      schedule: first.schedule,
     });
     expect(updated.id).toBe(first.id);
     expect(listSavedGiri()).toHaveLength(1);
