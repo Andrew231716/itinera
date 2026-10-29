@@ -263,6 +263,45 @@ export function buildGiroListPdf(doc: GiroExportDoc): jsPDF {
   return pdf;
 }
 
+export type MapLegendRow = {
+  n: number;
+  time: string;
+  label: string;
+  detail: string;
+};
+
+/** Legend rows for the map PDF: number, clock, name (+ appointment). */
+export function buildMapLegendRows(doc: GiroExportDoc): MapLegendRow[] {
+  const mapPoints = placesToMapPoints(
+    doc.origin,
+    doc.stops.map((s) => s.place),
+  );
+  return mapPoints.map((p) => {
+    const scheduleRow =
+      doc.schedule && doc.schedule[p.index] ? doc.schedule[p.index] : null;
+    const stop = p.index === 0 ? null : doc.stops[p.index - 1];
+    const etaIso =
+      scheduleRow?.arrivalAt ??
+      (p.index === 0 ? doc.departureAt : null);
+    const apptIso = scheduleRow?.arriveBy ?? stop?.arriveBy ?? null;
+    const detailParts: string[] = [];
+    if (p.index === 0) detailParts.push("Partenza");
+    else if (p.index === mapPoints.length - 1) detailParts.push("Arrivo");
+    if (apptIso) detailParts.push(`Appuntamento ${formatClockIt(apptIso)}`);
+    if (scheduleRow && scheduleRow.legFromPreviousSeconds > 0) {
+      detailParts.push(
+        `+${formatDuration(scheduleRow.legFromPreviousSeconds)} di viaggio`,
+      );
+    }
+    return {
+      n: p.index + 1,
+      time: etaIso ? formatClockIt(etaIso) : "--:--",
+      label: p.label,
+      detail: detailParts.join(" · "),
+    };
+  });
+}
+
 export function buildGiroMapPdf(doc: GiroExportDoc): jsPDF {
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   let y = addHeader(pdf, doc, "PDF mappa tappe");
@@ -277,8 +316,8 @@ export function buildGiroMapPdf(doc: GiroExportDoc): jsPDF {
     const pageW = pdf.internal.pageSize.getWidth();
     const imgW = pageW - 28;
     const imgH = (imgW * canvas.height) / canvas.width;
-    pdf.addImage(img, "PNG", 14, y, imgW, Math.min(imgH, 120));
-    y += Math.min(imgH, 120) + 8;
+    pdf.addImage(img, "PNG", 14, y, imgW, Math.min(imgH, 110));
+    y += Math.min(imgH, 110) + 6;
   } else {
     pdf.setFontSize(10);
     y += write(pdf, "Mappa non disponibile su questo dispositivo.", 14, y) * 6;
@@ -286,27 +325,49 @@ export function buildGiroMapPdf(doc: GiroExportDoc): jsPDF {
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
-  y += write(pdf, "Legenda tappe (in ordine)", 14, y) * 6;
+  y += write(pdf, "Legenda tappe (ordine e orari)", 14, y) * 5;
   pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(9);
+  pdf.setFontSize(8);
+  pdf.setTextColor(100);
+  y +=
+    write(
+      pdf,
+      "N.  Orario ETA   Tappa (appuntamento se impostato)",
+      14,
+      y,
+    ) * 4;
+  pdf.setTextColor(0);
 
+  const legend = buildMapLegendRows(doc);
   const pageH = pdf.internal.pageSize.getHeight();
-  for (const p of mapPoints) {
-    if (y > pageH - 16) {
+  for (const row of legend) {
+    if (y > pageH - 18) {
       pdf.addPage();
       y = 16;
     }
-    const time =
-      doc.schedule?.find(
-        (s) =>
-          s.place.id ===
-          (p.index === 0 ? doc.origin.id : doc.stops[p.index - 1]?.place.id),
-      )?.arrivalAt ?? null;
-    const line = `${p.index + 1}. ${p.label}${
-      time ? ` - ${formatClockIt(time)}` : ""
-    }`;
-    const lines = Math.max(1, write(pdf, line, 14, y, { maxWidth: 180 }));
-    y += lines * 4.5 + 1;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    write(pdf, String(row.n), 14, y);
+    write(pdf, row.time, 22, y);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    const labelLines = Math.max(
+      1,
+      write(pdf, row.label, 42, y, { maxWidth: 150 }),
+    );
+    y += labelLines * 4.2;
+    if (row.detail) {
+      pdf.setFontSize(8);
+      pdf.setTextColor(90);
+      const detailLines = Math.max(
+        1,
+        write(pdf, row.detail, 42, y, { maxWidth: 150 }),
+      );
+      y += detailLines * 3.6 + 1.5;
+      pdf.setTextColor(0);
+    } else {
+      y += 2.5;
+    }
   }
 
   return pdf;

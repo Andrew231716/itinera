@@ -3,6 +3,7 @@ import {
   buildGiroListPdfBlob,
   buildGiroMapsLink,
   buildGiroPdfHtml,
+  buildMapLegendRows,
   exportGiroPdf,
   pdfSafeText,
 } from "@/lib/giro/export-giro";
@@ -108,5 +109,18 @@ describe("pdfSafeText", () => {
   it("keeps latin accented letters and strips exotic symbols", () => {
     expect(pdfSafeText("Città · Milano ✅")).toContain("Citt");
     expect(pdfSafeText("Città · Milano ✅")).not.toContain("✅");
+  });
+});
+
+describe("buildMapLegendRows", () => {
+  it("includes ETA and appointment times in order", () => {
+    const rows = buildMapLegendRows(sampleDoc);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].n).toBe(1);
+    expect(rows[0].time).toMatch(/\d{1,2}:\d{2}/);
+    expect(rows[0].label).toContain("Milano");
+    expect(rows[0].detail).toContain("Partenza");
+    expect(rows[1].time).toMatch(/\d{1,2}:\d{2}/);
+    expect(rows[1].detail).toMatch(/Appuntamento/);
   });
 });
