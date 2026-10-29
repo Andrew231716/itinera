@@ -398,7 +398,9 @@ export function GiroPanel() {
   function handleExportPdf(kind: GiroPdfKind) {
     const doc = buildExportDoc();
     if (!doc) {
-      setError("Aggiungi partenza e almeno una tappa, oppure calcola il giro.");
+      setError(
+        "Per il PDF servono partenza e almeno una tappa. Aggiungile o apri un giro salvato.",
+      );
       return;
     }
     setError(null);
@@ -407,11 +409,17 @@ export function GiroPanel() {
       setError(result.error || "Impossibile generare il PDF.");
       return;
     }
-    setSaveMessage(
-      kind === "map"
-        ? `PDF mappa scaricato: ${result.fileName}`
-        : `PDF elenco scaricato: ${result.fileName}`,
-    );
+    if (result.opened) {
+      setSaveMessage(
+        `PDF aperto: ${result.fileName}${
+          result.downloaded ? " (anche scaricato)" : ""
+        }`,
+      );
+    } else {
+      setSaveMessage(
+        `PDF scaricato: ${result.fileName}. Se non lo vedi, controlla i download o sblocca i popup.`,
+      );
+    }
   }
 
   function handleOpenMaps() {
@@ -751,6 +759,28 @@ export function GiroPanel() {
           <Save className="h-4 w-4" />
           {savedId ? "Aggiorna giro salvato" : "Salva giro"}
         </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={!(start && stops.length > 0)}
+            onClick={() => handleExportPdf("list")}
+          >
+            <FileDown className="h-4 w-4" />
+            PDF elenco
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={!(start && stops.length > 0)}
+            onClick={() => handleExportPdf("map")}
+          >
+            <FileDown className="h-4 w-4" />
+            PDF mappa
+          </Button>
+        </div>
         {saveMessage ? (
           <p className="text-xs text-emerald-700">{saveMessage}</p>
         ) : null}
