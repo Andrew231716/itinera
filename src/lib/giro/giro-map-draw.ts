@@ -58,6 +58,8 @@ export function placesToMapPoints(
 
 /**
  * Draw a schematic route map onto a canvas (no external tiles required).
+ * Markers are numbered only — names belong in the PDF legend so dense
+ * stops stay readable.
  */
 export function drawGiroMapCanvas(
   points: GiroMapPoint[],
@@ -94,13 +96,14 @@ export function drawGiroMapCanvas(
     points.map((p) => p.location),
     width,
     height,
+    36,
   );
   if (projected.length === 0) return canvas;
 
   // Route polyline
   if (projected.length > 1) {
     ctx.strokeStyle = "#0f766e";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3.5;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.beginPath();
@@ -111,7 +114,9 @@ export function drawGiroMapCanvas(
     ctx.stroke();
   }
 
-  // Markers + labels
+  // Numbered markers only (no name labels — those go in the legend)
+  const radius = points.length > 12 ? 11 : 13;
+  const fontSize = points.length > 12 ? 11 : 12;
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
     const { x, y } = projected[i];
@@ -119,35 +124,20 @@ export function drawGiroMapCanvas(
     const isEnd = i === points.length - 1;
 
     ctx.beginPath();
-    ctx.fillStyle = isStart ? "#0f766e" : isEnd ? "#b45309" : "#1d4ed8";
-    ctx.arc(x, y, 14, 0, Math.PI * 2);
-    ctx.fill();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 12px Helvetica, Arial, sans-serif";
+    ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.fillStyle = isStart ? "#0f766e" : isEnd ? "#b45309" : "#1d4ed8";
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${fontSize}px Helvetica, Arial, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(String(p.index + 1), x, y + 0.5);
-
-    const label = p.label.length > 36 ? `${p.label.slice(0, 34)}…` : p.label;
-    ctx.font = "600 13px Helvetica, Arial, sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "bottom";
-    const metrics = ctx.measureText(label);
-    const boxW = metrics.width + 12;
-    const boxH = 20;
-    let lx = x + 18;
-    let ly = y - 10;
-    if (lx + boxW > width - 8) lx = x - 18 - boxW;
-    if (ly - boxH < 8) ly = y + 28;
-
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.strokeStyle = "#cbd5e1";
-    ctx.lineWidth = 1;
-    ctx.fillRect(lx, ly - boxH, boxW, boxH);
-    ctx.strokeRect(lx, ly - boxH, boxW, boxH);
-
-    ctx.fillStyle = "#0f172a";
-    ctx.fillText(label, lx + 6, ly - 5);
   }
 
   return canvas;
