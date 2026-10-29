@@ -41,7 +41,15 @@ function normalizeEntry(raw: Partial<SavedGiro> & { id?: string }): SavedGiro | 
       ...(raw.preferences ?? {}),
     },
     travelMode: raw.travelMode ?? "DRIVE",
-    schedule: Array.isArray(raw.schedule) ? structuredClone(raw.schedule) : null,
+    schedule: Array.isArray(raw.schedule)
+      ? structuredClone(raw.schedule).map((row) => ({
+          ...row,
+          legFromPreviousMeters:
+            typeof row.legFromPreviousMeters === "number"
+              ? row.legFromPreviousMeters
+              : 0,
+        }))
+      : null,
   };
 }
 

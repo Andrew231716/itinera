@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyOptimizedIntermediateOrder,
   buildArrivalSchedule,
+  formatLegTravelLabel,
   giroHasHardLocks,
   orderGiroStops,
   orderPlacesByNearestNeighbor,
@@ -124,6 +125,26 @@ describe("buildArrivalSchedule", () => {
     expect(rows[1].arrivalAt).toBe("2026-10-27T08:10:00.000Z");
     expect(rows[1].arriveBy).toBe("2026-10-27T08:05:00.000Z");
     expect(rows[1].vsArriveBySeconds).toBe(300);
+    expect(rows[1].legFromPreviousSeconds).toBe(600);
+    expect(rows[1].legFromPreviousMeters).toBe(1000);
+    expect(rows[1].legEstimated).toBe(false);
+    expect(formatLegTravelLabel(rows[1])).toMatch(/min/);
     expect(rows[2].arrivalAt).toBe("2026-10-27T08:30:00.000Z");
+  });
+
+  it("estimates legs when the router returns none", () => {
+    const origin = place("O", 45.0, 9.0);
+    const dest = place("D", 45.1, 9.0);
+    const rows = buildArrivalSchedule({
+      departureAt: "2026-10-27T08:00:00.000Z",
+      origin,
+      orderedPlaces: [dest],
+      legs: [],
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[1].legFromPreviousSeconds).toBeGreaterThan(0);
+    expect(rows[1].legFromPreviousMeters).toBeGreaterThan(0);
+    expect(rows[1].legEstimated).toBe(true);
+    expect(formatLegTravelLabel(rows[1])).toMatch(/stima/);
   });
 });

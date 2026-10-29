@@ -1,4 +1,5 @@
 import { haversineMeters } from "@/lib/utils/geometry";
+import { formatDistance, formatDuration } from "@/lib/utils/format";
 import type { RouteLeg } from "@/lib/types/route";
 import type { PlaceRef } from "@/lib/types/trip";
 
@@ -21,12 +22,17 @@ export type ScheduleStop = {
   giroStopId?: string;
   /** ISO arrival (for origin = departure time) */
   arrivalAt: string;
+  /** Travel time from the previous point (0 for origin) */
   legFromPreviousSeconds: number;
+  /** Distance from the previous point in meters (0 for origin) */
+  legFromPreviousMeters: number;
   cumulativeSeconds: number;
   /** Optional appointment the user set */
   arriveBy?: string | null;
   /** estimated − target (positive = late), seconds */
   vsArriveBySeconds?: number | null;
+  /** True when duration came from haversine estimate, not the router */
+  legEstimated?: boolean;
 };
 
 /**
@@ -179,9 +185,21 @@ export function applyOptimizedIntermediateOrder(
   return next.length === intermediates.length ? next : intermediates;
 }
 
+/** Rough urban drive time when the router did not return a leg (~32 km/h). */
+export function estimateLegSeconds(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+): { seconds: number; meters: number } {
+  const meters = Math.max(0, Math.round(haversineMeters(from, to)));
+  const seconds = Math.max(60, Math.round(meters / (32_000 / 3600)));
+  return { seconds, meters };
+}
+
 /**
  * Build clock arrivals from departure + route legs.
  * `orderedStops` = visits in route order (intermediates then destination).
+ * Missing legs fall back to a distance-based estimate so “tempo tra tappe”
+ * is always available in Giro / PDF.
  */
 export function buildArrivalSchedule(params: {
   departureAt: string;
@@ -200,15 +218,31 @@ export function buildArrivalSchedule(params: {
       place: params.origin,
       arrivalAt: new Date(safeStart).toISOString(),
       legFromPreviousSeconds: 0,
+      legFromPreviousMeters: 0,
       cumulativeSeconds: 0,
     },
   ];
 
   let cumulative = 0;
+  let prevLoc = params.origin.location;
   for (let i = 0; i < params.orderedPlaces.length; i++) {
     const place = params.orderedPlaces[i];
     const giro = params.orderedGiroStops?.[i];
-    const legSeconds = Math.max(0, params.legs[i]?.durationSeconds ?? 0);
+    const routerLeg = params.legs[i];
+    const estimated = estimateLegSeconds(prevLoc, place.location);
+    const hasRouterDuration =
+      routerLeg != null &&
+      Number.isFinite(routerLeg.durationSeconds) &&
+      routerLeg.durationSeconds > 0;
+    const legSeconds = hasRouterDuration
+      ? Math.max(0, routerLeg.durationSeconds)
+      : estimated.seconds;
+    const legMeters =
+      routerLeg != null &&
+      Number.isFinite(routerLeg.distanceMeters) &&
+      routerLeg.distanceMeters > 0
+        ? Math.max(0, Math.round(routerLeg.distanceMeters))
+        : estimated.meters;
     cumulative += legSeconds;
     const arrivalAt = new Date(safeStart + cumulative * 1000).toISOString();
     const arriveBy = giro?.arriveBy ?? null;
@@ -227,11 +261,31 @@ export function buildArrivalSchedule(params: {
       giroStopId: giro?.id,
       arrivalAt,
       legFromPreviousSeconds: legSeconds,
+      legFromPreviousMeters: legMeters,
       cumulativeSeconds: cumulative,
       arriveBy,
       vsArriveBySeconds,
+      legEstimated: !hasRouterDuration,
     });
+    prevLoc = place.location;
   }
 
   return rows;
+}
+
+/** Compact “12 min · 4,2 km” for UI / PDF between two stops. */
+export function formatLegTravelLabel(row: ScheduleStop): string | null {
+  if (row.legFromPreviousSeconds <= 0 && row.legFromPreviousMeters <= 0) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (row.legFromPreviousSeconds > 0) {
+    parts.push(formatDuration(row.legFromPreviousSeconds));
+  }
+  if (row.legFromPreviousMeters > 0) {
+    parts.push(formatDistance(row.legFromPreviousMeters));
+  }
+  if (parts.length === 0) return null;
+  const base = parts.join(" · ");
+  return row.legEstimated ? `${base} (stima)` : base;
 }

@@ -26,6 +26,7 @@ import {
 } from "@/lib/places/resolve-query";
 import {
   buildArrivalSchedule,
+  formatLegTravelLabel,
   giroHasHardLocks,
   orderGiroStops,
   type GiroPositionLock,
@@ -902,64 +903,76 @@ export function GiroPanel() {
         <div className="space-y-2 border-t border-[var(--line)] pt-4">
           <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
             <Clock3 className="h-3.5 w-3.5" />
-            Orari di arrivo
+            Orari e tempi tra tappe
           </p>
-          <ol className="space-y-2">
-            {schedule.map((row, idx) => (
-              <li
-                key={`${row.place.id}-${idx}`}
-                className="flex gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5"
-              >
-                <div className="w-14 shrink-0 text-center">
-                  <p className="font-[family-name:var(--font-display)] text-lg font-semibold text-[var(--brand)]">
-                    {formatClockIt(row.arrivalAt)}
-                  </p>
-                  <p className="text-[10px] font-medium tracking-wide text-[var(--ink-muted)] uppercase">
-                    {row.kind === "origin"
-                      ? "Parti"
-                      : row.kind === "destination"
-                        ? "Arrivo"
-                        : `Tappa ${idx}`}
-                  </p>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-[var(--ink)]">
-                    {row.place.label}
-                  </p>
-                  {row.legFromPreviousSeconds > 0 ? (
-                    <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-                      +{formatDuration(row.legFromPreviousSeconds)} dal punto
-                      precedente
-                    </p>
-                  ) : row.kind === "origin" ? (
-                    <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-                      Orario di partenza scelto da te
-                    </p>
+          <ol className="space-y-0">
+            {schedule.map((row, idx) => {
+              const legLabel = formatLegTravelLabel(row);
+              return (
+                <li key={`${row.place.id}-${idx}`}>
+                  {legLabel ? (
+                    <div className="flex items-center gap-2 px-1 py-1.5">
+                      <span className="ml-6 h-4 w-px bg-[var(--brand)]/40" />
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--brand-soft)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--brand)]">
+                        → {legLabel}
+                      </span>
+                      <span className="text-[10px] text-[var(--ink-faint)]">
+                        dal punto precedente
+                      </span>
+                    </div>
                   ) : null}
-                  {row.arriveBy ? (
-                    <p
-                      className={cn(
-                        "mt-1 text-[11px] font-medium",
-                        (row.vsArriveBySeconds ?? 0) > 60
-                          ? "text-red-700"
-                          : (row.vsArriveBySeconds ?? 0) < -60
-                            ? "text-emerald-700"
-                            : "text-[var(--ink-muted)]",
-                      )}
-                    >
-                      Appuntamento {formatClockIt(row.arriveBy)}
-                      {row.vsArriveBySeconds != null
-                        ? row.vsArriveBySeconds > 60
-                          ? ` · in ritardo ${formatDuration(row.vsArriveBySeconds)}`
-                          : row.vsArriveBySeconds < -60
-                            ? ` · in anticipo ${formatDuration(-row.vsArriveBySeconds)}`
-                            : " · in orario"
-                        : null}
-                    </p>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+                  <div className="flex gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5">
+                    <div className="w-14 shrink-0 text-center">
+                      <p className="font-[family-name:var(--font-display)] text-lg font-semibold text-[var(--brand)]">
+                        {formatClockIt(row.arrivalAt)}
+                      </p>
+                      <p className="text-[10px] font-medium tracking-wide text-[var(--ink-muted)] uppercase">
+                        {row.kind === "origin"
+                          ? "Parti"
+                          : row.kind === "destination"
+                            ? "Arrivo"
+                            : `Tappa ${idx}`}
+                      </p>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-[var(--ink)]">
+                        {row.place.label}
+                      </p>
+                      {row.kind === "origin" ? (
+                        <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                          Orario di partenza scelto da te
+                        </p>
+                      ) : legLabel ? (
+                        <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                          Da precedente: {legLabel}
+                        </p>
+                      ) : null}
+                      {row.arriveBy ? (
+                        <p
+                          className={cn(
+                            "mt-1 text-[11px] font-medium",
+                            (row.vsArriveBySeconds ?? 0) > 60
+                              ? "text-red-700"
+                              : (row.vsArriveBySeconds ?? 0) < -60
+                                ? "text-emerald-700"
+                                : "text-[var(--ink-muted)]",
+                          )}
+                        >
+                          Appuntamento {formatClockIt(row.arriveBy)}
+                          {row.vsArriveBySeconds != null
+                            ? row.vsArriveBySeconds > 60
+                              ? ` · in ritardo ${formatDuration(row.vsArriveBySeconds)}`
+                              : row.vsArriveBySeconds < -60
+                                ? ` · in anticipo ${formatDuration(-row.vsArriveBySeconds)}`
+                                : " · in orario"
+                            : null}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ol>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button
