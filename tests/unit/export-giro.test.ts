@@ -40,6 +40,7 @@ const sampleDoc = {
       place: place("o", "Milano", 45.46, 9.19),
       arrivalAt: "2026-10-28T08:00:00.000Z",
       legFromPreviousSeconds: 0,
+      legFromPreviousMeters: 0,
       cumulativeSeconds: 0,
     },
     {
@@ -47,6 +48,7 @@ const sampleDoc = {
       place: place("d", "Roma", 41.9, 12.5),
       arrivalAt: "2026-10-28T12:00:00.000Z",
       legFromPreviousSeconds: 14_400,
+      legFromPreviousMeters: 480_000,
       cumulativeSeconds: 14_400,
       arriveBy: "2026-10-28T10:30:00.000Z",
     },
@@ -113,7 +115,7 @@ describe("pdfSafeText", () => {
 });
 
 describe("buildMapLegendRows", () => {
-  it("includes ETA and appointment times in order", () => {
+  it("includes ETA, travel time between stops, and appointments", () => {
     const rows = buildMapLegendRows(sampleDoc);
     expect(rows).toHaveLength(2);
     expect(rows[0].n).toBe(1);
@@ -122,5 +124,6 @@ describe("buildMapLegendRows", () => {
     expect(rows[0].detail).toContain("Partenza");
     expect(rows[1].time).toMatch(/\d{1,2}:\d{2}/);
     expect(rows[1].detail).toMatch(/Appuntamento/);
+    expect(rows[1].detail).toMatch(/Da precedente/);
   });
 });

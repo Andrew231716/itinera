@@ -77,6 +77,7 @@ describe("saved giri", () => {
           place: place("Base", 45, 9),
           arrivalAt: "2026-10-28T08:00:00.000Z",
           legFromPreviousSeconds: 0,
+          legFromPreviousMeters: 0,
           cumulativeSeconds: 0,
         },
       ],

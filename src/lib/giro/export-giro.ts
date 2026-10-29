@@ -5,7 +5,11 @@ import {
   nativeShare,
   type MapsLinkResult,
 } from "@/lib/google/maps-links";
-import type { GiroStop, ScheduleStop } from "@/lib/routing/travel-schedule";
+import {
+  formatLegTravelLabel,
+  type GiroStop,
+  type ScheduleStop,
+} from "@/lib/routing/travel-schedule";
 import { drawGiroMapCanvas, placesToMapPoints } from "@/lib/giro/giro-map-draw";
 import { summarizeTravelRules } from "@/lib/routing/travel-rules";
 import {
@@ -163,6 +167,8 @@ function buildListRows(doc: GiroExportDoc): Array<{
   left: string;
   title: string;
   detail: string;
+  /** Travel from previous stop, shown as its own line above the stop */
+  legLine?: string | null;
 }> {
   if (doc.schedule && doc.schedule.length > 0) {
     return doc.schedule.map((row, idx) => {
@@ -173,8 +179,9 @@ function buildListRows(doc: GiroExportDoc): Array<{
             ? "Arrivo"
             : `Tappa ${idx}`;
       const bits = [row.place.address].filter(Boolean) as string[];
-      if (row.legFromPreviousSeconds > 0) {
-        bits.push(`+${formatDuration(row.legFromPreviousSeconds)} dal precedente`);
+      const leg = formatLegTravelLabel(row);
+      if (leg) {
+        bits.push(`Da precedente: ${leg}`);
       }
       if (row.arriveBy) {
         bits.push(`Appuntamento ${formatClockIt(row.arriveBy)}`);
@@ -183,6 +190,7 @@ function buildListRows(doc: GiroExportDoc): Array<{
         left: formatClockIt(row.arrivalAt),
         title: `${role} - ${row.place.label}`,
         detail: bits.join(" - "),
+        legLine: leg ? `-> ${leg} dal punto precedente` : null,
       };
     });
   }
@@ -192,6 +200,7 @@ function buildListRows(doc: GiroExportDoc): Array<{
       left: "P",
       title: `Partenza - ${doc.origin.label}`,
       detail: doc.origin.address ?? "",
+      legLine: null as string | null,
     },
   ];
   for (let i = 0; i < doc.stops.length; i++) {
@@ -205,6 +214,7 @@ function buildListRows(doc: GiroExportDoc): Array<{
       left: String(i + 1),
       title: s.place.label,
       detail: bits.join(" - "),
+      legLine: null,
     });
   }
   return rows;
@@ -217,9 +227,16 @@ export function buildGiroListPdf(doc: GiroExportDoc): jsPDF {
   const pageH = pdf.internal.pageSize.getHeight();
 
   for (const row of rows) {
-    if (y > pageH - 24) {
+    if (y > pageH - 28) {
       pdf.addPage();
       y = 16;
+    }
+    if (row.legLine) {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.setTextColor(15, 118, 110);
+      y += write(pdf, row.legLine, 36, y, { maxWidth: 160 }) * 4 + 1;
+      pdf.setTextColor(0);
     }
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(12);
@@ -287,12 +304,9 @@ export function buildMapLegendRows(doc: GiroExportDoc): MapLegendRow[] {
     const detailParts: string[] = [];
     if (p.index === 0) detailParts.push("Partenza");
     else if (p.index === mapPoints.length - 1) detailParts.push("Arrivo");
+    const leg = scheduleRow ? formatLegTravelLabel(scheduleRow) : null;
+    if (leg) detailParts.push(`Da precedente: ${leg}`);
     if (apptIso) detailParts.push(`Appuntamento ${formatClockIt(apptIso)}`);
-    if (scheduleRow && scheduleRow.legFromPreviousSeconds > 0) {
-      detailParts.push(
-        `+${formatDuration(scheduleRow.legFromPreviousSeconds)} di viaggio`,
-      );
-    }
     return {
       n: p.index + 1,
       time: etaIso ? formatClockIt(etaIso) : "--:--",
