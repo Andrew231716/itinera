@@ -129,7 +129,8 @@ export function AppShell() {
     <div className="relative flex h-[100dvh] w-full overflow-hidden bg-[var(--mist)]">
       <div
         className={cn(
-          "absolute inset-0",
+          // z-0 traps floating map controls so they cannot sit above the trip panel (z-30).
+          "absolute inset-0 z-0",
           sidePanel && !driving
             ? isDesktop
               ? "left-[min(420px,38vw)]"
@@ -286,7 +287,7 @@ export function AppShell() {
           </nav>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-8 lg:px-5">
           {activePanel === "itinerary" ? <TripForm /> : null}
           {activePanel === "giro" ? <GiroPanel /> : null}
           {activePanel === "preferences" ? <TravelRulesPanel /> : null}

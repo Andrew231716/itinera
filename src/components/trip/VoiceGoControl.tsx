@@ -3,17 +3,27 @@
 import { useEffect, useRef } from "react";
 import { Loader2, Mic, MicOff, X } from "lucide-react";
 import { useVoiceGo } from "@/hooks/useVoiceGo";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useTripStore } from "@/lib/store/trip-store";
 import { Button, cn } from "@/components/ui/primitives";
 
 /**
  * Floating mic — Google Maps–style “Portami a…” for the web navigator.
  * Also handles deep links / Siri Shortcuts: ?go=… & ?voice=…
+ *
+ * Stays under the trip sheet (z < panel) so it never blocks Apri / Elimina.
+ * When the bottom sheet is open, the mic moves to the visible map strip.
  */
 export function VoiceGoControl() {
   const navigation = useTripStore((s) => s.navigation);
+  const mobilePanelOpen = useTripStore((s) => s.mobilePanelOpen);
   const setActivePanel = useTripStore((s) => s.setActivePanel);
   const setMobilePanelOpen = useTripStore((s) => s.setMobilePanelOpen);
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const isLandscapeMobile = useMediaQuery(
+    "(max-width: 1023px) and (orientation: landscape)",
+  );
+
   const driving =
     navigation.status === "navigating" ||
     navigation.status === "off_route" ||
@@ -63,13 +73,25 @@ export function VoiceGoControl() {
     status === "ready" ||
     Boolean(interim);
 
+  /** Bottom sheet covers most of the screen — park controls on the map peek. */
+  const dockTop =
+    !isDesktop && !isLandscapeMobile && mobilePanelOpen;
+
+  /** Hide the Siri chip while editing a trip so list actions stay free. */
+  const showSiriChip = !showPanel && !dockTop;
+
   return (
     <div
       className={cn(
-        "pointer-events-none absolute z-40 flex flex-col items-end gap-2",
-        "right-3 bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))]",
-        "landscape:bottom-3 landscape:right-[max(0.75rem,env(safe-area-inset-right))]",
-        "max-lg:landscape:bottom-3",
+        // Below the trip panel (z-30) so list buttons stay clickable.
+        "pointer-events-none absolute z-20 flex flex-col items-end gap-2",
+        dockTop
+          ? "top-[max(0.75rem,env(safe-area-inset-top))] right-3 bottom-auto"
+          : cn(
+              "right-3 bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))]",
+              "landscape:bottom-3 landscape:right-[max(0.75rem,env(safe-area-inset-right))]",
+              "max-lg:landscape:bottom-3",
+            ),
       )}
     >
       {showPanel ? (
@@ -130,7 +152,7 @@ export function VoiceGoControl() {
       ) : null}
 
       <div className="pointer-events-auto flex flex-col items-end gap-2">
-        {!showPanel ? (
+        {showSiriChip ? (
           <button
             type="button"
             className="rounded-full border border-[var(--line)] bg-[var(--surface)]/95 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase shadow-md backdrop-blur-md"
@@ -148,6 +170,7 @@ export function VoiceGoControl() {
           className={cn(
             "h-14 w-14 rounded-full p-0 shadow-lg",
             listening && "animate-pulse bg-red-600 hover:bg-red-700",
+            dockTop && "h-12 w-12",
           )}
           aria-label={
             listening ? "Interrompi ascolto" : "Comando vocale: portami a…"
