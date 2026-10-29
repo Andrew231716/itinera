@@ -44,6 +44,7 @@ import {
   Input,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 export function FuelPanel() {
   const trip = useTripStore((s) => s.trip);
@@ -55,6 +56,7 @@ export function FuelPanel() {
   const selectFuel = useTripStore((s) => s.selectFuel);
   const applySelectedFuel = useTripStore((s) => s.applySelectedFuel);
   const requestFuelNear = useTripStore((s) => s.requestFuelNear);
+  const clearFuelResults = useTripStore((s) => s.clearFuelResults);
 
   const [adblue, setAdblue] = useState(true);
   const [lpg, setLpg] = useState(false);
@@ -290,11 +292,44 @@ export function FuelPanel() {
       .slice(0, 10);
   }, [brandsAvailable]);
 
+  function handleReset() {
+    clearFuelResults();
+    setAdblue(true);
+    setLpg(false);
+    setOpen24h(false);
+    setTruck(false);
+    setBrand("");
+    setRadius(8000);
+    setQuery("");
+    setAlongRoute(Boolean(trip.origin && trip.destination));
+    setError(null);
+    setAdvice(null);
+    setLimitations([]);
+    setBrandsAvailable([]);
+  }
+
   return (
     <div className="space-y-4">
       <SectionTitle
         title="Benzinai"
         subtitle="Prezzi MIMIT, AdBlue, GPL, telefono e indicazioni — OSM + Google + Osservaprezzi"
+        action={
+          <PanelResetButton
+            disabled={
+              fuelStations.length === 0 &&
+              !fuelCenter &&
+              !error &&
+              !lpg &&
+              !open24h &&
+              !truck &&
+              !brand &&
+              !query.trim() &&
+              adblue
+            }
+            onClick={handleReset}
+            label="Reset"
+          />
+        }
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">

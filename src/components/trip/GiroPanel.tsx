@@ -68,6 +68,7 @@ import {
   SectionTitle,
   cn,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 function makeGiroStop(place: PlaceRef): GiroStop {
   return {
@@ -560,17 +561,11 @@ export function GiroPanel() {
         title="Giro tappe"
         subtitle="Importa un piano fermate PDF, oppure crea un giro e modificalo"
         action={
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
+          <PanelResetButton
             disabled={!canReset || busy || importing}
             onClick={handleResetGiro}
-            aria-label="Reset giro"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reset
-          </Button>
+            label="Reset"
+          />
         }
       />
 

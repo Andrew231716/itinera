@@ -44,6 +44,7 @@ import {
   Label,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { PlaceSearch } from "@/components/trip/PlaceSearch";
 
 const KINDS: Array<{ id: SavedPlaceKind; label: string; icon: typeof Heart }> = [
@@ -104,11 +105,40 @@ export function SavedPanel() {
     [places, filter],
   );
 
+  function handleResetSection() {
+    setLabel("");
+    setNote("");
+    setKind("parking");
+    setFilter("all");
+    resetTrip();
+  }
+
+  const tripDirty = Boolean(
+    trip.origin ||
+      trip.destination ||
+      trip.stops.length > 0 ||
+      trip.exclusions.length > 0 ||
+      trip.meta.title !== "Il mio itinerario",
+  );
+
   return (
     <div className="space-y-6">
       <SectionTitle
         title="Salvati"
         subtitle="Offline, cronologia, viaggi memorizzati e posti preferiti"
+        action={
+          <PanelResetButton
+            disabled={
+              !tripDirty &&
+              !label.trim() &&
+              !note.trim() &&
+              kind === "parking" &&
+              filter === "all"
+            }
+            onClick={handleResetSection}
+            label="Reset"
+          />
+        }
       />
 
       <section className="space-y-3">

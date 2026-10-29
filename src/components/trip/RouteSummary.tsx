@@ -31,6 +31,7 @@ import {
   EmptyHint,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { TrafficMonitorPanel } from "@/components/trip/TrafficMonitorPanel";
 import { TravelRulesChip } from "@/components/trip/TravelRulesChip";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
@@ -42,6 +43,7 @@ export function RouteSummary() {
   const routeError = useTripStore((s) => s.routeError);
   const routeLimitations = useTripStore((s) => s.routeLimitations);
   const setSelectedRoute = useTripStore((s) => s.setSelectedRoute);
+  const clearRoutes = useTripStore((s) => s.clearRoutes);
   const startNavigation = useTripStore((s) => s.startNavigation);
 
   const selected =
@@ -77,6 +79,17 @@ export function RouteSummary() {
       <SectionTitle
         title="Riepilogo percorso"
         subtitle="Dati provenienti solo dal motore di routing — mai inventati"
+        action={
+          <PanelResetButton
+            disabled={
+              routes.length === 0 &&
+              routeMode === "idle" &&
+              !routeError
+            }
+            onClick={clearRoutes}
+            label="Reset"
+          />
+        }
       />
       <TravelRulesChip />
 

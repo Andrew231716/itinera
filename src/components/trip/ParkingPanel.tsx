@@ -28,6 +28,7 @@ import {
   Input,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 type PricingFilter = "all" | "free" | "paid" | "unknown";
 
@@ -41,6 +42,7 @@ export function ParkingPanel() {
   const selectParking = useTripStore((s) => s.selectParking);
   const applySelectedParking = useTripStore((s) => s.applySelectedParking);
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
+  const clearParkingResults = useTripStore((s) => s.clearParkingResults);
 
   const [filter, setFilter] = useState<PricingFilter>("all");
   const [radius, setRadius] = useState(1200);
@@ -181,11 +183,33 @@ export function ParkingPanel() {
     );
   }
 
+  function handleReset() {
+    clearParkingResults();
+    setFilter("all");
+    setRadius(1200);
+    setQuery("");
+    setError(null);
+    setLimitations([]);
+  }
+
   return (
     <div className="space-y-4">
       <SectionTitle
         title="Parcheggi"
         subtitle="Cerca quando vuoi · OSM, Google Maps, EasyPark"
+        action={
+          <PanelResetButton
+            disabled={
+              parkingSpots.length === 0 &&
+              !parkingCenter &&
+              !error &&
+              filter === "all" &&
+              !query.trim()
+            }
+            onClick={handleReset}
+            label="Reset"
+          />
+        }
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">

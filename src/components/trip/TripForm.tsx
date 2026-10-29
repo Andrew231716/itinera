@@ -8,6 +8,7 @@ import {
   localInputToIso,
 } from "@/lib/utils/format";
 import { Button, Input, Label, SectionTitle } from "@/components/ui/primitives";
+import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { PlaceSearch, MapPickHint } from "@/components/trip/PlaceSearch";
 import { StopList } from "@/components/trip/StopList";
 
@@ -32,12 +33,28 @@ export function TripForm() {
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
   const requestFuelNear = useTripStore((s) => s.requestFuelNear);
   const openFuelPanel = useTripStore((s) => s.openFuelPanel);
+  const resetTrip = useTripStore((s) => s.resetTrip);
+  const canReset = Boolean(
+    trip.origin ||
+      trip.destination ||
+      trip.stops.length > 0 ||
+      trip.departureAt ||
+      trip.exclusions.length > 0 ||
+      trip.meta.title !== "Il mio itinerario",
+  );
 
   return (
     <div className="space-y-5">
       <SectionTitle
         title="Itinerario"
         subtitle="Partenza → tappe → destinazione finale (l’ultima tappa aggiunta)"
+        action={
+          <PanelResetButton
+            disabled={!canReset}
+            onClick={resetTrip}
+            label="Reset"
+          />
+        }
       />
 
       <div>
