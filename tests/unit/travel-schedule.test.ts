@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyGiroWindowOrder,
   applyOptimizedIntermediateOrder,
   buildArrivalSchedule,
+  findGiroFlexibleWindows,
   formatLegTravelLabel,
   giroHasHardLocks,
   orderGiroStops,
@@ -146,5 +148,44 @@ describe("buildArrivalSchedule", () => {
     expect(rows[1].legFromPreviousMeters).toBeGreaterThan(0);
     expect(rows[1].legEstimated).toBe(true);
     expect(formatLegTravelLabel(rows[1])).toMatch(/stima/);
+  });
+});
+
+describe("findGiroFlexibleWindows", () => {
+  it("suggests reorder alternatives between fixed anchors", () => {
+    const origin = place("O", 45.0, 9.0);
+    const first = giro("first", 45.01, 9.0, 1);
+    const a = giro("a", 45.02, 9.0);
+    const b = giro("b", 45.03, 9.0);
+    const last = giro("last", 45.2, 9.0, "last");
+    const ordered = [first, a, b, last];
+    const windows = findGiroFlexibleWindows(origin, ordered);
+    expect(windows).toHaveLength(1);
+    expect(windows[0].beforeLabel).toBe("first");
+    expect(windows[0].afterLabel).toBe("last");
+    expect(windows[0].currentOrderIds).toEqual(["a", "b"]);
+    expect(windows[0].alternatives.length).toBeGreaterThan(0);
+    expect(windows[0].alternatives[0].orderIds).toEqual(["b", "a"]);
+  });
+
+  it("applies a chosen window order", () => {
+    const ordered = [
+      giro("first", 45.01, 9.0, 1),
+      giro("a", 45.02, 9.0),
+      giro("b", 45.03, 9.0),
+      giro("last", 45.2, 9.0, "last"),
+    ];
+    const next = applyGiroWindowOrder(
+      ordered,
+      { start: 1, end: 2 },
+      ["b", "a"],
+    );
+    expect(next.map((s) => s.id)).toEqual(["first", "b", "a", "last"]);
+  });
+
+  it("returns nothing when free stops cannot be swapped", () => {
+    const origin = place("O", 45.0, 9.0);
+    const only = giro("only", 45.02, 9.0);
+    expect(findGiroFlexibleWindows(origin, [only])).toEqual([]);
   });
 });

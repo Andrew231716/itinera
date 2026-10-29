@@ -289,3 +289,185 @@ export function formatLegTravelLabel(row: ScheduleStop): string | null {
   const base = parts.join(" · ");
   return row.legEstimated ? `${base} (stima)` : base;
 }
+
+export type GiroOrderAlternative = {
+  /** Stop ids in the free window, new order */
+  orderIds: string[];
+  labels: string[];
+  estimatedSeconds: number;
+  deltaSeconds: number;
+};
+
+export type GiroFlexibleWindow = {
+  /** Inclusive indices into the ordered visit list (not including origin) */
+  start: number;
+  end: number;
+  /** Anchor before the free window (origin or a fixed stop) */
+  beforeLabel: string;
+  /** Anchor after the free window (fixed stop or “fine giro”) */
+  afterLabel: string;
+  currentOrderIds: string[];
+  currentLabels: string[];
+  currentSeconds: number;
+  alternatives: GiroOrderAlternative[];
+};
+
+function isHardLocked(stop: GiroStop): boolean {
+  return stop.positionLock === "last" || typeof stop.positionLock === "number";
+}
+
+function pathSeconds(points: Array<{ lat: number; lng: number }>): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += estimateLegSeconds(points[i - 1], points[i]).seconds;
+  }
+  return total;
+}
+
+function permute<T>(items: T[]): T[][] {
+  if (items.length <= 1) return [items];
+  if (items.length > 4) return []; // handled by candidate heuristics
+  const out: T[][] = [];
+  const used = new Array(items.length).fill(false);
+  const cur: T[] = [];
+  function dfs() {
+    if (cur.length === items.length) {
+      out.push([...cur]);
+      return;
+    }
+    for (let i = 0; i < items.length; i++) {
+      if (used[i]) continue;
+      used[i] = true;
+      cur.push(items[i]);
+      dfs();
+      cur.pop();
+      used[i] = false;
+    }
+  }
+  dfs();
+  return out;
+}
+
+/** Limited reorder candidates when a free window has 5+ stops. */
+function heuristicOrders<T>(items: T[]): T[][] {
+  const out: T[][] = [[...items]];
+  // Adjacent swaps
+  for (let i = 0; i < items.length - 1; i++) {
+    const next = [...items];
+    [next[i], next[i + 1]] = [next[i + 1], next[i]];
+    out.push(next);
+  }
+  // Reverse window
+  out.push([...items].reverse());
+  // Move first to end / last to front
+  if (items.length >= 3) {
+    out.push([...items.slice(1), items[0]]);
+    out.push([items[items.length - 1], ...items.slice(0, -1)]);
+  }
+  return out;
+}
+
+function uniqueOrdersByIds(orders: GiroStop[][]): GiroStop[][] {
+  const seen = new Set<string>();
+  const out: GiroStop[][] = [];
+  for (const order of orders) {
+    const key = order.map((s) => s.id).join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(order);
+  }
+  return out;
+}
+
+/**
+ * Free stops between hard-locked anchors can be reordered.
+ * Returns windows with alternative sequences ranked by estimated travel time.
+ */
+export function findGiroFlexibleWindows(
+  origin: PlaceRef,
+  ordered: GiroStop[],
+  maxAlternatives = 4,
+): GiroFlexibleWindow[] {
+  if (ordered.length < 2) return [];
+
+  const windows: GiroFlexibleWindow[] = [];
+  let i = 0;
+  while (i < ordered.length) {
+    if (isHardLocked(ordered[i])) {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    while (i < ordered.length && !isHardLocked(ordered[i])) i += 1;
+    const end = i - 1;
+    if (end - start < 1) continue; // need at least 2 free stops
+
+    const free = ordered.slice(start, end + 1);
+    const before = start === 0 ? origin : ordered[start - 1].place;
+    const after =
+      end + 1 < ordered.length ? ordered[end + 1].place : null;
+    const beforeLabel = start === 0 ? origin.label : ordered[start - 1].place.label;
+    const afterLabel = after?.label ?? "Fine giro";
+
+    const score = (seq: GiroStop[]) =>
+      pathSeconds([
+        before.location,
+        ...seq.map((s) => s.place.location),
+        ...(after ? [after.location] : []),
+      ]);
+
+    const currentSeconds = score(free);
+    const candidates =
+      free.length <= 4 ? permute(free) : heuristicOrders(free);
+    const alternatives = uniqueOrdersByIds(candidates)
+      .filter((seq) => seq.map((s) => s.id).join("|") !== free.map((s) => s.id).join("|"))
+      .map((seq) => {
+        const estimatedSeconds = score(seq);
+        return {
+          orderIds: seq.map((s) => s.id),
+          labels: seq.map((s) => s.place.label),
+          estimatedSeconds,
+          deltaSeconds: estimatedSeconds - currentSeconds,
+        };
+      })
+      .sort((a, b) => a.estimatedSeconds - b.estimatedSeconds)
+      .slice(0, maxAlternatives);
+
+    if (alternatives.length === 0) continue;
+
+    windows.push({
+      start,
+      end,
+      beforeLabel,
+      afterLabel,
+      currentOrderIds: free.map((s) => s.id),
+      currentLabels: free.map((s) => s.place.label),
+      currentSeconds,
+      alternatives,
+    });
+  }
+
+  return windows;
+}
+
+/** Apply a free-window reorder onto the full ordered visit list. */
+export function applyGiroWindowOrder(
+  ordered: GiroStop[],
+  window: Pick<GiroFlexibleWindow, "start" | "end">,
+  orderIds: string[],
+): GiroStop[] {
+  const slice = ordered.slice(window.start, window.end + 1);
+  if (slice.length !== orderIds.length) return ordered;
+  const byId = new Map(slice.map((s) => [s.id, s]));
+  const nextSlice: GiroStop[] = [];
+  for (const id of orderIds) {
+    const stop = byId.get(id);
+    if (!stop) return ordered;
+    nextSlice.push(stop);
+  }
+  return [
+    ...ordered.slice(0, window.start),
+    ...nextSlice,
+    ...ordered.slice(window.end + 1),
+  ];
+}

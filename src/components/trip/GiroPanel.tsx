@@ -8,6 +8,7 @@ import {
   FileDown,
   FileUp,
   FolderOpen,
+  GitBranch,
   History,
   ListOrdered,
   MapPin,
@@ -25,10 +26,13 @@ import {
   resolvePlaceQuery,
 } from "@/lib/places/resolve-query";
 import {
+  applyGiroWindowOrder,
   buildArrivalSchedule,
+  findGiroFlexibleWindows,
   formatLegTravelLabel,
   giroHasHardLocks,
   orderGiroStops,
+  type GiroFlexibleWindow,
   type GiroPositionLock,
   type GiroStop,
   type ScheduleStop,
@@ -127,12 +131,18 @@ export function GiroPanel() {
   /** Origin used for the last computed giro (for export). */
   const [exportOrigin, setExportOrigin] = useState<PlaceRef | null>(null);
   const [importing, setImporting] = useState(false);
+  const [openAltWindow, setOpenAltWindow] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lineCount = useMemo(
     () => parseAddressLines(listText).length,
     [listText],
   );
+
+  const flexibleWindows = useMemo(() => {
+    if (!start || stops.length < 2) return [];
+    return findGiroFlexibleWindows(start, stops);
+  }, [start, stops]);
 
   function refreshSaved() {
     setSavedList(listSavedGiri());
@@ -299,9 +309,35 @@ export function GiroPanel() {
     setSavedId(null);
     setSaveTitle("");
     setSaveMessage(null);
+    setOpenAltWindow(null);
     setDepartureLocal(defaultDepartureLocal());
     setAddKey((k) => k + 1);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function applyAlternative(
+    window: GiroFlexibleWindow,
+    orderIds: string[],
+  ) {
+    if (!start) return;
+    const next = applyGiroWindowOrder(stops, window, orderIds);
+    setStops(next);
+    setOpenAltWindow(null);
+    const departureAt = localInputToIso(departureLocal);
+    if (departureAt) {
+      const rows = buildArrivalSchedule({
+        departureAt,
+        origin: start,
+        orderedPlaces: next.map((s) => s.place),
+        legs: [],
+        orderedGiroStops: next,
+      });
+      setSchedule(rows);
+      setExportOrigin(start);
+    }
+    setSaveMessage(
+      "Ordine alternativo applicato. Tocca «Crea percorso» per ricalcolare i tempi reali.",
+    );
   }
 
   function persistCurrentGiro(opts?: {
@@ -895,6 +931,86 @@ export function GiroPanel() {
                 </button>
               </li>
             ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {flexibleWindows.length > 0 ? (
+        <div className="space-y-2 border-t border-[var(--line)] pt-4">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
+            <GitBranch className="h-3.5 w-3.5" />
+            Alternative tra punti fissati
+          </p>
+          <p className="text-[11px] text-[var(--ink-muted)]">
+            Alcune tappe libere possono essere fatte prima o dopo, restando tra
+            i punti bloccati. Confronta gli ordini stimati e scegline uno.
+          </p>
+          <ul className="space-y-2">
+            {flexibleWindows.map((w, wi) => {
+              const open = openAltWindow === wi;
+              return (
+                <li
+                  key={`${w.start}-${w.end}`}
+                  className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--ink)]">
+                        Tra «{w.beforeLabel}» e «{w.afterLabel}»
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                        Ora: {w.currentLabels.join(" → ")} ·{" "}
+                        {formatDuration(w.currentSeconds)} stimati
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setOpenAltWindow(open ? null : wi)
+                      }
+                    >
+                      {open ? "Nascondi" : "Vedi alternative"}
+                    </Button>
+                  </div>
+                  {open ? (
+                    <ul className="mt-2 space-y-1.5 border-t border-[var(--line)] pt-2">
+                      {w.alternatives.map((alt) => (
+                        <li
+                          key={alt.orderIds.join("|")}
+                          className="flex items-start gap-2 rounded-lg bg-[var(--surface-2)] px-2.5 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-[var(--ink)]">
+                              {alt.labels.join(" → ")}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                              {formatDuration(alt.estimatedSeconds)} stimati
+                              {alt.deltaSeconds === 0
+                                ? " · come ora"
+                                : alt.deltaSeconds < 0
+                                  ? ` · ${formatDuration(-alt.deltaSeconds)} in meno`
+                                  : ` · ${formatDuration(alt.deltaSeconds)} in più`}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              applyAlternative(w, alt.orderIds)
+                            }
+                          >
+                            Usa
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}
