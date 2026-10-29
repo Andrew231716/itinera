@@ -11,6 +11,7 @@ import {
   History,
   ListOrdered,
   MapPin,
+  RotateCcw,
   Save,
   Share2,
   Trash2,
@@ -81,6 +82,13 @@ function placeKey(p: PlaceRef): string {
   return p.placeId ?? `${p.location.lat.toFixed(5)},${p.location.lng.toFixed(5)}`;
 }
 
+function defaultDepartureLocal(): string {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + 1);
+  return formatDateTimeLocal(d.toISOString());
+}
+
 /**
  * Paste / search addresses → order by proximity (with locks) → ETA per stop.
  */
@@ -98,12 +106,7 @@ export function GiroPanel() {
   const { computeRoute } = useRouteCompute();
 
   const [start, setStart] = useState<PlaceRef | null>(tripOrigin);
-  const [departureLocal, setDepartureLocal] = useState(() => {
-    const d = new Date();
-    d.setMinutes(0, 0, 0);
-    d.setHours(d.getHours() + 1);
-    return formatDateTimeLocal(d.toISOString());
-  });
+  const [departureLocal, setDepartureLocal] = useState(defaultDepartureLocal);
   const [listText, setListText] = useState("");
   const [stops, setStops] = useState<GiroStop[]>([]);
   const [busy, setBusy] = useState(false);
@@ -274,6 +277,23 @@ export function GiroPanel() {
       return [...prev, makeGiroStop(place)];
     });
     setAddKey((k) => k + 1);
+  }
+
+  function handleResetGiro() {
+    setError(null);
+    setLineErrors([]);
+    setOrderWarnings([]);
+    setSchedule(null);
+    setListText("");
+    setStops([]);
+    setStart(null);
+    setExportOrigin(null);
+    setSavedId(null);
+    setSaveTitle("");
+    setSaveMessage(null);
+    setDepartureLocal(defaultDepartureLocal());
+    setAddKey((k) => k + 1);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function handleSaveGiro() {
@@ -522,11 +542,36 @@ export function GiroPanel() {
     }
   }
 
+  const canReset =
+    Boolean(start) ||
+    stops.length > 0 ||
+    listText.trim().length > 0 ||
+    Boolean(schedule) ||
+    Boolean(savedId) ||
+    saveTitle.trim().length > 0 ||
+    Boolean(error) ||
+    lineErrors.length > 0 ||
+    orderWarnings.length > 0 ||
+    Boolean(saveMessage);
+
   return (
     <div className="space-y-4">
       <SectionTitle
         title="Giro tappe"
         subtitle="Importa un piano fermate PDF, oppure crea un giro e modificalo"
+        action={
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={!canReset || busy || importing}
+            onClick={handleResetGiro}
+            aria-label="Reset giro"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Reset
+          </Button>
+        }
       />
 
       <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
@@ -666,15 +711,27 @@ export function GiroPanel() {
         ) : null}
       </div>
 
-      <Button
-        type="button"
-        className="w-full"
-        disabled={busy}
-        onClick={() => void createGiro()}
-      >
-        <ListOrdered className="h-4 w-4" />
-        {busy ? "Creo il percorso…" : "Crea percorso ottimizzato"}
-      </Button>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button
+          type="button"
+          className="w-full sm:flex-1"
+          disabled={busy}
+          onClick={() => void createGiro()}
+        >
+          <ListOrdered className="h-4 w-4" />
+          {busy ? "Creo il percorso…" : "Crea percorso ottimizzato"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full sm:w-auto"
+          disabled={!canReset || busy || importing}
+          onClick={handleResetGiro}
+        >
+          <RotateCcw className="h-4 w-4" />
+          Reset giro
+        </Button>
+      </div>
 
       {tripHistory.length > 0 ? (
         <div className="space-y-2 border-t border-[var(--line)] pt-4">
