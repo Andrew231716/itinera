@@ -183,6 +183,11 @@ function buildListRows(doc: GiroExportDoc): Array<{
       if (leg) {
         bits.push(`Da precedente: ${leg}`);
       }
+      if (row.dwellMinutes > 0) {
+        bits.push(
+          `Fermata ${row.dwellMinutes} min (parti ${formatClockIt(row.departAt)})`,
+        );
+      }
       if (row.arriveBy) {
         bits.push(`Appuntamento ${formatClockIt(row.arriveBy)}`);
       }
@@ -208,6 +213,7 @@ function buildListRows(doc: GiroExportDoc): Array<{
     const bits = [
       s.place.address,
       `Posizione: ${lockLabel(s.positionLock)}`,
+      s.dwellMinutes > 0 ? `Fermata ${s.dwellMinutes} min` : null,
       s.arriveBy ? `Appuntamento ${formatClockIt(s.arriveBy)}` : null,
     ].filter(Boolean) as string[];
     rows.push({
@@ -306,6 +312,9 @@ export function buildMapLegendRows(doc: GiroExportDoc): MapLegendRow[] {
     else if (p.index === mapPoints.length - 1) detailParts.push("Arrivo");
     const leg = scheduleRow ? formatLegTravelLabel(scheduleRow) : null;
     if (leg) detailParts.push(`Da precedente: ${leg}`);
+    if (scheduleRow && scheduleRow.dwellMinutes > 0) {
+      detailParts.push(`Fermata ${scheduleRow.dwellMinutes} min`);
+    }
     if (apptIso) detailParts.push(`Appuntamento ${formatClockIt(apptIso)}`);
     return {
       n: p.index + 1,

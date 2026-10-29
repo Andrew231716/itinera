@@ -34,6 +34,7 @@ function giro(
     id,
     place: place(id, lat, lng),
     arriveBy,
+    dwellMinutes: 0,
     positionLock: lock,
   };
 }
@@ -159,6 +160,46 @@ describe("buildArrivalSchedule", () => {
     expect(rows[1].legFromPreviousMeters).toBe(1000);
     expect(rows[1].legEstimated).toBe(false);
     expect(formatLegTravelLabel(rows[1])).toMatch(/min/);
+    expect(rows[2].arrivalAt).toBe("2026-10-27T08:30:00.000Z");
+  });
+
+  it("adds dwell time before the next leg", () => {
+    const origin = place("O", 0, 0);
+    const s1 = place("S1", 1, 1);
+    const d = place("D", 2, 2);
+    const giroStops = [
+      { ...giro("S1", 1, 1), dwellMinutes: 10 },
+      { ...giro("D", 2, 2), dwellMinutes: 0 },
+    ];
+    const legs: RouteLeg[] = [
+      {
+        id: "l0",
+        startLabel: "O",
+        endLabel: "S1",
+        distanceMeters: 1000,
+        durationSeconds: 600,
+        steps: [],
+      },
+      {
+        id: "l1",
+        startLabel: "S1",
+        endLabel: "D",
+        distanceMeters: 2000,
+        durationSeconds: 600,
+        steps: [],
+      },
+    ];
+    const rows = buildArrivalSchedule({
+      departureAt: "2026-10-27T08:00:00.000Z",
+      origin,
+      orderedPlaces: [s1, d],
+      legs,
+      orderedGiroStops: giroStops,
+    });
+    // Arrive S1 08:10, dwell 10 → leave 08:20, +10 min leg → D 08:30
+    expect(rows[1].arrivalAt).toBe("2026-10-27T08:10:00.000Z");
+    expect(rows[1].departAt).toBe("2026-10-27T08:20:00.000Z");
+    expect(rows[1].dwellMinutes).toBe(10);
     expect(rows[2].arrivalAt).toBe("2026-10-27T08:30:00.000Z");
   });
 

@@ -76,12 +76,14 @@ import {
   cn,
 } from "@/components/ui/primitives";
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
+import { GiroRunPanel } from "@/components/trip/GiroRunPanel";
 
 function makeGiroStop(place: PlaceRef): GiroStop {
   return {
     id: nanoid(),
     place,
     arriveBy: null,
+    dwellMinutes: 10,
     positionLock: "auto",
   };
 }
@@ -282,10 +284,30 @@ export function GiroPanel() {
 
   function updateStop(id: string, patch: Partial<GiroStop>) {
     setStops((prev) => {
-      if (patch.positionLock !== undefined) {
-        return assignGiroPositionLock(prev, id, patch.positionLock);
+      const next =
+        patch.positionLock !== undefined
+          ? assignGiroPositionLock(prev, id, patch.positionLock)
+          : prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+
+      // Refresh ETA preview when dwell/appointment changes (estimate until full recompute).
+      if (
+        start &&
+        (patch.dwellMinutes !== undefined || patch.arriveBy !== undefined)
+      ) {
+        const departureAt = localInputToIso(departureLocal);
+        if (departureAt) {
+          setSchedule(
+            buildArrivalSchedule({
+              departureAt,
+              origin: start,
+              orderedPlaces: next.map((s) => s.place),
+              legs: [],
+              orderedGiroStops: next,
+            }),
+          );
+        }
       }
-      return prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+      return next;
     });
   }
 
@@ -1021,9 +1043,11 @@ export function GiroPanel() {
 
       {schedule && schedule.length > 0 ? (
         <div className="space-y-2 border-t border-[var(--line)] pt-4">
+          <GiroRunPanel schedule={schedule} />
+
           <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
             <Clock3 className="h-3.5 w-3.5" />
-            Orari e tempi tra tappe
+            Orari, fermate e tempi tra tappe
           </p>
           <ol className="space-y-0">
             {schedule.map((row, idx) => {
@@ -1065,6 +1089,12 @@ export function GiroPanel() {
                       ) : legLabel ? (
                         <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
                           Da precedente: {legLabel}
+                        </p>
+                      ) : null}
+                      {row.dwellMinutes > 0 ? (
+                        <p className="mt-0.5 text-[11px] font-medium text-[var(--ink)]">
+                          Fermata {row.dwellMinutes} min · riparti alle{" "}
+                          {formatClockIt(row.departAt)}
                         </p>
                       ) : null}
                       {row.arriveBy ? (
@@ -1246,6 +1276,23 @@ function GiroStopCard({
           />
         </div>
         <div>
+          <Label>Tempo di fermata (min)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={240}
+            value={stop.dwellMinutes}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              onChange({
+                dwellMinutes: Number.isFinite(n)
+                  ? Math.max(0, Math.min(240, Math.round(n)))
+                  : 0,
+              });
+            }}
+          />
+        </div>
+        <div className="sm:col-span-2">
           <Label>Posizione nel giro</Label>
           <select
             className="h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--brand)]"

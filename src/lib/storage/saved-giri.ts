@@ -35,7 +35,13 @@ function normalizeEntry(raw: Partial<SavedGiro> & { id?: string }): SavedGiro | 
     updatedAt: raw.updatedAt ?? raw.createdAt ?? new Date().toISOString(),
     origin: raw.origin ?? null,
     departureAt: raw.departureAt ?? null,
-    stops: structuredClone(stops),
+    stops: structuredClone(stops).map((s) => ({
+      ...s,
+      dwellMinutes:
+        typeof s.dwellMinutes === "number" && Number.isFinite(s.dwellMinutes)
+          ? Math.max(0, Math.round(s.dwellMinutes))
+          : 0,
+    })),
     preferences: {
       ...DEFAULT_ROAD_PREFERENCES,
       ...(raw.preferences ?? {}),
@@ -44,6 +50,12 @@ function normalizeEntry(raw: Partial<SavedGiro> & { id?: string }): SavedGiro | 
     schedule: Array.isArray(raw.schedule)
       ? structuredClone(raw.schedule).map((row) => ({
           ...row,
+          dwellMinutes:
+            typeof row.dwellMinutes === "number" ? row.dwellMinutes : 0,
+          departAt:
+            typeof row.departAt === "string"
+              ? row.departAt
+              : row.arrivalAt,
           legFromPreviousMeters:
             typeof row.legFromPreviousMeters === "number"
               ? row.legFromPreviousMeters
