@@ -12,6 +12,8 @@ export type GiroStop = {
   place: PlaceRef;
   /** Optional desired arrival (ISO) */
   arriveBy: string | null;
+  /** Service / stop time at this place before leaving for the next (minutes) */
+  dwellMinutes: number;
   /** Where this stop must sit in the visit order */
   positionLock: GiroPositionLock;
 };
@@ -22,6 +24,10 @@ export type ScheduleStop = {
   giroStopId?: string;
   /** ISO arrival (for origin = departure time) */
   arrivalAt: string;
+  /** ISO departure after dwell (arrival + dwellMinutes) */
+  departAt: string;
+  /** Planned service time at this stop (minutes) */
+  dwellMinutes: number;
   /** Travel time from the previous point (0 for origin) */
   legFromPreviousSeconds: number;
   /** Distance from the previous point in meters (0 for origin) */
@@ -321,22 +327,29 @@ export function buildArrivalSchedule(params: {
   legs: RouteLeg[];
   /** Optional giro metadata aligned with orderedPlaces */
   orderedGiroStops?: GiroStop[];
+  /** Loading time at origin before the first leg (minutes) */
+  originDwellMinutes?: number;
 }): ScheduleStop[] {
   const startMs = new Date(params.departureAt).getTime();
   const safeStart = Number.isFinite(startMs) ? startMs : Date.now();
+  const originDwell = Math.max(0, Math.round(params.originDwellMinutes ?? 0));
 
+  let clockMs = safeStart;
+  const originDepartMs = clockMs + originDwell * 60_000;
   const rows: ScheduleStop[] = [
     {
       kind: "origin",
       place: params.origin,
-      arrivalAt: new Date(safeStart).toISOString(),
+      arrivalAt: new Date(clockMs).toISOString(),
+      departAt: new Date(originDepartMs).toISOString(),
+      dwellMinutes: originDwell,
       legFromPreviousSeconds: 0,
       legFromPreviousMeters: 0,
       cumulativeSeconds: 0,
     },
   ];
+  clockMs = originDepartMs;
 
-  let cumulative = 0;
   let prevLoc = params.origin.location;
   for (let i = 0; i < params.orderedPlaces.length; i++) {
     const place = params.orderedPlaces[i];
@@ -356,8 +369,14 @@ export function buildArrivalSchedule(params: {
       routerLeg.distanceMeters > 0
         ? Math.max(0, Math.round(routerLeg.distanceMeters))
         : estimated.meters;
-    cumulative += legSeconds;
-    const arrivalAt = new Date(safeStart + cumulative * 1000).toISOString();
+
+    clockMs += legSeconds * 1000;
+    const arrivalAt = new Date(clockMs).toISOString();
+    const dwellMinutes = Math.max(0, Math.round(giro?.dwellMinutes ?? 0));
+    const departMs = clockMs + dwellMinutes * 60_000;
+    const departAt = new Date(departMs).toISOString();
+    const cumulativeSeconds = Math.round((clockMs - safeStart) / 1000);
+
     const arriveBy = giro?.arriveBy ?? null;
     let vsArriveBySeconds: number | null = null;
     if (arriveBy) {
@@ -373,13 +392,16 @@ export function buildArrivalSchedule(params: {
       place,
       giroStopId: giro?.id,
       arrivalAt,
+      departAt,
+      dwellMinutes,
       legFromPreviousSeconds: legSeconds,
       legFromPreviousMeters: legMeters,
-      cumulativeSeconds: cumulative,
+      cumulativeSeconds,
       arriveBy,
       vsArriveBySeconds,
       legEstimated: !hasRouterDuration,
     });
+    clockMs = departMs;
     prevLoc = place.location;
   }
 

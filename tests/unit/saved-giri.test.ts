@@ -24,6 +24,7 @@ function stop(label: string, lat: number, lng: number): GiroStop {
     id: `s-${label}`,
     place: place(label, lat, lng),
     arriveBy: "2026-10-28T10:00:00.000Z",
+    dwellMinutes: 8,
     positionLock: "last",
   };
 }
@@ -76,6 +77,8 @@ describe("saved giri", () => {
           kind: "origin",
           place: place("Base", 45, 9),
           arrivalAt: "2026-10-28T08:00:00.000Z",
+          departAt: "2026-10-28T08:00:00.000Z",
+          dwellMinutes: 0,
           legFromPreviousSeconds: 0,
           legFromPreviousMeters: 0,
           cumulativeSeconds: 0,
