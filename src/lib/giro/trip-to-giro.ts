@@ -21,6 +21,7 @@ export function tripDraftToGiroSeed(trip: TripDraft): GiroSeed {
       place: stop.place,
       arriveBy: null,
       dwellMinutes: Math.max(0, Math.round(stop.dwellMinutes ?? 10)),
+      pauseMinutes: 0,
       positionLock: "auto",
     });
   }
@@ -31,6 +32,7 @@ export function tripDraftToGiroSeed(trip: TripDraft): GiroSeed {
       place: trip.destination,
       arriveBy: null,
       dwellMinutes: Math.max(0, Math.round(0)),
+      pauseMinutes: 0,
       positionLock: "last",
     });
   }

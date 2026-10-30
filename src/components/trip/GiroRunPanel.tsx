@@ -42,7 +42,7 @@ export function GiroRunPanel({
       schedule
         .map(
           (s) =>
-            `${s.giroStopId ?? s.place.id}:${s.arrivalAt}:${s.dwellMinutes}:${s.legFromPreviousSeconds}`,
+            `${s.giroStopId ?? s.place.id}:${s.arrivalAt}:${s.dwellMinutes}:${s.pauseMinutes}:${s.legFromPreviousSeconds}`,
         )
         .join("|"),
     [schedule],
@@ -135,6 +135,9 @@ export function GiroRunPanel({
                 Previsto {formatClockIt(current.plannedArrivalAt)}
                 {current.dwellMinutes > 0
                   ? ` · fermata ${current.dwellMinutes} min`
+                  : ""}
+                {current.pauseMinutes > 0
+                  ? ` · pausa ${current.pauseMinutes} min`
                   : ""}
               </p>
               {projection.arrivalLabel ? (

@@ -15,6 +15,8 @@ export type GiroRunStopLog = {
   plannedArrivalAt: string;
   plannedDepartAt: string | null;
   dwellMinutes: number;
+  /** Auto wait for the next appointment (from schedule). */
+  pauseMinutes: number;
   actualArrivalAt: string | null;
   actualDepartAt: string | null;
   /** Extra minutes the courier added while at the stop (traffic/wait). */
@@ -44,6 +46,7 @@ export function createGiroRun(schedule: ScheduleStop[]): GiroRunState {
     plannedArrivalAt: row.arrivalAt,
     plannedDepartAt: row.departAt ?? null,
     dwellMinutes: row.dwellMinutes ?? 0,
+    pauseMinutes: row.pauseMinutes ?? 0,
     actualArrivalAt: null,
     actualDepartAt: null,
     extraDelayMinutes: 0,
@@ -276,7 +279,7 @@ export function projectGiroRun(
       ? new Date(cur.actualArrivalAt).getTime()
       : now.getTime();
     const dwellMs =
-      (cur.dwellMinutes + cur.extraDelayMinutes) * 60_000;
+      (cur.dwellMinutes + cur.pauseMinutes + cur.extraDelayMinutes) * 60_000;
     const departMs = arrived + dwellMs;
     suggestedDepartAt = new Date(departMs).toISOString();
     secondsToDepart = Math.round((departMs - now.getTime()) / 1000);
@@ -318,7 +321,8 @@ export function projectGiroRun(
       label: row.place.label,
       eta: new Date(clock).toISOString(),
     });
-    clock += Math.max(0, row.dwellMinutes ?? 0) * 60_000;
+    clock +=
+      Math.max(0, (row.dwellMinutes ?? 0) + (row.pauseMinutes ?? 0)) * 60_000;
   }
 
   return { suggestedDepartAt, secondsToDepart, nextEtas, arrivalLabel };

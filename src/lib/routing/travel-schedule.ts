@@ -14,6 +14,11 @@ export type GiroStop = {
   arriveBy: string | null;
   /** Service / stop time at this place before leaving for the next (minutes) */
   dwellMinutes: number;
+  /**
+   * Wait after service so the next stop with a fixed arriveBy is on time.
+   * Computed automatically from travel time; 0 when not needed.
+   */
+  pauseMinutes: number;
   /** Where this stop must sit in the visit order */
   positionLock: GiroPositionLock;
 };
@@ -24,10 +29,14 @@ export type ScheduleStop = {
   giroStopId?: string;
   /** ISO arrival (for origin = departure time) */
   arrivalAt: string;
-  /** ISO departure after dwell (arrival + dwellMinutes) */
+  /** ISO departure after dwell + pause */
   departAt: string;
   /** Planned service time at this stop (minutes) */
   dwellMinutes: number;
+  /**
+   * Auto wait after service so the next appointment is hit on time (minutes).
+   */
+  pauseMinutes: number;
   /** Travel time from the previous point (0 for origin) */
   legFromPreviousSeconds: number;
   /** Distance from the previous point in meters (0 for origin) */
@@ -40,6 +49,39 @@ export type ScheduleStop = {
   /** True when duration came from haversine estimate, not the router */
   legEstimated?: boolean;
 };
+
+/**
+ * Minutes to wait after service so leaving now + travel lands on `nextArriveBy`.
+ * Returns 0 when there is no appointment or we are already late.
+ */
+export function computeAutoPauseMinutes(params: {
+  readyAtMs: number;
+  nextArriveBy: string | null | undefined;
+  travelSeconds: number;
+}): number {
+  if (!params.nextArriveBy) return 0;
+  const target = new Date(params.nextArriveBy).getTime();
+  if (!Number.isFinite(target)) return 0;
+  const travelMs = Math.max(0, params.travelSeconds) * 1000;
+  const idealDepartMs = target - travelMs;
+  return Math.max(0, Math.round((idealDepartMs - params.readyAtMs) / 60_000));
+}
+
+/** Copy schedule pauseMinutes onto matching giro stops (by id). */
+export function applySchedulePausesToGiroStops(
+  stops: GiroStop[],
+  schedule: ScheduleStop[],
+): GiroStop[] {
+  const pauseById = new Map<string, number>();
+  for (const row of schedule) {
+    if (!row.giroStopId) continue;
+    pauseById.set(row.giroStopId, Math.max(0, Math.round(row.pauseMinutes ?? 0)));
+  }
+  return stops.map((s) => ({
+    ...s,
+    pauseMinutes: pauseById.has(s.id) ? pauseById.get(s.id)! : 0,
+  }));
+}
 
 /**
  * Greedy nearest-neighbor order from a fixed start through all places.
@@ -334,28 +376,12 @@ export function buildArrivalSchedule(params: {
   const safeStart = Number.isFinite(startMs) ? startMs : Date.now();
   const originDwell = Math.max(0, Math.round(params.originDwellMinutes ?? 0));
 
-  let clockMs = safeStart;
-  const originDepartMs = clockMs + originDwell * 60_000;
-  const rows: ScheduleStop[] = [
-    {
-      kind: "origin",
-      place: params.origin,
-      arrivalAt: new Date(clockMs).toISOString(),
-      departAt: new Date(originDepartMs).toISOString(),
-      dwellMinutes: originDwell,
-      legFromPreviousSeconds: 0,
-      legFromPreviousMeters: 0,
-      cumulativeSeconds: 0,
-    },
-  ];
-  clockMs = originDepartMs;
-
-  let prevLoc = params.origin.location;
-  for (let i = 0; i < params.orderedPlaces.length; i++) {
-    const place = params.orderedPlaces[i];
-    const giro = params.orderedGiroStops?.[i];
-    const routerLeg = params.legs[i];
-    const estimated = estimateLegSeconds(prevLoc, place.location);
+  const resolveLeg = (
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+    routerLeg: RouteLeg | undefined,
+  ) => {
+    const estimated = estimateLegSeconds(from, to);
     const hasRouterDuration =
       routerLeg != null &&
       Number.isFinite(routerLeg.durationSeconds) &&
@@ -369,11 +395,62 @@ export function buildArrivalSchedule(params: {
       routerLeg.distanceMeters > 0
         ? Math.max(0, Math.round(routerLeg.distanceMeters))
         : estimated.meters;
+    return { legSeconds, legMeters, legEstimated: !hasRouterDuration };
+  };
+
+  // Pre-resolve every leg so we can look ahead for auto-pauses.
+  const placeLocs = [
+    params.origin.location,
+    ...params.orderedPlaces.map((p) => p.location),
+  ];
+  const resolvedLegs = params.orderedPlaces.map((place, i) =>
+    resolveLeg(placeLocs[i], place.location, params.legs[i]),
+  );
+
+  let clockMs = safeStart;
+  const originReadyMs = clockMs + originDwell * 60_000;
+  const firstArriveBy = params.orderedGiroStops?.[0]?.arriveBy ?? null;
+  const firstLegSeconds = resolvedLegs[0]?.legSeconds ?? 0;
+  const originPause = computeAutoPauseMinutes({
+    readyAtMs: originReadyMs,
+    nextArriveBy: firstArriveBy,
+    travelSeconds: firstLegSeconds,
+  });
+  const originDepartMs = originReadyMs + originPause * 60_000;
+  const rows: ScheduleStop[] = [
+    {
+      kind: "origin",
+      place: params.origin,
+      arrivalAt: new Date(clockMs).toISOString(),
+      departAt: new Date(originDepartMs).toISOString(),
+      dwellMinutes: originDwell,
+      pauseMinutes: originPause,
+      legFromPreviousSeconds: 0,
+      legFromPreviousMeters: 0,
+      cumulativeSeconds: 0,
+    },
+  ];
+  clockMs = originDepartMs;
+
+  for (let i = 0; i < params.orderedPlaces.length; i++) {
+    const place = params.orderedPlaces[i];
+    const giro = params.orderedGiroStops?.[i];
+    const { legSeconds, legMeters, legEstimated } = resolvedLegs[i];
 
     clockMs += legSeconds * 1000;
     const arrivalAt = new Date(clockMs).toISOString();
     const dwellMinutes = Math.max(0, Math.round(giro?.dwellMinutes ?? 0));
-    const departMs = clockMs + dwellMinutes * 60_000;
+    const readyMs = clockMs + dwellMinutes * 60_000;
+
+    const nextGiro = params.orderedGiroStops?.[i + 1];
+    const nextLegSeconds = resolvedLegs[i + 1]?.legSeconds ?? 0;
+    const pauseMinutes = computeAutoPauseMinutes({
+      readyAtMs: readyMs,
+      nextArriveBy: nextGiro?.arriveBy ?? null,
+      travelSeconds: nextLegSeconds,
+    });
+
+    const departMs = readyMs + pauseMinutes * 60_000;
     const departAt = new Date(departMs).toISOString();
     const cumulativeSeconds = Math.round((clockMs - safeStart) / 1000);
 
@@ -394,15 +471,15 @@ export function buildArrivalSchedule(params: {
       arrivalAt,
       departAt,
       dwellMinutes,
+      pauseMinutes,
       legFromPreviousSeconds: legSeconds,
       legFromPreviousMeters: legMeters,
       cumulativeSeconds,
       arriveBy,
       vsArriveBySeconds,
-      legEstimated: !hasRouterDuration,
+      legEstimated,
     });
     clockMs = departMs;
-    prevLoc = place.location;
   }
 
   return rows;

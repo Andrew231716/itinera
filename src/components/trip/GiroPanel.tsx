@@ -27,6 +27,7 @@ import {
 } from "@/lib/places/resolve-query";
 import {
   applyGiroWindowOrder,
+  applySchedulePausesToGiroStops,
   assignGiroPositionLock,
   buildArrivalSchedule,
   findGiroFlexibleWindows,
@@ -84,6 +85,7 @@ function makeGiroStop(place: PlaceRef): GiroStop {
     place,
     arriveBy: null,
     dwellMinutes: 10,
+    pauseMinutes: 0,
     positionLock: "auto",
   };
 }
@@ -289,22 +291,23 @@ export function GiroPanel() {
           ? assignGiroPositionLock(prev, id, patch.positionLock)
           : prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
 
-      // Refresh ETA preview when dwell/appointment changes (estimate until full recompute).
+      // Refresh ETA + auto-pauses when dwell/appointment changes.
       if (
         start &&
         (patch.dwellMinutes !== undefined || patch.arriveBy !== undefined)
       ) {
         const departureAt = localInputToIso(departureLocal);
         if (departureAt) {
-          setSchedule(
-            buildArrivalSchedule({
-              departureAt,
-              origin: start,
-              orderedPlaces: next.map((s) => s.place),
-              legs: [],
-              orderedGiroStops: next,
-            }),
-          );
+          const { ordered } = orderGiroStops(start, next);
+          const rows = buildArrivalSchedule({
+            departureAt,
+            origin: start,
+            orderedPlaces: ordered.map((s) => s.place),
+            legs: [],
+            orderedGiroStops: ordered,
+          });
+          setSchedule(rows);
+          return applySchedulePausesToGiroStops(next, rows);
         }
       }
       return next;
@@ -347,7 +350,6 @@ export function GiroPanel() {
   ) {
     if (!start) return;
     const next = applyGiroWindowOrder(stops, window, orderIds);
-    setStops(next);
     setOpenAltWindow(null);
     const departureAt = localInputToIso(departureLocal);
     if (departureAt) {
@@ -359,7 +361,10 @@ export function GiroPanel() {
         orderedGiroStops: next,
       });
       setSchedule(rows);
+      setStops(applySchedulePausesToGiroStops(next, rows));
       setExportOrigin(start);
+    } else {
+      setStops(next);
     }
     setSaveMessage(
       "Ordine alternativo applicato. Tocca «Crea percorso» per ricalcolare i tempi reali.",
@@ -633,10 +638,15 @@ export function GiroPanel() {
           legs: [],
           orderedGiroStops: ordered,
         });
+        const withPauses = applySchedulePausesToGiroStops(
+          ordered,
+          fallbackSchedule,
+        );
+        setStops(withPauses);
         setSchedule(fallbackSchedule);
         persistCurrentGiro({
           origin,
-          stops: ordered,
+          stops: withPauses,
           schedule: fallbackSchedule,
           quiet: true,
         });
@@ -651,10 +661,12 @@ export function GiroPanel() {
         legs: route.legs,
         orderedGiroStops: ordered,
       });
+      const withPauses = applySchedulePausesToGiroStops(ordered, rows);
+      setStops(withPauses);
       setSchedule(rows);
       persistCurrentGiro({
         origin: state.trip.origin ?? origin,
-        stops: ordered,
+        stops: withPauses,
         schedule: rows,
         quiet: true,
       });
@@ -1091,9 +1103,18 @@ export function GiroPanel() {
                           Da precedente: {legLabel}
                         </p>
                       ) : null}
-                      {row.dwellMinutes > 0 ? (
+                      {row.dwellMinutes > 0 || row.pauseMinutes > 0 ? (
                         <p className="mt-0.5 text-[11px] font-medium text-[var(--ink)]">
-                          Fermata {row.dwellMinutes} min · riparti alle{" "}
+                          {row.dwellMinutes > 0
+                            ? `Fermata ${row.dwellMinutes} min`
+                            : null}
+                          {row.dwellMinutes > 0 && row.pauseMinutes > 0
+                            ? " · "
+                            : null}
+                          {row.pauseMinutes > 0
+                            ? `Pausa auto ${row.pauseMinutes} min`
+                            : null}
+                          {" · riparti alle "}
                           {formatClockIt(row.departAt)}
                         </p>
                       ) : null}
@@ -1292,6 +1313,12 @@ function GiroStopCard({
             }}
           />
         </div>
+        {stop.pauseMinutes > 0 ? (
+          <div className="sm:col-span-2 rounded-lg bg-[var(--brand-soft)]/50 px-3 py-2 text-[11px] text-[var(--ink)]">
+            Pausa automatica {stop.pauseMinutes} min — per arrivare in orario
+            alla tappa successiva con appuntamento.
+          </div>
+        ) : null}
         <div className="sm:col-span-2">
           <Label>Posizione nel giro</Label>
           <select

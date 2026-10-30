@@ -35,6 +35,7 @@ function giro(
     place: place(id, lat, lng),
     arriveBy,
     dwellMinutes: 0,
+    pauseMinutes: 0,
     positionLock: lock,
   };
 }
@@ -200,7 +201,122 @@ describe("buildArrivalSchedule", () => {
     expect(rows[1].arrivalAt).toBe("2026-10-27T08:10:00.000Z");
     expect(rows[1].departAt).toBe("2026-10-27T08:20:00.000Z");
     expect(rows[1].dwellMinutes).toBe(10);
+    expect(rows[1].pauseMinutes).toBe(0);
     expect(rows[2].arrivalAt).toBe("2026-10-27T08:30:00.000Z");
+  });
+
+  it("auto-pauses so the next stop with arriveBy is on time", () => {
+    const origin = place("O", 0, 0);
+    const s1 = place("S1", 1, 1);
+    const d = place("D", 2, 2);
+    // Arrive S1 08:10, dwell 5 → ready 08:15. Next leg 10 min.
+    // D appointment 08:40 → ideal leave 08:30 → pause 15 min → arrive D 08:40.
+    const giroStops = [
+      { ...giro("S1", 1, 1), dwellMinutes: 5 },
+      {
+        ...giro("D", 2, 2, "auto", "2026-10-27T08:40:00.000Z"),
+        dwellMinutes: 0,
+      },
+    ];
+    const legs: RouteLeg[] = [
+      {
+        id: "l0",
+        startLabel: "O",
+        endLabel: "S1",
+        distanceMeters: 1000,
+        durationSeconds: 600,
+        steps: [],
+      },
+      {
+        id: "l1",
+        startLabel: "S1",
+        endLabel: "D",
+        distanceMeters: 2000,
+        durationSeconds: 600,
+        steps: [],
+      },
+    ];
+    const rows = buildArrivalSchedule({
+      departureAt: "2026-10-27T08:00:00.000Z",
+      origin,
+      orderedPlaces: [s1, d],
+      legs,
+      orderedGiroStops: giroStops,
+    });
+    expect(rows[1].arrivalAt).toBe("2026-10-27T08:10:00.000Z");
+    expect(rows[1].pauseMinutes).toBe(15);
+    expect(rows[1].departAt).toBe("2026-10-27T08:30:00.000Z");
+    expect(rows[2].arrivalAt).toBe("2026-10-27T08:40:00.000Z");
+    expect(rows[2].vsArriveBySeconds).toBe(0);
+  });
+
+  it("pauses at origin when the first stop has arriveBy", () => {
+    const origin = place("O", 0, 0);
+    const dest = place("D", 1, 1);
+    // Leave ready at 08:00, leg 10 min. Appointment 08:25 → pause 15 at origin.
+    const giroStops = [
+      giro("D", 1, 1, "auto", "2026-10-27T08:25:00.000Z"),
+    ];
+    const legs: RouteLeg[] = [
+      {
+        id: "l0",
+        startLabel: "O",
+        endLabel: "D",
+        distanceMeters: 1000,
+        durationSeconds: 600,
+        steps: [],
+      },
+    ];
+    const rows = buildArrivalSchedule({
+      departureAt: "2026-10-27T08:00:00.000Z",
+      origin,
+      orderedPlaces: [dest],
+      legs,
+      orderedGiroStops: giroStops,
+    });
+    expect(rows[0].pauseMinutes).toBe(15);
+    expect(rows[0].departAt).toBe("2026-10-27T08:15:00.000Z");
+    expect(rows[1].arrivalAt).toBe("2026-10-27T08:25:00.000Z");
+    expect(rows[1].vsArriveBySeconds).toBe(0);
+  });
+
+  it("does not pause when already late for the next appointment", () => {
+    const origin = place("O", 0, 0);
+    const s1 = place("S1", 1, 1);
+    const d = place("D", 2, 2);
+    // Arrive S1 08:10, dwell 0. Next leg 20 min. Appointment D 08:20 → need leave 08:00, already late.
+    const giroStops = [
+      giro("S1", 1, 1),
+      giro("D", 2, 2, "auto", "2026-10-27T08:20:00.000Z"),
+    ];
+    const legs: RouteLeg[] = [
+      {
+        id: "l0",
+        startLabel: "O",
+        endLabel: "S1",
+        distanceMeters: 1000,
+        durationSeconds: 600,
+        steps: [],
+      },
+      {
+        id: "l1",
+        startLabel: "S1",
+        endLabel: "D",
+        distanceMeters: 2000,
+        durationSeconds: 1200,
+        steps: [],
+      },
+    ];
+    const rows = buildArrivalSchedule({
+      departureAt: "2026-10-27T08:00:00.000Z",
+      origin,
+      orderedPlaces: [s1, d],
+      legs,
+      orderedGiroStops: giroStops,
+    });
+    expect(rows[1].pauseMinutes).toBe(0);
+    expect(rows[1].departAt).toBe("2026-10-27T08:10:00.000Z");
+    expect(rows[2].vsArriveBySeconds).toBeGreaterThan(0);
   });
 
   it("estimates legs when the router returns none", () => {

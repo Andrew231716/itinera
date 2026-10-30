@@ -184,9 +184,13 @@ function buildListRows(doc: GiroExportDoc): Array<{
         bits.push(`Da precedente: ${leg}`);
       }
       if (row.dwellMinutes > 0) {
-        bits.push(
-          `Fermata ${row.dwellMinutes} min (parti ${formatClockIt(row.departAt)})`,
-        );
+        bits.push(`Fermata ${row.dwellMinutes} min`);
+      }
+      if (row.pauseMinutes > 0) {
+        bits.push(`Pausa auto ${row.pauseMinutes} min`);
+      }
+      if (row.dwellMinutes > 0 || row.pauseMinutes > 0) {
+        bits.push(`parti ${formatClockIt(row.departAt)}`);
       }
       if (row.arriveBy) {
         bits.push(`Appuntamento ${formatClockIt(row.arriveBy)}`);
@@ -214,6 +218,7 @@ function buildListRows(doc: GiroExportDoc): Array<{
       s.place.address,
       `Posizione: ${lockLabel(s.positionLock)}`,
       s.dwellMinutes > 0 ? `Fermata ${s.dwellMinutes} min` : null,
+      s.pauseMinutes > 0 ? `Pausa auto ${s.pauseMinutes} min` : null,
       s.arriveBy ? `Appuntamento ${formatClockIt(s.arriveBy)}` : null,
     ].filter(Boolean) as string[];
     rows.push({
@@ -314,6 +319,9 @@ export function buildMapLegendRows(doc: GiroExportDoc): MapLegendRow[] {
     if (leg) detailParts.push(`Da precedente: ${leg}`);
     if (scheduleRow && scheduleRow.dwellMinutes > 0) {
       detailParts.push(`Fermata ${scheduleRow.dwellMinutes} min`);
+    }
+    if (scheduleRow && scheduleRow.pauseMinutes > 0) {
+      detailParts.push(`Pausa auto ${scheduleRow.pauseMinutes} min`);
     }
     if (apptIso) detailParts.push(`Appuntamento ${formatClockIt(apptIso)}`);
     return {
