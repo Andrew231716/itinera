@@ -29,6 +29,7 @@ function row(
   return {
     departAt: partial.arrivalAt,
     dwellMinutes: 0,
+    pauseMinutes: 0,
     legFromPreviousSeconds: 0,
     legFromPreviousMeters: 0,
     cumulativeSeconds: 0,
@@ -95,5 +96,28 @@ describe("giro run", () => {
     );
     expect(proj.suggestedDepartAt).toBe("2026-10-29T08:35:00.000Z");
     expect(proj.nextEtas[0]?.label).toBe("B");
+  });
+
+  it("includes auto pause in suggested depart", () => {
+    const withPause: ScheduleStop[] = [
+      schedule[0],
+      { ...schedule[1], pauseMinutes: 12, departAt: "2026-10-29T08:42:00.000Z" },
+      schedule[2],
+    ];
+    let run = startGiroRun(
+      createGiroRun(withPause),
+      new Date("2026-10-29T08:00:00.000Z"),
+    );
+    run = markDeparted(run, new Date("2026-10-29T08:00:00.000Z"));
+    run = markArrived(run, new Date("2026-10-29T08:20:00.000Z"));
+
+    const proj = projectGiroRun(
+      run,
+      withPause,
+      new Date("2026-10-29T08:20:00.000Z"),
+    );
+    // dwell 10 + pause 12 = leave 08:42
+    expect(proj.suggestedDepartAt).toBe("2026-10-29T08:42:00.000Z");
+    expect(run.logs[1].pauseMinutes).toBe(12);
   });
 });

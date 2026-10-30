@@ -262,6 +262,7 @@ export function pianoFermateToGiroStops(
       },
       arriveBy,
       dwellMinutes: 0,
+      pauseMinutes: 0,
       positionLock: isLast ? "last" : i + 1,
     };
   });

@@ -41,6 +41,10 @@ function normalizeEntry(raw: Partial<SavedGiro> & { id?: string }): SavedGiro | 
         typeof s.dwellMinutes === "number" && Number.isFinite(s.dwellMinutes)
           ? Math.max(0, Math.round(s.dwellMinutes))
           : 0,
+      pauseMinutes:
+        typeof s.pauseMinutes === "number" && Number.isFinite(s.pauseMinutes)
+          ? Math.max(0, Math.round(s.pauseMinutes))
+          : 0,
     })),
     preferences: {
       ...DEFAULT_ROAD_PREFERENCES,
@@ -52,6 +56,8 @@ function normalizeEntry(raw: Partial<SavedGiro> & { id?: string }): SavedGiro | 
           ...row,
           dwellMinutes:
             typeof row.dwellMinutes === "number" ? row.dwellMinutes : 0,
+          pauseMinutes:
+            typeof row.pauseMinutes === "number" ? row.pauseMinutes : 0,
           departAt:
             typeof row.departAt === "string"
               ? row.departAt

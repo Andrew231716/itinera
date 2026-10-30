@@ -26,6 +26,7 @@ function stop(id: string, label: string): GiroStop {
     place: place(id, label),
     arriveBy: "2026-10-28T10:30:00.000Z",
     dwellMinutes: 5,
+    pauseMinutes: 0,
     positionLock: "last",
   };
 }
@@ -42,6 +43,7 @@ const sampleDoc = {
       arrivalAt: "2026-10-28T08:00:00.000Z",
       departAt: "2026-10-28T08:00:00.000Z",
       dwellMinutes: 0,
+      pauseMinutes: 0,
       legFromPreviousSeconds: 0,
       legFromPreviousMeters: 0,
       cumulativeSeconds: 0,
@@ -52,6 +54,7 @@ const sampleDoc = {
       arrivalAt: "2026-10-28T12:00:00.000Z",
       departAt: "2026-10-28T12:05:00.000Z",
       dwellMinutes: 5,
+      pauseMinutes: 0,
       legFromPreviousSeconds: 14_400,
       legFromPreviousMeters: 480_000,
       cumulativeSeconds: 14_400,
