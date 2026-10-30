@@ -16,6 +16,7 @@ import {
   Save,
   Share2,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { PlaceSearch } from "@/components/trip/PlaceSearch";
@@ -60,6 +61,11 @@ import {
   suggestGiroTitle,
   type SavedGiro,
 } from "@/lib/storage/saved-giri";
+import {
+  pushRemovedGiroStop,
+  restoreGiroStop,
+  type RemovedGiroEntry,
+} from "@/lib/giro/removed-stops";
 import {
   formatClockIt,
   formatDateTimeLocal,
@@ -137,6 +143,8 @@ export function GiroPanel() {
   const [exportOrigin, setExportOrigin] = useState<PlaceRef | null>(null);
   const [importing, setImporting] = useState(false);
   const [openAltWindow, setOpenAltWindow] = useState<number | null>(null);
+  const [removedStops, setRemovedStops] = useState<RemovedGiroEntry[]>([]);
+  const [showRemoved, setShowRemoved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lineCount = useMemo(
@@ -315,7 +323,30 @@ export function GiroPanel() {
   }
 
   function removeStop(id: string) {
-    setStops((prev) => prev.filter((s) => s.id !== id));
+    setStops((prev) => {
+      const found = prev.find((s) => s.id === id);
+      if (found) {
+        setRemovedStops((list) => pushRemovedGiroStop(list, found));
+        setShowRemoved(true);
+      }
+      return prev.filter((s) => s.id !== id);
+    });
+  }
+
+  function restoreRemovedStop(id: string) {
+    const result = restoreGiroStop(stops, removedStops, id);
+    if (!result.ok) {
+      setSaveMessage(
+        result.reason === "duplicate"
+          ? "Questa tappa è già nel giro."
+          : "Tappa non trovata tra le eliminate.",
+      );
+      return;
+    }
+    setStops(result.stops);
+    setRemovedStops(result.removed);
+    setSaveMessage("Tappa reinserita con orario e posizione salvati.");
+    if (result.removed.length === 0) setShowRemoved(false);
   }
 
   function addPlace(place: PlaceRef) {
@@ -339,6 +370,8 @@ export function GiroPanel() {
     setSaveTitle("");
     setSaveMessage(null);
     setOpenAltWindow(null);
+    setRemovedStops([]);
+    setShowRemoved(false);
     setDepartureLocal(defaultDepartureLocal());
     setAddKey((k) => k + 1);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -679,6 +712,7 @@ export function GiroPanel() {
   const canReset =
     Boolean(start) ||
     stops.length > 0 ||
+    removedStops.length > 0 ||
     listText.trim().length > 0 ||
     Boolean(schedule) ||
     Boolean(savedId) ||
@@ -791,6 +825,63 @@ export function GiroPanel() {
             />
           ))}
         </ul>
+      ) : null}
+
+      {removedStops.length > 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface-2)]/60">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+            onClick={() => setShowRemoved((v) => !v)}
+            aria-expanded={showRemoved}
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
+              <Undo2 className="h-3.5 w-3.5" />
+              Eliminate di recente ({removedStops.length})
+            </span>
+            <span className="text-[11px] text-[var(--ink-faint)]">
+              {showRemoved ? "Nascondi" : "Mostra"}
+            </span>
+          </button>
+          {showRemoved ? (
+            <ul className="space-y-2 border-t border-[var(--line)] px-3 py-2.5">
+              {removedStops.map((entry) => (
+                <li
+                  key={`${entry.stop.id}-${entry.removedAt}`}
+                  className="flex items-start gap-2 rounded-lg bg-[var(--surface)] px-2.5 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--ink)]">
+                      {entry.stop.place.label}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                      {entry.stop.arriveBy
+                        ? `Orario ${formatClockIt(entry.stop.arriveBy)}`
+                        : "Senza orario"}
+                      {entry.stop.dwellMinutes > 0
+                        ? ` · fermata ${entry.stop.dwellMinutes} min`
+                        : ""}
+                      {entry.stop.positionLock === "last"
+                        ? " · ultima"
+                        : typeof entry.stop.positionLock === "number"
+                          ? ` · ${entry.stop.positionLock}ª`
+                          : ""}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => restoreRemovedStop(entry.stop.id)}
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                    Reinserisci
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
 
       {lineErrors.length > 0 ? (
