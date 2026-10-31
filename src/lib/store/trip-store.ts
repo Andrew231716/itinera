@@ -39,6 +39,10 @@ import {
   tripDraftToGiroSeed,
   type GiroSeed,
 } from "@/lib/giro/trip-to-giro";
+import {
+  writeNavHudSide,
+  type NavHudSide,
+} from "@/lib/navigation/hud-side";
 
 export type MapPickTarget =
   | "origin"
@@ -67,7 +71,7 @@ const IDLE_NAVIGATION: NavigationRuntime = {
   followMap: true,
   northUp: false,
   overview: false,
-  hudSide: "right",
+  hudSide: "left",
   recalculating: false,
   nextWaypointIndex: 0,
   lastArrivedWaypointId: null,
@@ -236,7 +240,7 @@ interface TripState {
   setNavigationFollowMap: (enabled: boolean) => void;
   setNavigationNorthUp: (enabled: boolean) => void;
   setNavigationOverview: (enabled: boolean) => void;
-  setNavigationHudSide: (side: "left" | "right") => void;
+  setNavigationHudSide: (side: NavHudSide) => void;
   setNavigationRecalculating: (busy: boolean) => void;
   recenterNavigation: () => void;
   setNavigationCompassHeading: (headingDeg: number | null) => void;
@@ -1026,10 +1030,12 @@ export const useTripStore = create<TripState>((set, get) => ({
       },
     })),
 
-  setNavigationHudSide: (side) =>
+  setNavigationHudSide: (side) => {
+    writeNavHudSide(side);
     set((s) => ({
       navigation: { ...s.navigation, hudSide: side },
-    })),
+    }));
+  },
 
   setNavigationRecalculating: (busy) =>
     set((s) => ({
