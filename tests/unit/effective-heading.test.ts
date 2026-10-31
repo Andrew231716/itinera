@@ -10,7 +10,7 @@ function nav(partial: Partial<NavigationRuntime>): NavigationRuntime {
     followMap: true,
     northUp: false,
     overview: false,
-    hudSide: "right",
+    hudSide: "left",
     recalculating: false,
     nextWaypointIndex: 0,
     lastArrivedWaypointId: null,
