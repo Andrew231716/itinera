@@ -17,6 +17,8 @@ interface PlaceSearchProps {
   pickingFromMap?: boolean;
   /** Show «Posizione attuale» GPS control (default true). */
   allowGps?: boolean;
+  /** Prefill the search box when there is no selected value (e.g. fix failed geocode). */
+  initialQuery?: string;
 }
 
 export function PlaceSearch({
@@ -28,6 +30,7 @@ export function PlaceSearch({
   onPickFromMap,
   pickingFromMap,
   allowGps = true,
+  initialQuery,
 }: PlaceSearchProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -48,12 +51,20 @@ export function PlaceSearch({
     error: gpsError,
   } = useCurrentLocation();
   const [open, setOpen] = useState(false);
+  const seededRef = useRef(false);
 
   useEffect(() => {
     if (value) {
       setQuery(value.label);
+      return;
     }
-  }, [value, setQuery]);
+    if (!seededRef.current && initialQuery?.trim()) {
+      seededRef.current = true;
+      setQuery(initialQuery.trim());
+      void search(initialQuery.trim());
+      setOpen(true);
+    }
+  }, [value, initialQuery, setQuery, search]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
