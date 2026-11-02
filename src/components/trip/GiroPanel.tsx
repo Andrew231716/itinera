@@ -1359,7 +1359,7 @@ export function GiroPanel() {
                             ? " · "
                             : null}
                           {row.pauseMinutes > 0
-                            ? `Pausa auto ${row.pauseMinutes} min`
+                            ? `Attesa per appuntamento successivo ${row.pauseMinutes} min`
                             : null}
                           {" · riparti alle "}
                           {formatClockIt(row.departAt)}

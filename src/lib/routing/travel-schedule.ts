@@ -408,15 +408,11 @@ export function buildArrivalSchedule(params: {
   );
 
   let clockMs = safeStart;
+  // Respect the user's chosen departure: never insert an auto-pause at the
+  // origin. Waiting for the next appointment only happens at intermediate
+  // stops after service (dwell). Leaving early → arrive early is fine.
   const originReadyMs = clockMs + originDwell * 60_000;
-  const firstArriveBy = params.orderedGiroStops?.[0]?.arriveBy ?? null;
-  const firstLegSeconds = resolvedLegs[0]?.legSeconds ?? 0;
-  const originPause = computeAutoPauseMinutes({
-    readyAtMs: originReadyMs,
-    nextArriveBy: firstArriveBy,
-    travelSeconds: firstLegSeconds,
-  });
-  const originDepartMs = originReadyMs + originPause * 60_000;
+  const originDepartMs = originReadyMs;
   const rows: ScheduleStop[] = [
     {
       kind: "origin",
@@ -424,7 +420,7 @@ export function buildArrivalSchedule(params: {
       arrivalAt: new Date(clockMs).toISOString(),
       departAt: new Date(originDepartMs).toISOString(),
       dwellMinutes: originDwell,
-      pauseMinutes: originPause,
+      pauseMinutes: 0,
       legFromPreviousSeconds: 0,
       legFromPreviousMeters: 0,
       cumulativeSeconds: 0,

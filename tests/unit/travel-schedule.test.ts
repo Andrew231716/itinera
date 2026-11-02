@@ -250,10 +250,10 @@ describe("buildArrivalSchedule", () => {
     expect(rows[2].vsArriveBySeconds).toBe(0);
   });
 
-  it("pauses at origin when the first stop has arriveBy", () => {
+  it("does not pause at origin: departure time is respected", () => {
     const origin = place("O", 0, 0);
     const dest = place("D", 1, 1);
-    // Leave ready at 08:00, leg 10 min. Appointment 08:25 → pause 15 at origin.
+    // Leave at 08:00 as chosen, leg 10 min. Appointment 08:25 → arrive early.
     const giroStops = [
       giro("D", 1, 1, "auto", "2026-10-27T08:25:00.000Z"),
     ];
@@ -274,10 +274,10 @@ describe("buildArrivalSchedule", () => {
       legs,
       orderedGiroStops: giroStops,
     });
-    expect(rows[0].pauseMinutes).toBe(15);
-    expect(rows[0].departAt).toBe("2026-10-27T08:15:00.000Z");
-    expect(rows[1].arrivalAt).toBe("2026-10-27T08:25:00.000Z");
-    expect(rows[1].vsArriveBySeconds).toBe(0);
+    expect(rows[0].pauseMinutes).toBe(0);
+    expect(rows[0].departAt).toBe("2026-10-27T08:00:00.000Z");
+    expect(rows[1].arrivalAt).toBe("2026-10-27T08:10:00.000Z");
+    expect(rows[1].vsArriveBySeconds).toBe(-15 * 60);
   });
 
   it("does not pause when already late for the next appointment", () => {
