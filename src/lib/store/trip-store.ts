@@ -162,6 +162,8 @@ interface TripState {
     origin: PlaceRef;
     orderedVisits: PlaceRef[];
     departureAt: string | null;
+    /** When false, keep the Giro order (e.g. hard locks). Default: middles >= 2 */
+    optimizeStopOrder?: boolean;
   }) => void;
   /** Reorder intermediate stops to match an optimized index list. */
   applyOptimizedStopOrder: (order: number[]) => void;
@@ -443,7 +445,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       fuelCenter: null,
     }),
 
-  applyGiro: ({ origin, orderedVisits, departureAt }) => {
+  applyGiro: ({ origin, orderedVisits, departureAt, optimizeStopOrder }) => {
     if (orderedVisits.length === 0) return;
     const destination = orderedVisits[orderedVisits.length - 1];
     const middles = orderedVisits.slice(0, -1);
@@ -458,8 +460,9 @@ export const useTripStore = create<TripState>((set, get) => ({
         destination,
         stops,
         departureAt,
-        // Already ordered by proximity; Google may refine middles.
-        optimizeStopOrder: middles.length >= 2,
+        // Already ordered by proximity; only refine when caller allows it.
+        optimizeStopOrder:
+          optimizeStopOrder ?? middles.length >= 2,
       }),
       routes: [],
       routeMode: "idle",

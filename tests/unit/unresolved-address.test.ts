@@ -3,6 +3,7 @@ import {
   applyResolvedGiroAddress,
   isUnmappedPlace,
   needsPlaceFix,
+  placeKeyOf,
   suggestEditQuery,
   type GiroUnresolvedAddress,
 } from "@/lib/giro/unresolved-address";
@@ -30,27 +31,28 @@ function stop(id: string, loc = { lat: 0, lng: 0 }): GiroStop {
 }
 
 describe("unresolved giro addresses", () => {
-  it("detects unmapped 0,0 places and missing address", () => {
+  it("detects unmapped 0,0 places; missing address alone is ok", () => {
     expect(isUnmappedPlace(place({ id: "a", location: { lat: 0, lng: 0 } }))).toBe(
       true,
     );
     expect(
       isUnmappedPlace(place({ id: "b", location: { lat: 45.5, lng: 9.2 } })),
     ).toBe(false);
+    expect(needsPlaceFix(place({ id: "a", location: { lat: 0, lng: 0 } }))).toBe(
+      true,
+    );
     expect(
       needsPlaceFix(
         place({ id: "c", location: { lat: 45.5, lng: 9.2 }, address: undefined }),
       ),
-    ).toBe(true);
-    expect(
-      needsPlaceFix(
-        place({
-          id: "d",
-          location: { lat: 45.5, lng: 9.2 },
-          address: "Via Roma 1",
-        }),
-      ),
     ).toBe(false);
+  });
+
+  it("keeps distinct keys for different unmapped places", () => {
+    const a = place({ id: "hub-a", location: { lat: 0, lng: 0 } });
+    const b = place({ id: "hub-b", location: { lat: 0, lng: 0 } });
+    expect(placeKeyOf(a)).not.toBe(placeKeyOf(b));
+    expect(placeKeyOf(a)).toContain("hub-a");
   });
 
   it("patches an existing stop when stopId is set", () => {

@@ -6,6 +6,7 @@ import {
   type MapsLinkResult,
 } from "@/lib/google/maps-links";
 import {
+  formatAutoPauseLabel,
   formatLegTravelLabel,
   type GiroStop,
   type ScheduleStop,
@@ -18,7 +19,7 @@ import {
   type RoadPreferences,
   type TravelMode,
 } from "@/lib/types/trip";
-import { formatClockIt, formatDuration } from "@/lib/utils/format";
+import { formatClockIt } from "@/lib/utils/format";
 
 export type GiroExportDoc = {
   title: string;
@@ -186,8 +187,9 @@ function buildListRows(doc: GiroExportDoc): Array<{
       if (row.dwellMinutes > 0) {
         bits.push(`Fermata ${row.dwellMinutes} min`);
       }
-      if (row.pauseMinutes > 0) {
-        bits.push(`Pausa auto ${row.pauseMinutes} min`);
+      {
+        const pause = formatAutoPauseLabel(row.pauseMinutes);
+        if (pause) bits.push(pause);
       }
       if (row.dwellMinutes > 0 || row.pauseMinutes > 0) {
         bits.push(`parti ${formatClockIt(row.departAt)}`);
@@ -218,7 +220,7 @@ function buildListRows(doc: GiroExportDoc): Array<{
       s.place.address,
       `Posizione: ${lockLabel(s.positionLock)}`,
       s.dwellMinutes > 0 ? `Fermata ${s.dwellMinutes} min` : null,
-      s.pauseMinutes > 0 ? `Pausa auto ${s.pauseMinutes} min` : null,
+      formatAutoPauseLabel(s.pauseMinutes),
       s.arriveBy ? `Appuntamento ${formatClockIt(s.arriveBy)}` : null,
     ].filter(Boolean) as string[];
     rows.push({
@@ -320,8 +322,11 @@ export function buildMapLegendRows(doc: GiroExportDoc): MapLegendRow[] {
     if (scheduleRow && scheduleRow.dwellMinutes > 0) {
       detailParts.push(`Fermata ${scheduleRow.dwellMinutes} min`);
     }
-    if (scheduleRow && scheduleRow.pauseMinutes > 0) {
-      detailParts.push(`Pausa auto ${scheduleRow.pauseMinutes} min`);
+    {
+      const pause = scheduleRow
+        ? formatAutoPauseLabel(scheduleRow.pauseMinutes)
+        : null;
+      if (pause) detailParts.push(pause);
     }
     if (apptIso) detailParts.push(`Appuntamento ${formatClockIt(apptIso)}`);
     return {

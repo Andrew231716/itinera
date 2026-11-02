@@ -1,4 +1,5 @@
 import type { GiroStop } from "@/lib/routing/travel-schedule";
+import { placeKeyOf } from "@/lib/giro/unresolved-address";
 
 export type RemovedGiroEntry = {
   stop: GiroStop;
@@ -6,6 +7,8 @@ export type RemovedGiroEntry = {
 };
 
 export const MAX_REMOVED_GIRO_STOPS = 12;
+
+export { placeKeyOf };
 
 /** Newest first; drops duplicate of the same stop id if re-removed. */
 export function pushRemovedGiroStop(
@@ -34,16 +37,6 @@ export function takeRemovedGiroStop(
     next: [...list.slice(0, idx), ...list.slice(idx + 1)],
     stop: structuredClone(entry.stop),
   };
-}
-
-export function placeKeyOf(place: {
-  placeId?: string | null;
-  location: { lat: number; lng: number };
-}): string {
-  return (
-    place.placeId ??
-    `${place.location.lat.toFixed(5)},${place.location.lng.toFixed(5)}`
-  );
 }
 
 /**

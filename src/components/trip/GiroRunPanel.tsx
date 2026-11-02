@@ -137,7 +137,7 @@ export function GiroRunPanel({
                   ? ` · fermata ${current.dwellMinutes} min`
                   : ""}
                 {current.pauseMinutes > 0
-                  ? ` · pausa ${current.pauseMinutes} min`
+                  ? ` · attesa appuntamento ${current.pauseMinutes} min`
                   : ""}
               </p>
               {projection.arrivalLabel ? (

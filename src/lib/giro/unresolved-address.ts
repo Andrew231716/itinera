@@ -24,9 +24,21 @@ export function isUnmappedPlace(place: PlaceRef): boolean {
   );
 }
 
-/** Needs a place picker: no coords, or no street address to show. */
+/** Force address picker: only when coordinates are missing/invalid. */
 export function needsPlaceFix(place: PlaceRef): boolean {
-  return isUnmappedPlace(place) || !place.address?.trim();
+  return isUnmappedPlace(place);
+}
+
+/**
+ * Stable key for dedupe. Unmapped 0,0 places must NOT collapse together.
+ */
+export function placeKeyOf(place: PlaceRef): string {
+  if (isUnmappedPlace(place)) {
+    return `unmapped:${place.id}`;
+  }
+  if (place.placeId) return `pid:${place.placeId}`;
+  const { lat, lng } = place.location;
+  return `ll:${lat.toFixed(5)},${lng.toFixed(5)}`;
 }
 
 /**
