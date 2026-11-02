@@ -5,7 +5,9 @@ export type TravelRuleId =
   | "avoidTolls"
   | "avoidHighways"
   | "avoidFerries"
+  | "avoidTunnels"
   | "preferShortest"
+  | "preferScenic"
   | "exclusions";
 
 export type TravelRuleItem = {
@@ -44,11 +46,25 @@ export function listActiveTravelRules(
       shortLabel: "Traghetti",
     });
   }
+  if (preferences.avoidTunnels) {
+    items.push({
+      id: "avoidTunnels",
+      label: "Meglio senza gallerie",
+      shortLabel: "Gallerie",
+    });
+  }
   if (preferences.preferShortest && !preferences.preferFastest) {
     items.push({
       id: "preferShortest",
       label: "Percorso più breve",
       shortLabel: "Breve",
+    });
+  }
+  if (preferences.preferScenic) {
+    items.push({
+      id: "preferScenic",
+      label: "Percorso panoramico",
+      shortLabel: "Panoramico",
     });
   }
   if (exclusions.length > 0) {

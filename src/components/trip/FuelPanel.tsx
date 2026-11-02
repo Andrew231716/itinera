@@ -46,6 +46,12 @@ import {
 } from "@/components/ui/primitives";
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
+const EXAMPLE_FUEL_CENTER = {
+  lat: 45.358,
+  lng: 9.324,
+  label: "Melegnano (esempio)",
+} as const;
+
 export function FuelPanel() {
   const trip = useTripStore((s) => s.trip);
   const fuelCenter = useTripStore((s) => s.fuelCenter);
@@ -119,12 +125,7 @@ export function FuelPanel() {
         kind: "partenza" as const,
       };
     }
-    return {
-      lat: 45.358,
-      lng: 9.324,
-      label: "Melegnano (esempio)",
-      kind: "esempio" as const,
-    };
+    return null;
   }, [fuelCenter, trip.origin, trip.destination, useCorridor]);
 
   const directionsOrigin = useMemo(() => {
@@ -135,6 +136,10 @@ export function FuelPanel() {
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
+      if (!center) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -333,14 +338,46 @@ export function FuelPanel() {
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
-        Centro:{" "}
-        <span className="font-medium text-[var(--ink)]">{center.label}</span>
-        <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
+        {center ? (
+          <>
+            Centro:{" "}
+            <span className="font-medium text-[var(--ink)]">{center.label}</span>
+            <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
+          </>
+        ) : (
+          <span className="font-medium text-[var(--ink)]">
+            Nessuna zona selezionata — scegli GPS, tratta o un esempio.
+          </span>
+        )}
         <p className="mt-1">
           Prezzi ufficiali da Osservaprezzi Carburanti. Conferma sempre AdBlue,
           GPL e disponibilità telefonando.
         </p>
       </div>
+
+      {!center ? (
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={useGps}>
+            <Navigation className="h-3.5 w-3.5" />
+            Usa GPS
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              requestFuelNear({
+                lat: EXAMPLE_FUEL_CENTER.lat,
+                lng: EXAMPLE_FUEL_CENTER.lng,
+                label: EXAMPLE_FUEL_CENTER.label,
+              })
+            }
+          >
+            <Search className="h-3.5 w-3.5" />
+            Usa esempio Melegnano
+          </Button>
+        </div>
+      ) : null}
 
       {trip.origin && trip.destination ? (
         <label className="flex items-center gap-2 text-xs text-[var(--ink)]">
@@ -413,7 +450,7 @@ export function FuelPanel() {
           type="button"
           size="sm"
           variant="secondary"
-          disabled={loading}
+          disabled={loading || !center}
           onClick={() => void load()}
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />

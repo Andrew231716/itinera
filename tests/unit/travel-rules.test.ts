@@ -73,4 +73,16 @@ describe("travel-rules", () => {
       "preferShortest",
     );
   });
+
+  it("lists soft tunnel and scenic preferences", () => {
+    const prefs = {
+      ...DEFAULT_ROAD_PREFERENCES,
+      avoidTunnels: true,
+      preferScenic: true,
+    };
+    const ids = listActiveTravelRules(prefs).map((i) => i.id);
+    expect(ids).toContain("avoidTunnels");
+    expect(ids).toContain("preferScenic");
+    expect(summarizeTravelRules(prefs)).toBe("Gallerie · Panoramico");
+  });
 });
