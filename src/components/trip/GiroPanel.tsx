@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Save,
   Share2,
+  Pencil,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -66,6 +67,12 @@ import {
   restoreGiroStop,
   type RemovedGiroEntry,
 } from "@/lib/giro/removed-stops";
+import {
+  applyResolvedGiroAddress,
+  isUnmappedPlace,
+  suggestEditQuery,
+  type GiroUnresolvedAddress,
+} from "@/lib/giro/unresolved-address";
 import {
   formatClockIt,
   formatDateTimeLocal,
@@ -131,7 +138,12 @@ export function GiroPanel() {
   const [stops, setStops] = useState<GiroStop[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lineErrors, setLineErrors] = useState<string[]>([]);
+  const [unresolvedAddresses, setUnresolvedAddresses] = useState<
+    GiroUnresolvedAddress[]
+  >([]);
+  const [editingUnresolvedId, setEditingUnresolvedId] = useState<string | null>(
+    null,
+  );
   const [orderWarnings, setOrderWarnings] = useState<string[]>([]);
   const [schedule, setSchedule] = useState<ScheduleStop[] | null>(null);
   const [addKey, setAddKey] = useState(0);
@@ -145,6 +157,7 @@ export function GiroPanel() {
   const [openAltWindow, setOpenAltWindow] = useState<number | null>(null);
   const [removedStops, setRemovedStops] = useState<RemovedGiroEntry[]>([]);
   const [showRemoved, setShowRemoved] = useState(false);
+  const [fixingStopId, setFixingStopId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lineCount = useMemo(
@@ -171,7 +184,8 @@ export function GiroPanel() {
     const seed = consumeGiroSeed();
     if (!seed) return;
     setError(null);
-    setLineErrors([]);
+    setUnresolvedAddresses([]);
+    setEditingUnresolvedId(null);
     setOrderWarnings([]);
     setSchedule(null);
     setListText("");
@@ -188,8 +202,8 @@ export function GiroPanel() {
 
   async function geocodeImportedStops(
     draft: GiroStop[],
-  ): Promise<{ stops: GiroStop[]; errors: string[] }> {
-    const errors: string[] = [];
+  ): Promise<{ stops: GiroStop[]; unresolved: GiroUnresolvedAddress[] }> {
+    const unresolved: GiroUnresolvedAddress[] = [];
     const next: GiroStop[] = [];
     for (const s of draft) {
       const query =
@@ -206,18 +220,24 @@ export function GiroPanel() {
           },
         });
       } else {
-        errors.push(resolveError ?? `Non trovato: ${s.place.label}`);
+        unresolved.push({
+          id: nanoid(),
+          query,
+          message: resolveError ?? `Non trovato: ${s.place.label}`,
+          stopId: s.id,
+        });
         next.push(s);
       }
     }
-    return { stops: next, errors };
+    return { stops: next, unresolved };
   }
 
   async function importParsedPiano(parsed: ParsedPianoFermate) {
     const draft = pianoFermateToGiroStops(parsed, () => nanoid());
-    const { stops: geocoded, errors } = await geocodeImportedStops(draft);
+    const { stops: geocoded, unresolved } = await geocodeImportedStops(draft);
     setStops(geocoded);
-    setLineErrors(errors);
+    setUnresolvedAddresses(unresolved);
+    setEditingUnresolvedId(unresolved[0]?.id ?? null);
     setSaveTitle(parsed.title);
     setSavedId(null);
     setListText("");
@@ -242,7 +262,8 @@ export function GiroPanel() {
 
   async function handleImportPdf(file: File) {
     setError(null);
-    setLineErrors([]);
+    setUnresolvedAddresses([]);
+    setEditingUnresolvedId(null);
     setOrderWarnings([]);
     setSchedule(null);
     setImporting(true);
@@ -359,7 +380,9 @@ export function GiroPanel() {
 
   function handleResetGiro() {
     setError(null);
-    setLineErrors([]);
+    setUnresolvedAddresses([]);
+    setEditingUnresolvedId(null);
+    setFixingStopId(null);
     setOrderWarnings([]);
     setSchedule(null);
     setListText("");
@@ -375,6 +398,49 @@ export function GiroPanel() {
     setDepartureLocal(defaultDepartureLocal());
     setAddKey((k) => k + 1);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function resolveUnresolvedPlace(unresolvedId: string, place: PlaceRef) {
+    const result = applyResolvedGiroAddress(
+      stops,
+      unresolvedAddresses,
+      unresolvedId,
+      place,
+    );
+    if (result.addPlace) {
+      setStops((prev) => {
+        if (prev.some((s) => placeKey(s.place) === placeKey(result.addPlace!))) {
+          return prev;
+        }
+        return [...prev, makeGiroStop(result.addPlace!)];
+      });
+    } else {
+      setStops(result.stops);
+    }
+    setUnresolvedAddresses(result.unresolved);
+    setEditingUnresolvedId(result.unresolved[0]?.id ?? null);
+    setSaveMessage("Indirizzo aggiornato. Puoi ricalcolare il percorso.");
+  }
+
+  function fixStopPlace(stopId: string, place: PlaceRef) {
+    setStops((prev) =>
+      prev.map((s) => {
+        if (s.id !== stopId) return s;
+        return {
+          ...s,
+          place: {
+            ...place,
+            label: s.place.label?.trim() ? s.place.label : place.label,
+            address: place.address ?? s.place.address,
+          },
+        };
+      }),
+    );
+    setUnresolvedAddresses((list) =>
+      list.filter((u) => u.stopId !== stopId),
+    );
+    setFixingStopId(null);
+    setSaveMessage("Posizione tappa aggiornata.");
   }
 
   function applyAlternative(
@@ -454,14 +520,29 @@ export function GiroPanel() {
 
   function handleLoadGiro(entry: SavedGiro) {
     setError(null);
-    setLineErrors([]);
+    const cloned = structuredClone(entry.stops);
+    const unresolved = cloned
+      .filter((s) => isUnmappedPlace(s.place))
+      .map((s) => {
+        const query =
+          s.place.address?.trim() || `${s.place.label}, Milano`;
+        return {
+          id: nanoid(),
+          query,
+          message: `Nessun risultato per «${query}».`,
+          stopId: s.id,
+        } satisfies GiroUnresolvedAddress;
+      });
+    setUnresolvedAddresses(unresolved);
+    setEditingUnresolvedId(unresolved[0]?.id ?? null);
+    setFixingStopId(null);
     setOrderWarnings([]);
     setListText("");
     setSavedId(entry.id);
     setSaveTitle(entry.title);
     setStart(entry.origin);
     setExportOrigin(entry.origin);
-    setStops(structuredClone(entry.stops));
+    setStops(cloned);
     setSchedule(entry.schedule ? structuredClone(entry.schedule) : null);
     if (entry.departureAt) {
       setDepartureLocal(formatDateTimeLocal(entry.departureAt));
@@ -469,7 +550,9 @@ export function GiroPanel() {
     if (entry.preferences) setPreferences(entry.preferences);
     if (entry.travelMode) setTravelMode(entry.travelMode);
     setSaveMessage(
-      `Caricato: ${entry.title} (orari, posizioni e regole ripristinati)`,
+      unresolved.length > 0
+        ? `Caricato: ${entry.title} · ${unresolved.length} indirizzi da correggere`
+        : `Caricato: ${entry.title} (orari, posizioni e regole ripristinati)`,
     );
   }
 
@@ -579,7 +662,8 @@ export function GiroPanel() {
 
   async function createGiro() {
     setError(null);
-    setLineErrors([]);
+    setUnresolvedAddresses([]);
+    setEditingUnresolvedId(null);
     setOrderWarnings([]);
     setSchedule(null);
     setExportOrigin(null);
@@ -588,8 +672,12 @@ export function GiroPanel() {
     try {
       const lines = parseAddressLines(listText);
       const fromLines: GiroStop[] = [];
-      const errs: string[] = [];
-      const seen = new Set(stops.map((s) => placeKey(s.place)));
+      const unresolved: GiroUnresolvedAddress[] = [];
+      const seen = new Set(
+        stops
+          .filter((s) => !isUnmappedPlace(s.place))
+          .map((s) => placeKey(s.place)),
+      );
 
       for (const line of lines) {
         const { place, error: resolveError } = await resolvePlaceQuery(line);
@@ -599,11 +687,18 @@ export function GiroPanel() {
             seen.add(key);
             fromLines.push(makeGiroStop(place));
           }
-        } else if (resolveError) {
-          errs.push(resolveError);
+        } else {
+          unresolved.push({
+            id: nanoid(),
+            query: line,
+            message: resolveError ?? `Nessun risultato per «${line}».`,
+          });
         }
       }
-      setLineErrors(errs);
+      setUnresolvedAddresses(unresolved);
+      if (unresolved.length > 0) {
+        setEditingUnresolvedId(unresolved[0].id);
+      }
 
       let working = [...stops, ...fromLines];
       if (fromLines.length > 0) {
@@ -718,7 +813,7 @@ export function GiroPanel() {
     Boolean(savedId) ||
     saveTitle.trim().length > 0 ||
     Boolean(error) ||
-    lineErrors.length > 0 ||
+    unresolvedAddresses.length > 0 ||
     orderWarnings.length > 0 ||
     Boolean(saveMessage);
 
@@ -820,6 +915,11 @@ export function GiroPanel() {
               stop={s}
               index={i}
               total={stops.length}
+              fixing={fixingStopId === s.id}
+              onFixToggle={() =>
+                setFixingStopId((cur) => (cur === s.id ? null : s.id))
+              }
+              onFixPlace={(place) => fixStopPlace(s.id, place)}
               onChange={(patch) => updateStop(s.id, patch)}
               onRemove={() => removeStop(s.id)}
             />
@@ -884,11 +984,64 @@ export function GiroPanel() {
         </div>
       ) : null}
 
-      {lineErrors.length > 0 ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          {lineErrors.map((e) => (
-            <p key={e}>{e}</p>
-          ))}
+      {unresolvedAddresses.length > 0 ? (
+        <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <p className="text-[11px] font-semibold tracking-wide text-amber-900 uppercase">
+            Indirizzi da correggere ({unresolvedAddresses.length})
+          </p>
+          <p className="text-[11px] text-amber-800/90">
+            Tocca una tappa, modifica l’indirizzo e scegli il luogo corretto.
+          </p>
+          <ul className="space-y-2">
+            {unresolvedAddresses.map((entry) => {
+              const open = editingUnresolvedId === entry.id;
+              return (
+                <li
+                  key={entry.id}
+                  className="rounded-lg border border-amber-200/80 bg-white/80"
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-start gap-2 px-2.5 py-2 text-left"
+                    onClick={() =>
+                      setEditingUnresolvedId((cur) =>
+                        cur === entry.id ? null : entry.id,
+                      )
+                    }
+                    aria-expanded={open}
+                  >
+                    <Pencil className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-800" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-amber-950">
+                        {entry.query}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-amber-800/80">
+                        {entry.message}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[11px] font-semibold text-amber-900">
+                      {open ? "Chiudi" : "Modifica"}
+                    </span>
+                  </button>
+                  {open ? (
+                    <div className="border-t border-amber-100 px-2.5 py-2">
+                      <PlaceSearch
+                        key={entry.id}
+                        label="Cerca indirizzo corretto"
+                        placeholder={suggestEditQuery(entry.query)}
+                        initialQuery={suggestEditQuery(entry.query)}
+                        value={null}
+                        allowGps={false}
+                        onSelect={(place) =>
+                          resolveUnresolvedPlace(entry.id, place)
+                        }
+                      />
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
 
@@ -1322,15 +1475,22 @@ function GiroStopCard({
   stop,
   index,
   total,
+  fixing,
+  onFixToggle,
+  onFixPlace,
   onChange,
   onRemove,
 }: {
   stop: GiroStop;
   index: number;
   total: number;
+  fixing?: boolean;
+  onFixToggle?: () => void;
+  onFixPlace?: (place: PlaceRef) => void;
   onChange: (patch: Partial<GiroStop>) => void;
   onRemove: () => void;
 }) {
+  const unmapped = isUnmappedPlace(stop.place);
   const lockValue =
     stop.positionLock === "auto"
       ? "auto"
@@ -1346,20 +1506,47 @@ function GiroStopCard({
   }
 
   return (
-    <li className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2.5">
+    <li
+      className={cn(
+        "rounded-xl border px-3 py-2.5",
+        unmapped
+          ? "border-amber-300 bg-amber-50/70"
+          : "border-[var(--line)] bg-[var(--surface-2)]",
+      )}
+    >
       <div className="flex items-start gap-2">
-        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand)]" />
+        <MapPin
+          className={cn(
+            "mt-0.5 h-4 w-4 shrink-0",
+            unmapped ? "text-amber-700" : "text-[var(--brand)]",
+          )}
+        />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--ink)]">
             <span className="mr-1.5 text-[var(--ink-muted)]">{index + 1}.</span>
             {stop.place.label}
           </p>
-          {stop.place.address ? (
+          {unmapped ? (
+            <p className="mt-0.5 text-[11px] font-medium text-amber-900">
+              Indirizzo non trovato — tocca «Correggi»
+            </p>
+          ) : stop.place.address ? (
             <p className="truncate text-[11px] text-[var(--ink-muted)]">
               {stop.place.address}
             </p>
           ) : null}
         </div>
+        {unmapped && onFixToggle ? (
+          <button
+            type="button"
+            className="rounded-lg p-1 text-amber-800 hover:bg-amber-100"
+            onClick={onFixToggle}
+            aria-label="Correggi indirizzo"
+            title="Correggi indirizzo"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        ) : null}
         <button
           type="button"
           className="rounded-lg p-1 text-[var(--ink-muted)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
@@ -1369,6 +1556,26 @@ function GiroStopCard({
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
+
+      {fixing && onFixPlace ? (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-white/90 p-2">
+          <PlaceSearch
+            key={`fix-${stop.id}`}
+            label="Cerca indirizzo corretto"
+            placeholder={suggestEditQuery(
+              stop.place.address?.trim() ||
+                `${stop.place.label}, Milano`,
+            )}
+            initialQuery={suggestEditQuery(
+              stop.place.address?.trim() ||
+                `${stop.place.label}, Milano`,
+            )}
+            value={null}
+            allowGps={false}
+            onSelect={onFixPlace}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <div>
