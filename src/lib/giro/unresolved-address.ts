@@ -13,12 +13,20 @@ export type GiroUnresolvedAddress = {
 };
 
 export function isUnmappedPlace(place: PlaceRef): boolean {
-  const { lat, lng } = place.location;
+  const lat = place.location?.lat;
+  const lng = place.location?.lng;
   return (
+    lat == null ||
+    lng == null ||
     !Number.isFinite(lat) ||
     !Number.isFinite(lng) ||
     (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6)
   );
+}
+
+/** Needs a place picker: no coords, or no street address to show. */
+export function needsPlaceFix(place: PlaceRef): boolean {
+  return isUnmappedPlace(place) || !place.address?.trim();
 }
 
 /**
@@ -65,11 +73,18 @@ export function applyResolvedGiroAddress(
 export function suggestEditQuery(query: string): string {
   const q = query.trim();
   // "Name HUB-…, Milano" → try the leading name + city
-  const hub = q.match(/^(.*?)\s+HUB-[^,]+,\s*(.+)$/i);
-  if (hub) {
-    const name = hub[1].replace(/^(Cms|CMS)\s+/i, "").trim();
-    const city = hub[2].trim();
+  const hubCity = q.match(/^(.*?)\s+HUB-[^,]+,\s*(.+)$/i);
+  if (hubCity) {
+    const name = hubCity[1].replace(/^(Cms|CMS)\s+/i, "").trim();
+    const city = hubCity[2].trim();
     if (name && city) return `${name}, ${city}`;
+  }
+  // "Cms Sesto-1 Gorizia HUB-CMS-Sesto-Monza" (no city suffix)
+  const hubOnly = q.match(/^(.*?)\s+HUB-CMS-([A-Za-z0-9-]+)\s*$/i);
+  if (hubOnly) {
+    const name = hubOnly[1].replace(/^(Cms|CMS)\s+/i, "").trim();
+    const hub = hubOnly[2].replace(/-/g, " ").trim();
+    if (name) return `${name}, ${hub || "Milano"}`;
   }
   return q;
 }

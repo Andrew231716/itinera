@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyResolvedGiroAddress,
   isUnmappedPlace,
+  needsPlaceFix,
   suggestEditQuery,
   type GiroUnresolvedAddress,
 } from "@/lib/giro/unresolved-address";
@@ -29,12 +30,26 @@ function stop(id: string, loc = { lat: 0, lng: 0 }): GiroStop {
 }
 
 describe("unresolved giro addresses", () => {
-  it("detects unmapped 0,0 places", () => {
+  it("detects unmapped 0,0 places and missing address", () => {
     expect(isUnmappedPlace(place({ id: "a", location: { lat: 0, lng: 0 } }))).toBe(
       true,
     );
     expect(
       isUnmappedPlace(place({ id: "b", location: { lat: 45.5, lng: 9.2 } })),
+    ).toBe(false);
+    expect(
+      needsPlaceFix(
+        place({ id: "c", location: { lat: 45.5, lng: 9.2 }, address: undefined }),
+      ),
+    ).toBe(true);
+    expect(
+      needsPlaceFix(
+        place({
+          id: "d",
+          location: { lat: 45.5, lng: 9.2 },
+          address: "Via Roma 1",
+        }),
+      ),
     ).toBe(false);
   });
 
@@ -80,5 +95,8 @@ describe("unresolved giro addresses", () => {
         "Cms Sesto-1 Gorizia HUB-CMS-Sesto-Monza, Milano",
       ),
     ).toBe("Sesto-1 Gorizia, Milano");
+    expect(suggestEditQuery("Cms Sesto-1 Gorizia HUB-CMS-Sesto-Monza")).toBe(
+      "Sesto-1 Gorizia, Sesto Monza",
+    );
   });
 });

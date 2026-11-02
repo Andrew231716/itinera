@@ -70,6 +70,7 @@ import {
 import {
   applyResolvedGiroAddress,
   isUnmappedPlace,
+  needsPlaceFix,
   suggestEditQuery,
   type GiroUnresolvedAddress,
 } from "@/lib/giro/unresolved-address";
@@ -522,14 +523,16 @@ export function GiroPanel() {
     setError(null);
     const cloned = structuredClone(entry.stops);
     const unresolved = cloned
-      .filter((s) => isUnmappedPlace(s.place))
+      .filter((s) => needsPlaceFix(s.place))
       .map((s) => {
         const query =
           s.place.address?.trim() || `${s.place.label}, Milano`;
         return {
           id: nanoid(),
           query,
-          message: `Nessun risultato per «${query}».`,
+          message: isUnmappedPlace(s.place)
+            ? `Nessun risultato per «${query}».`
+            : `Indirizzo mancante per «${s.place.label}».`,
           stopId: s.id,
         } satisfies GiroUnresolvedAddress;
       });
@@ -1490,7 +1493,13 @@ function GiroStopCard({
   onChange: (patch: Partial<GiroStop>) => void;
   onRemove: () => void;
 }) {
+  const needsFix = needsPlaceFix(stop.place);
   const unmapped = isUnmappedPlace(stop.place);
+  // Always open the place picker when the stop has no usable address/coords.
+  const showFixer = Boolean(onFixPlace && (needsFix || fixing));
+  const editQuery = suggestEditQuery(
+    stop.place.address?.trim() || stop.place.label || "",
+  );
   const lockValue =
     stop.positionLock === "auto"
       ? "auto"
@@ -1508,45 +1517,36 @@ function GiroStopCard({
   return (
     <li
       className={cn(
-        "rounded-xl border px-3 py-2.5",
-        unmapped
+        "min-w-0 overflow-hidden rounded-xl border px-3 py-2.5",
+        needsFix
           ? "border-amber-300 bg-amber-50/70"
           : "border-[var(--line)] bg-[var(--surface-2)]",
       )}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex min-w-0 items-start gap-2">
         <MapPin
           className={cn(
             "mt-0.5 h-4 w-4 shrink-0",
-            unmapped ? "text-amber-700" : "text-[var(--brand)]",
+            needsFix ? "text-amber-700" : "text-[var(--brand)]",
           )}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[var(--ink)]">
+          <p className="break-words text-sm font-semibold text-[var(--ink)]">
             <span className="mr-1.5 text-[var(--ink-muted)]">{index + 1}.</span>
             {stop.place.label}
           </p>
-          {unmapped ? (
+          {needsFix ? (
             <p className="mt-0.5 text-[11px] font-medium text-amber-900">
-              Indirizzo non trovato — tocca «Correggi»
+              {unmapped
+                ? "Indirizzo non trovato — cerca e seleziona il luogo"
+                : "Manca l’indirizzo — puoi modificarlo qui sotto"}
             </p>
           ) : stop.place.address ? (
-            <p className="truncate text-[11px] text-[var(--ink-muted)]">
+            <p className="mt-0.5 break-words text-[11px] text-[var(--ink-muted)]">
               {stop.place.address}
             </p>
           ) : null}
         </div>
-        {unmapped && onFixToggle ? (
-          <button
-            type="button"
-            className="rounded-lg p-1 text-amber-800 hover:bg-amber-100"
-            onClick={onFixToggle}
-            aria-label="Correggi indirizzo"
-            title="Correggi indirizzo"
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
-        ) : null}
         <button
           type="button"
           className="rounded-lg p-1 text-[var(--ink-muted)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
@@ -1557,31 +1557,45 @@ function GiroStopCard({
         </button>
       </div>
 
-      {fixing && onFixPlace ? (
-        <div className="mt-2 rounded-lg border border-amber-200 bg-white/90 p-2">
+      {onFixPlace && onFixToggle && !needsFix ? (
+        <div className="mt-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={onFixToggle}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {fixing ? "Chiudi modifica indirizzo" : "Cambia indirizzo"}
+          </Button>
+        </div>
+      ) : null}
+
+      {showFixer ? (
+        <div className="mt-2 min-w-0 rounded-lg border border-amber-200 bg-white/90 p-2">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-amber-900">
+            <Pencil className="h-3.5 w-3.5" />
+            {needsFix ? "Inserisci l’indirizzo corretto" : "Nuovo indirizzo"}
+          </p>
           <PlaceSearch
-            key={`fix-${stop.id}`}
-            label="Cerca indirizzo corretto"
-            placeholder={suggestEditQuery(
-              stop.place.address?.trim() ||
-                `${stop.place.label}, Milano`,
-            )}
-            initialQuery={suggestEditQuery(
-              stop.place.address?.trim() ||
-                `${stop.place.label}, Milano`,
-            )}
+            key={`fix-${stop.id}-${editQuery}`}
+            label="Cerca e seleziona il luogo"
+            placeholder={editQuery || "Via, città…"}
+            initialQuery={editQuery}
             value={null}
             allowGps={false}
-            onSelect={onFixPlace}
+            onSelect={onFixPlace!}
           />
         </div>
       ) : null}
 
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <div>
+      <div className="mt-2 grid min-w-0 grid-cols-1 gap-2">
+        <div className="min-w-0">
           <Label>Orario in questa tappa</Label>
           <Input
             type="datetime-local"
+            className="min-w-0 max-w-full"
             value={
               stop.arriveBy ? formatDateTimeLocal(stop.arriveBy) : ""
             }
@@ -1594,12 +1608,13 @@ function GiroStopCard({
             }
           />
         </div>
-        <div>
+        <div className="min-w-0">
           <Label>Tempo di fermata (min)</Label>
           <Input
             type="number"
             min={0}
             max={240}
+            className="min-w-0 max-w-full"
             value={stop.dwellMinutes}
             onChange={(e) => {
               const n = Number(e.target.value);
@@ -1612,15 +1627,15 @@ function GiroStopCard({
           />
         </div>
         {stop.pauseMinutes > 0 ? (
-          <div className="sm:col-span-2 rounded-lg bg-[var(--brand-soft)]/50 px-3 py-2 text-[11px] text-[var(--ink)]">
+          <div className="rounded-lg bg-[var(--brand-soft)]/50 px-3 py-2 text-[11px] text-[var(--ink)]">
             Pausa automatica {stop.pauseMinutes} min — per arrivare in orario
             alla tappa successiva con appuntamento.
           </div>
         ) : null}
-        <div className="sm:col-span-2">
+        <div className="min-w-0">
           <Label>Posizione nel giro</Label>
           <select
-            className="h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--brand)]"
+            className="h-10 w-full min-w-0 max-w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--brand)]"
             value={lockValue}
             onChange={(e) => onLockChange(e.target.value)}
           >
