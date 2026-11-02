@@ -32,6 +32,12 @@ import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 type PricingFilter = "all" | "free" | "paid" | "unknown";
 
+const EXAMPLE_PARKING_CENTER = {
+  lat: 45.4642,
+  lng: 9.19,
+  label: "Milano (esempio)",
+} as const;
+
 export function ParkingPanel() {
   const trip = useTripStore((s) => s.trip);
   const parkingCenter = useTripStore((s) => s.parkingCenter);
@@ -72,12 +78,7 @@ export function ParkingPanel() {
         kind: "partenza" as const,
       };
     }
-    return {
-      lat: 45.4642,
-      lng: 9.19,
-      label: "Milano (esempio)",
-      kind: "esempio" as const,
-    };
+    return null;
   }, [parkingCenter, trip.destination, trip.origin]);
 
   const reloadFavorites = useCallback(() => {
@@ -89,6 +90,10 @@ export function ParkingPanel() {
   }, [reloadFavorites]);
 
   const load = useCallback(async () => {
+    if (!center) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -213,9 +218,17 @@ export function ParkingPanel() {
       />
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--ink-muted)]">
-        Centro suggerito:{" "}
-        <span className="font-medium text-[var(--ink)]">{center.label}</span>
-        <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
+        {center ? (
+          <>
+            Centro:{" "}
+            <span className="font-medium text-[var(--ink)]">{center.label}</span>
+            <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
+          </>
+        ) : (
+          <span className="font-medium text-[var(--ink)]">
+            Nessuna zona selezionata — scegli destinazione, GPS o un esempio.
+          </span>
+        )}
         <p className="mt-1">
           La ricerca non parte da sola: usa i pulsanti qui sotto. Poi seleziona
           un risultato come destinazione o tappa.
@@ -225,14 +238,15 @@ export function ParkingPanel() {
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          disabled={loading}
-          onClick={() =>
+          disabled={loading || !center}
+          onClick={() => {
+            if (!center) return;
             requestParkingNear({
               lat: center.lat,
               lng: center.lng,
               label: center.label,
-            })
-          }
+            });
+          }}
         >
           <Search className="h-4 w-4" />
           {loading ? "Cerco…" : "Cerca parcheggi"}
@@ -258,6 +272,23 @@ export function ParkingPanel() {
           <Navigation className="h-3.5 w-3.5" />
           Usa GPS
         </Button>
+        {!center ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              requestParkingNear({
+                lat: EXAMPLE_PARKING_CENTER.lat,
+                lng: EXAMPLE_PARKING_CENTER.lng,
+                label: EXAMPLE_PARKING_CENTER.label,
+              })
+            }
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            Usa esempio Milano
+          </Button>
+        ) : null}
         <Button
           type="button"
           size="sm"

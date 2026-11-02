@@ -566,23 +566,6 @@ export function DrivingHud() {
                     </div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  className={cn(roundCtl, roundCtlIdle, "shrink-0")}
-                  aria-label={
-                    cardsLeft
-                      ? "Sposta pannelli a destra"
-                      : "Sposta pannelli a sinistra"
-                  }
-                  title="Sposta a destra / sinistra"
-                  onClick={swapHudSide}
-                >
-                  {cardsLeft ? (
-                    <PanelRight className="h-5 w-5" />
-                  ) : (
-                    <PanelLeft className="h-5 w-5" />
-                  )}
-                </button>
                 <Button
                   type="button"
                   size="sm"
