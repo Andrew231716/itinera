@@ -50,6 +50,13 @@ export type ScheduleStop = {
   legEstimated?: boolean;
 };
 
+/** Shared Italian label for automatic wait before the next appointment. */
+export function formatAutoPauseLabel(minutes: number): string | null {
+  const n = Math.max(0, Math.round(minutes));
+  if (n <= 0) return null;
+  return `Attesa per appuntamento successivo ${n} min`;
+}
+
 /**
  * Minutes to wait after service so leaving now + travel lands on `nextArriveBy`.
  * Returns 0 when there is no appointment or we are already late.

@@ -33,6 +33,7 @@ import {
   assignGiroPositionLock,
   buildArrivalSchedule,
   findGiroFlexibleWindows,
+  formatAutoPauseLabel,
   formatLegTravelLabel,
   giroHasHardLocks,
   orderGiroStops,
@@ -71,6 +72,7 @@ import {
   applyResolvedGiroAddress,
   isUnmappedPlace,
   needsPlaceFix,
+  placeKeyOf,
   suggestEditQuery,
   type GiroUnresolvedAddress,
 } from "@/lib/giro/unresolved-address";
@@ -105,7 +107,7 @@ function makeGiroStop(place: PlaceRef): GiroStop {
 }
 
 function placeKey(p: PlaceRef): string {
-  return p.placeId ?? `${p.location.lat.toFixed(5)},${p.location.lng.toFixed(5)}`;
+  return placeKeyOf(p);
 }
 
 function defaultDepartureLocal(): string {
@@ -322,6 +324,7 @@ export function GiroPanel() {
           : prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
 
       // Refresh ETA + auto-pauses when dwell/appointment changes.
+      // Reuse last router legs when the visit count still matches.
       if (
         start &&
         (patch.dwellMinutes !== undefined || patch.arriveBy !== undefined)
@@ -329,11 +332,18 @@ export function GiroPanel() {
         const departureAt = localInputToIso(departureLocal);
         if (departureAt) {
           const { ordered } = orderGiroStops(start, next);
+          const state = useTripStore.getState();
+          const route =
+            state.routes.find((r) => r.id === state.trip.selectedRouteId) ??
+            state.routes[0] ??
+            null;
+          const legs =
+            route && route.legs.length === ordered.length ? route.legs : [];
           const rows = buildArrivalSchedule({
             departureAt,
             origin: start,
             orderedPlaces: ordered.map((s) => s.place),
-            legs: [],
+            legs,
             orderedGiroStops: ordered,
           });
           setSchedule(rows);
@@ -353,6 +363,9 @@ export function GiroPanel() {
       }
       return prev.filter((s) => s.id !== id);
     });
+    setSchedule(null);
+    setUnresolvedAddresses((list) => list.filter((u) => u.stopId !== id));
+    setSaveMessage("Tappa rimossa. Tocca «Calcola percorso» per aggiornare.");
   }
 
   function restoreRemovedStop(id: string) {
@@ -367,7 +380,10 @@ export function GiroPanel() {
     }
     setStops(result.stops);
     setRemovedStops(result.removed);
-    setSaveMessage("Tappa reinserita con orario e posizione salvati.");
+    setSchedule(null);
+    setSaveMessage(
+      "Tappa reinserita con orario e posizione. Ricalcola il percorso.",
+    );
     if (result.removed.length === 0) setShowRemoved(false);
   }
 
@@ -409,17 +425,18 @@ export function GiroPanel() {
       place,
     );
     if (result.addPlace) {
-      setStops((prev) => {
-        if (prev.some((s) => placeKey(s.place) === placeKey(result.addPlace!))) {
-          return prev;
-        }
-        return [...prev, makeGiroStop(result.addPlace!)];
-      });
+      const key = placeKey(result.addPlace);
+      if (stops.some((s) => placeKey(s.place) === key)) {
+        setSaveMessage("Questo luogo è già nel giro. Scegline un altro.");
+        return;
+      }
+      setStops((prev) => [...prev, makeGiroStop(result.addPlace!)]);
     } else {
       setStops(result.stops);
     }
     setUnresolvedAddresses(result.unresolved);
     setEditingUnresolvedId(result.unresolved[0]?.id ?? null);
+    setSchedule(null);
     setSaveMessage("Indirizzo aggiornato. Puoi ricalcolare il percorso.");
   }
 
@@ -698,15 +715,34 @@ export function GiroPanel() {
           });
         }
       }
-      setUnresolvedAddresses(unresolved);
-      if (unresolved.length > 0) {
-        setEditingUnresolvedId(unresolved[0].id);
-      }
-
       let working = [...stops, ...fromLines];
       if (fromLines.length > 0) {
         setStops(working);
         setListText("");
+      }
+
+      // Keep PDF/import failures in the fix queue (do not route 0,0 stops).
+      const fromExisting = working
+        .filter((s) => isUnmappedPlace(s.place))
+        .map((s) => {
+          const query =
+            s.place.address?.trim() || `${s.place.label}, Milano`;
+          return {
+            id: nanoid(),
+            query,
+            message: `Nessun risultato per «${query}».`,
+            stopId: s.id,
+          } satisfies GiroUnresolvedAddress;
+        });
+      const allUnresolved = [...unresolved];
+      for (const u of fromExisting) {
+        if (!allUnresolved.some((x) => x.stopId === u.stopId)) {
+          allUnresolved.push(u);
+        }
+      }
+      setUnresolvedAddresses(allUnresolved);
+      if (allUnresolved.length > 0) {
+        setEditingUnresolvedId(allUnresolved[0].id);
       }
 
       if (working.length < 1) {
@@ -714,10 +750,21 @@ export function GiroPanel() {
         return;
       }
 
+      if (allUnresolved.length > 0) {
+        setError(
+          "Correggi gli indirizzi non trovati prima di calcolare il percorso.",
+        );
+        return;
+      }
+
       let origin = start;
       if (!origin) {
         origin = working[0].place;
         working = working.slice(1);
+      }
+      if (!origin || isUnmappedPlace(origin)) {
+        setError("Imposta una partenza con indirizzo valido.");
+        return;
       }
       if (working.length < 1) {
         setError("Serve almeno una tappa oltre alla partenza.");
@@ -737,17 +784,18 @@ export function GiroPanel() {
       setStart(origin);
 
       const orderedPlaces = ordered.map((s) => s.place);
-      applyGiro({
-        origin,
-        orderedVisits: orderedPlaces,
-        departureAt,
-      });
-
       const middles = orderedPlaces.slice(0, -1);
       const destination = orderedPlaces[orderedPlaces.length - 1];
       // Locks must not be shuffled by Google waypoint optimize
       const allowOptimize =
         middles.length >= 2 && !giroHasHardLocks(ordered);
+
+      applyGiro({
+        origin,
+        orderedVisits: orderedPlaces,
+        departureAt,
+        optimizeStopOrder: allowOptimize,
+      });
 
       const result = await computeRoute({
         origin,
@@ -1358,9 +1406,7 @@ export function GiroPanel() {
                           {row.dwellMinutes > 0 && row.pauseMinutes > 0
                             ? " · "
                             : null}
-                          {row.pauseMinutes > 0
-                            ? `Attesa per appuntamento successivo ${row.pauseMinutes} min`
-                            : null}
+                          {formatAutoPauseLabel(row.pauseMinutes)}
                           {" · riparti alle "}
                           {formatClockIt(row.departAt)}
                         </p>
@@ -1628,8 +1674,8 @@ function GiroStopCard({
         </div>
         {stop.pauseMinutes > 0 ? (
           <div className="rounded-lg bg-[var(--brand-soft)]/50 px-3 py-2 text-[11px] text-[var(--ink)]">
-            Pausa automatica {stop.pauseMinutes} min — per arrivare in orario
-            alla tappa successiva con appuntamento.
+            {formatAutoPauseLabel(stop.pauseMinutes)} — riparti dopo il
+            servizio per arrivare in orario alla tappa successiva.
           </div>
         ) : null}
         <div className="min-w-0">

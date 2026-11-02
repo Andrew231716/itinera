@@ -106,20 +106,12 @@ export function SavedPanel() {
   );
 
   function handleResetSection() {
+    // Only clear the «preferiti» form filters — do not wipe the active trip.
     setLabel("");
     setNote("");
     setKind("parking");
     setFilter("all");
-    resetTrip();
   }
-
-  const tripDirty = Boolean(
-    trip.origin ||
-      trip.destination ||
-      trip.stops.length > 0 ||
-      trip.exclusions.length > 0 ||
-      trip.meta.title !== "Il mio itinerario",
-  );
 
   return (
     <div className="space-y-6">
@@ -129,7 +121,6 @@ export function SavedPanel() {
         action={
           <PanelResetButton
             disabled={
-              !tripDirty &&
               !label.trim() &&
               !note.trim() &&
               kind === "parking" &&

@@ -157,6 +157,8 @@ export function DrivingHud() {
           source: "gps",
         },
         intermediates: remainingStopPlaces(trip.stops, nav.nextWaypointIndex),
+        // Never reshuffle remaining stops while driving.
+        optimizeWaypointOrder: false,
       });
     }, TRAFFIC_MONITOR_INTERVAL_MS);
     return () => window.clearInterval(id);

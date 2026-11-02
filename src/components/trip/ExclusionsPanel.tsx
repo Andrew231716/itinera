@@ -49,6 +49,8 @@ export function ExclusionsPanel() {
 
   function handleReset() {
     clearExclusions();
+    clearExclusionDraft();
+    setMapPickTarget(null);
     setKind("city");
     setZoneLabel("Zona da evitare");
   }
