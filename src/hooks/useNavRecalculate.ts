@@ -14,7 +14,6 @@ import type { PlaceRef, TripStop } from "@/lib/types/trip";
  * Mutates trip only after a successful compute (rollback on failure).
  */
 export function useNavRecalculate() {
-  const setOrigin = useTripStore((s) => s.setOrigin);
   const setNavigationRecalculating = useTripStore(
     (s) => s.setNavigationRecalculating,
   );
@@ -65,20 +64,16 @@ export function useNavRecalculate() {
         return false;
       }
 
-      setOrigin(origin);
-      if (intermediates.length !== prevStops.length) {
-        useTripStore.setState((s) => ({
-          trip: {
-            ...s.trip,
-            stops: prevStops.slice(prevWaypointIndex),
-            meta: {
-              ...s.trip.meta,
-              updatedAt: new Date().toISOString(),
-            },
-          },
-          navigation: { ...s.navigation, nextWaypointIndex: 0 },
-        }));
-      }
+      useTripStore.setState((s) => ({
+        trip: {
+          ...s.trip,
+          origin,
+          stops: prevStops.slice(prevWaypointIndex),
+          meta: { ...s.trip.meta, updatedAt: new Date().toISOString() },
+        },
+        routes: [...s.routes],
+        navigation: { ...s.navigation, nextWaypointIndex: 0 },
+      }));
       recenterNavigation();
       if (after.navigation.voiceEnabled) {
         speakNavigation("Percorso aggiornato", true);
@@ -102,12 +97,7 @@ export function useNavRecalculate() {
     } finally {
       setNavigationRecalculating(false);
     }
-  }, [
-    setOrigin,
-    computeRoute,
-    setNavigationRecalculating,
-    recenterNavigation,
-  ]);
+  }, [computeRoute, setNavigationRecalculating, recenterNavigation]);
 
   return {
     recalculateFromHere,

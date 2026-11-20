@@ -1,4 +1,6 @@
 "use client";
+import { parkingMatchesQuery } from "@/lib/parking/helpers";
+import { distanceToRouteMeters } from "@/lib/routing/planning";
 
 import {
   CircleParking,
@@ -10,7 +12,7 @@ import {
   Search,
   Star,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTripStore } from "@/lib/store/trip-store";
 import type { ParkingSearchResult, ParkingSpot } from "@/lib/parking/types";
 import { parkingSpotToPlaceRef } from "@/lib/parking/place-ref";
@@ -28,6 +30,7 @@ import {
   Input,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PlaceSearch } from "@/components/trip/PlaceSearch";
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 type PricingFilter = "all" | "free" | "paid" | "unknown";
@@ -40,6 +43,10 @@ const EXAMPLE_PARKING_CENTER = {
 
 export function ParkingPanel() {
   const trip = useTripStore((s) => s.trip);
+  const routes = useTripStore((s) => s.routes);
+  const routePath = (
+    routes.find((route) => route.id === trip.selectedRouteId) ?? routes[0]
+  )?.decodedPath;
   const parkingCenter = useTripStore((s) => s.parkingCenter);
   const parkingSearchNonce = useTripStore((s) => s.parkingSearchNonce);
   const parkingSpots = useTripStore((s) => s.parkingSpots);
@@ -50,6 +57,8 @@ export function ParkingPanel() {
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
   const clearParkingResults = useTripStore((s) => s.clearParkingResults);
 
+  const requestId = useRef(0);
+  const [sort, setSort] = useState("distance");
   const [filter, setFilter] = useState<PricingFilter>("all");
   const [radius, setRadius] = useState(1200);
   const [query, setQuery] = useState("");
@@ -94,6 +103,7 @@ export function ParkingPanel() {
       setLoading(false);
       return;
     }
+    const request = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
@@ -104,28 +114,41 @@ export function ParkingPanel() {
         label: center.label,
       });
       if (query.trim()) params.set("q", query.trim());
-      const res = await fetch(`/api/parking/nearby?${params.toString()}`);
+      const res = await fetch(`/api/parking/nearby?${params.toString()}`, {
+        signal: AbortSignal.timeout(25_000),
+      });
       const data = (await res.json()) as ParkingSearchResult & {
         error?: string;
       };
+      if (request !== requestId.current) return;
       if (!res.ok) {
         throw new Error(data.error ?? "Ricerca parcheggi non riuscita.");
       }
       setParkingSpots(data.spots);
       setLimitations(data.limitations ?? []);
     } catch (err) {
+      if (request !== requestId.current) return;
       setParkingSpots([]);
       setError(err instanceof Error ? err.message : "Errore di ricerca.");
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }, [center, radius, query, setParkingSpots]);
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(
+    () => () => {
+      requestId.current++;
+    },
+    [],
+  );
 
   // Search only when the user explicitly triggers it (nonce bump or Aggiorna).
   useEffect(() => {
     if (parkingSearchNonce === 0) return;
-    void load();
-  }, [load, parkingSearchNonce]);
+    void loadRef.current();
+  }, [parkingSearchNonce]);
 
   function useGps() {
     if (!navigator.geolocation) {
@@ -146,9 +169,22 @@ export function ParkingPanel() {
   }
 
   const spots = useMemo(() => {
-    if (filter === "all") return parkingSpots;
-    return parkingSpots.filter((s) => s.pricing === filter);
-  }, [parkingSpots, filter]);
+    const matches = parkingSpots.filter(
+      (spot) =>
+        (filter === "all" || spot.pricing === filter) &&
+        parkingMatchesQuery(spot, query),
+    );
+    const price = (spot: ParkingSpot) =>
+      spot.pricing === "free" ? 0 : (spot.cost?.hourlyEstimate ?? Infinity);
+    return matches.sort((a, b) =>
+      sort === "route" && routePath
+        ? distanceToRouteMeters(a.location, routePath) -
+          distanceToRouteMeters(b.location, routePath)
+        : sort === "price"
+          ? price(a) - price(b) || a.distanceMeters - b.distanceMeters
+          : a.distanceMeters - b.distanceMeters,
+    );
+  }, [parkingSpots, filter, query, sort, routePath]);
 
   const counts = useMemo(() => {
     return {
@@ -189,6 +225,8 @@ export function ParkingPanel() {
   }
 
   function handleReset() {
+    requestId.current++;
+    setLoading(false);
     clearParkingResults();
     setFilter("all");
     setRadius(1200);
@@ -221,7 +259,9 @@ export function ParkingPanel() {
         {center ? (
           <>
             Centro:{" "}
-            <span className="font-medium text-[var(--ink)]">{center.label}</span>
+            <span className="font-medium text-[var(--ink)]">
+              {center.label}
+            </span>
             <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
           </>
         ) : (
@@ -296,11 +336,36 @@ export function ParkingPanel() {
           disabled={loading || parkingSpots.length === 0}
           onClick={() => void load()}
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+          />
           Aggiorna
         </Button>
       </div>
 
+      <PlaceSearch
+        label="Cerca parcheggi in una località"
+        value={null}
+        allowGps={false}
+        onSelect={(place) =>
+          requestParkingNear({ ...place.location, label: place.label })
+        }
+      />
+      <label className="flex items-center justify-between gap-2 text-sm">
+        Ordina risultati
+        <select
+          aria-label="Ordina parcheggi"
+          className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2"
+          value={sort}
+          onChange={(event) => setSort(event.target.value)}
+        >
+          <option value="distance">Più vicini</option>
+          <option value="price">Prezzo orario noto</option>
+          {routePath && routePath.length > 1 && (
+            <option value="route">Vicini al percorso (linea d’aria)</option>
+          )}
+        </select>
+      </label>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-[var(--ink-faint)]" />
@@ -405,7 +470,9 @@ export function ParkingPanel() {
               }
             >
               <span>
-                <span className="font-medium text-[var(--ink)]">{fav.label}</span>
+                <span className="font-medium text-[var(--ink)]">
+                  {fav.label}
+                </span>
                 {fav.note ? (
                   <span className="mt-0.5 block text-[11px] text-[var(--ink-muted)]">
                     {fav.note}

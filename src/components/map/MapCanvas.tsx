@@ -722,6 +722,8 @@ export function MapCanvas() {
     isVector,
   ]);
 
+  if (mapsMode === "unknown") return <div className="flex h-full items-center justify-center bg-[var(--mist)] text-[var(--ink-muted)]" role="status">Caricamento mappa…</div>;
+
   if (mapsMode === "demo" || !browserMapsKey) {
     return <DemoMap />;
   }

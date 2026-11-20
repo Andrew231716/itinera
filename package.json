@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "next build && node scripts/generate-offline-assets.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

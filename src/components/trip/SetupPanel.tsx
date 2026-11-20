@@ -54,8 +54,8 @@ export function SetupPanel() {
   return (
     <div className="space-y-4">
       <SectionTitle
-        title="Passa a modalità reale"
-        subtitle="Serve configurare le chiavi API — senza di esse resta la demo onesta"
+        title="Impostazioni e stato"
+        subtitle="Controlla mappa, percorsi, assistente e salvataggi."
       />
 
       {loading ? (
@@ -108,16 +108,26 @@ export function SetupPanel() {
                       : "neutral"
                 }
               >
-                {s.status}
+                {
+                  {
+                    ready: "Configurato",
+                    missing: "Da configurare",
+                    partial: "Da verificare",
+                    optional: "Facoltativo",
+                  }[s.status]
+                }
               </Badge>
             </div>
             <p className="mt-1 text-xs text-[var(--ink-muted)]">{s.message}</p>
-            <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
-              {s.envVars.join(" · ")}
-            </p>
-            {data?.probes?.[
-              s.id === "google_server" ? "google" : s.id
-            ] ? (
+            <details className="mt-2 text-xs text-[var(--ink-muted)]">
+              <summary className="cursor-pointer">
+                Dettagli di configurazione
+              </summary>
+              <p className="mt-2 break-words font-mono">
+                {s.envVars.join(" · ")}
+              </p>
+            </details>
+            {data?.probes?.[s.id === "google_server" ? "google" : s.id] ? (
               <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
                 Probe:{" "}
                 {
@@ -130,7 +140,7 @@ export function SetupPanel() {
         ))}
       </div>
 
-      {data?.readiness?.nextSteps?.length ? (
+      {!data?.isLiveCapable && data?.readiness?.nextSteps?.length ? (
         <div className="space-y-1.5">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
             Prossimi passi
@@ -168,18 +178,21 @@ export function SetupPanel() {
         </Button>
       </div>
 
-      <div className="rounded-xl bg-[var(--surface-2)] px-3 py-3 text-[11px] leading-relaxed text-[var(--ink-muted)]">
-        <p className="font-semibold text-[var(--ink)]">File locale</p>
+      <details className="rounded-xl bg-[var(--surface-2)] px-3 py-3 text-[11px] leading-relaxed text-[var(--ink-muted)]">
+        <summary className="cursor-pointer font-semibold text-[var(--ink)]">
+          Configurazione per lo sviluppatore
+        </summary>
         <p className="mt-1">
           Copia <code>.env.example</code> in <code>.env.local</code>, inserisci
-          le chiavi, riavvia il server. Non committare mai <code>.env.local</code>.
+          le chiavi, riavvia il server. Non committare mai{" "}
+          <code>.env.local</code>.
         </p>
         <pre className="mt-2 overflow-x-auto rounded-lg bg-[var(--ink)]/90 p-2 text-[10px] text-white">
-{`cp .env.example .env.local
+          {`cp .env.example .env.local
 # edita .env.local
 npm run dev`}
         </pre>
-      </div>
+      </details>
     </div>
   );
 }

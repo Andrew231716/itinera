@@ -47,16 +47,20 @@ import {
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { PlaceSearch } from "@/components/trip/PlaceSearch";
 
-const KINDS: Array<{ id: SavedPlaceKind; label: string; icon: typeof Heart }> = [
-  { id: "parking", label: "Parcheggio", icon: CarFront },
-  { id: "fuel", label: "Benzinaio", icon: Fuel },
-  { id: "favorite", label: "Preferito", icon: Heart },
-  { id: "home", label: "Casa", icon: Home },
-  { id: "work", label: "Lavoro", icon: Briefcase },
-  { id: "other", label: "Altro", icon: MapPin },
-];
+const KINDS: Array<{ id: SavedPlaceKind; label: string; icon: typeof Heart }> =
+  [
+    { id: "parking", label: "Parcheggio", icon: CarFront },
+    { id: "fuel", label: "Benzinaio", icon: Fuel },
+    { id: "favorite", label: "Preferito", icon: Heart },
+    { id: "home", label: "Casa", icon: Home },
+    { id: "work", label: "Lavoro", icon: Briefcase },
+    { id: "other", label: "Altro", icon: MapPin },
+  ];
 
 export function SavedPanel() {
+  const lastRemovedTrip = useTripStore((s) => s.lastRemovedTrip);
+  const undoSavedTripDeletion = useTripStore((s) => s.undoSavedTripDeletion);
+  const [restoreError, setRestoreError] = useState("");
   const trip = useTripStore((s) => s.trip);
   const savedTrips = useTripStore((s) => s.savedTrips);
   const tripHistory = useTripStore((s) => s.tripHistory);
@@ -99,9 +103,14 @@ export function SavedPanel() {
     refreshTripHistory();
   }, [refreshSavedTrips, refreshTripHistory]);
 
+  useEffect(() => {
+    const reload = () => { setPlaces(listSavedPlaces()); setOfflinePacks(listOfflineTrips()); };
+    window.addEventListener('itinera-library-changed', reload);
+    return () => window.removeEventListener('itinera-library-changed', reload);
+  }, []);
+
   const filteredPlaces = useMemo(
-    () =>
-      filter === "all" ? places : places.filter((p) => p.kind === filter),
+    () => (filter === "all" ? places : places.filter((p) => p.kind === filter)),
     [places, filter],
   );
 
@@ -115,6 +124,22 @@ export function SavedPanel() {
 
   return (
     <div className="space-y-6">
+      {lastRemovedTrip && (
+        <div className="workspace-card">
+          <p className="text-sm">Eliminato: {lastRemovedTrip.meta.title}</p>
+          <Button
+            variant="outline"
+            onClick={() =>
+              void undoSavedTripDeletion().catch(() =>
+                setRestoreError("Ripristino non riuscito. Riprova."),
+              )
+            }
+          >
+            Annulla eliminazione
+          </Button>
+          <p role="status">{restoreError}</p>
+        </div>
+      )}
       <SectionTitle
         title="Salvati"
         subtitle="Offline, cronologia, viaggi memorizzati e posti preferiti"
@@ -242,8 +267,8 @@ export function SavedPanel() {
 
         {tripHistory.length === 0 ? (
           <EmptyHint>
-            Nessun percorso in cronologia. Calcola un itinerario per
-            registrarlo qui.
+            Nessun percorso in cronologia. Calcola un itinerario per registrarlo
+            qui.
           </EmptyHint>
         ) : (
           <ul className="space-y-2">
@@ -371,9 +396,7 @@ export function SavedPanel() {
                   </p>
                   <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
                     {t.origin?.label ?? "?"} → {t.destination?.label ?? "?"}
-                    {t.stops.length > 0
-                      ? ` · ${t.stops.length} tappe`
-                      : ""}
+                    {t.stops.length > 0 ? ` · ${t.stops.length} tappe` : ""}
                   </p>
                 </button>
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -573,7 +596,9 @@ export function SavedPanel() {
                       {p.label}
                     </p>
                     <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-                      <Badge tone="neutral">{savedPlaceKindLabel(p.kind)}</Badge>{" "}
+                      <Badge tone="neutral">
+                        {savedPlaceKindLabel(p.kind)}
+                      </Badge>{" "}
                       {p.place.address || p.place.label}
                     </p>
                     {p.note ? (

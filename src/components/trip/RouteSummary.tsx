@@ -11,7 +11,7 @@ import {
   Route,
   Share2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTripStore } from "@/lib/store/trip-store";
 import { saveOfflineTrip } from "@/lib/storage/offline-trips";
 import {
@@ -24,7 +24,11 @@ import {
 } from "@/lib/google/maps-links";
 import { getTripRepository } from "@/lib/storage/trip-repository";
 import { getTrafficInfo } from "@/lib/routing/traffic-info";
-import { formatDistance, formatDuration, formatCurrency } from "@/lib/utils/format";
+import {
+  formatDistance,
+  formatDuration,
+  formatCurrency,
+} from "@/lib/utils/format";
 import {
   Badge,
   Button,
@@ -34,6 +38,10 @@ import {
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { TrafficMonitorPanel } from "@/components/trip/TrafficMonitorPanel";
 import { TravelRulesChip } from "@/components/trip/TravelRulesChip";
+import {
+  RoutePlanningSummary,
+  alternativeDifference,
+} from "@/components/trip/RoutePlanningSummary";
 import { requestCompassPermission } from "@/hooks/useDeviceHeading";
 
 export function RouteSummary() {
@@ -63,6 +71,7 @@ export function RouteSummary() {
   }, [trip, selected]);
 
   const [copied, setCopied] = useState<string | null>(null);
+  const [offlineError, setOfflineError] = useState("");
 
   async function copyText(key: string, text: string) {
     try {
@@ -78,13 +87,11 @@ export function RouteSummary() {
     <div className="space-y-4">
       <SectionTitle
         title="Riepilogo percorso"
-        subtitle="Dati provenienti solo dal motore di routing — mai inventati"
+        subtitle="Confronta le alternative e scegli come partire."
         action={
           <PanelResetButton
             disabled={
-              routes.length === 0 &&
-              routeMode === "idle" &&
-              !routeError
+              routes.length === 0 && routeMode === "idle" && !routeError
             }
             onClick={clearRoutes}
             label="Reset"
@@ -92,6 +99,11 @@ export function RouteSummary() {
         }
       />
       <TravelRulesChip />
+      {offlineError && (
+        <p role="alert" className="workspace-card text-sm">
+          {offlineError}
+        </p>
+      )}
 
       {routeMode === "loading" ? (
         <EmptyHint>Calcolo del percorso in corso…</EmptyHint>
@@ -111,7 +123,10 @@ export function RouteSummary() {
             <span className="font-medium">Nessun percorso inventato</span>
           </div>
           <p className="text-xs leading-relaxed text-sky-800">
-            Configura <code className="rounded bg-white/70 px-1">GOOGLE_MAPS_API_KEY</code>{" "}
+            Configura{" "}
+            <code className="rounded bg-white/70 px-1">
+              GOOGLE_MAPS_API_KEY
+            </code>{" "}
             per calcolare itinerari reali con Google Routes API.
           </p>
         </div>
@@ -124,10 +139,10 @@ export function RouteSummary() {
           </p>
           {routes.every((r) => r.isConformant === false) ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-              Nessun percorso rispetta ancora tutte le esclusioni hard. Google non
-              ha avoid-area nativi: ho già tentato delle deviazioni automatiche.
-              Prova a ridurre un raggio, togliere un’esclusione o aggiungere una
-              tappa che forzi il passaggio altrove.
+              Nessun percorso rispetta ancora tutte le esclusioni obbligatorie.
+              Google non ha avoid-area nativi: ho già tentato delle deviazioni
+              automatiche. Prova a ridurre un raggio, togliere un’esclusione o
+              aggiungere una tappa che forzi il passaggio altrove.
             </div>
           ) : null}
 
@@ -160,6 +175,11 @@ export function RouteSummary() {
                 </div>
                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-[var(--ink-muted)]">
                   <span>{formatDistance(route.distanceMeters)}</span>
+                  {route.id !== routes[0]?.id && (
+                    <span className="font-semibold text-[var(--ink)]">
+                      {alternativeDifference(route, routes[0])}
+                    </span>
+                  )}
                   <span>{formatDuration(route.durationSeconds)}</span>
                   {traffic.level !== "unknown" ? (
                     <span>
@@ -172,12 +192,12 @@ export function RouteSummary() {
                   {route.tolls?.hasTolls || route.tolls?.michelin ? (
                     <span>
                       {route.tolls.estimatedPrice != null
-                        ? `Pedaggi ${formatCurrency(
+                        ? `Pedaggi${route.tolls.source === "michelin" ? " stimati" : ""} ${formatCurrency(
                             route.tolls.estimatedPrice,
                             route.tolls.currencyCode ?? "EUR",
                           )}`
                         : route.tolls.michelin?.estimatedPrice != null
-                          ? `Pedaggi VM ${formatCurrency(
+                          ? `Stima indipendente ${formatCurrency(
                               route.tolls.michelin.estimatedPrice,
                               route.tolls.michelin.currencyCode ?? "EUR",
                             )}`
@@ -209,12 +229,25 @@ export function RouteSummary() {
 
       {selected ? (
         <div className="space-y-3">
+          <RoutePlanningSummary route={selected} />
           <div className="grid grid-cols-2 gap-2">
-            <Stat label="Distanza" value={formatDistance(selected.distanceMeters)} />
-            <Stat label="Durata" value={formatDuration(selected.durationSeconds)} />
+            <Stat
+              label="Distanza"
+              value={formatDistance(selected.distanceMeters)}
+            />
+            <Stat
+              label="Durata"
+              value={formatDuration(selected.durationSeconds)}
+            />
             {selected.tolls?.hasTolls || selected.tolls?.michelin ? (
               <Stat
-                label="Pedaggi"
+                label={
+                  selected.tolls?.source === "michelin" ||
+                  (selected.tolls?.estimatedPrice == null &&
+                    selected.tolls?.michelin)
+                    ? "Pedaggi · stima indipendente"
+                    : "Pedaggi"
+                }
                 value={
                   selected.tolls.estimatedPrice != null
                     ? formatCurrency(
@@ -230,15 +263,30 @@ export function RouteSummary() {
                 }
               />
             ) : (
-              <Stat label="Pedaggi" value="Nessuno" />
+              <Stat
+                label={
+                  selected.tolls?.source === "michelin" ||
+                  (selected.tolls?.estimatedPrice == null &&
+                    selected.tolls?.michelin)
+                    ? "Pedaggi · stima indipendente"
+                    : "Pedaggi"
+                }
+                value="Nessuno"
+              />
             )}
             <Stat
               label="Zone MI"
               value={
                 selected.zoneAdvisories && selected.zoneAdvisories.length > 0
-                  ? selected.zoneAdvisories.map((z) =>
-                      z.id === "area_c" ? "Area C" : z.id === "area_b" ? "Area B" : z.label,
-                    ).join(" + ")
+                  ? selected.zoneAdvisories
+                      .map((z) =>
+                        z.id === "area_c"
+                          ? "Area C"
+                          : z.id === "area_b"
+                            ? "Area B"
+                            : z.label,
+                      )
+                      .join(" + ")
                   : "—"
               }
             />
@@ -272,14 +320,21 @@ export function RouteSummary() {
               variant="outline"
               className="w-full"
               onClick={() => {
-                const pack = saveOfflineTrip({
-                  trip,
-                  routes,
-                  selectedRouteId: trip.selectedRouteId,
-                });
-                setCopied("offline");
-                setTimeout(() => setCopied(null), 2000);
-                void pack;
+                try {
+                  saveOfflineTrip({
+                    trip,
+                    routes,
+                    selectedRouteId: trip.selectedRouteId,
+                  });
+                  setCopied("offline");
+                  setTimeout(() => setCopied(null), 2000);
+                  setOfflineError("");
+                  window.dispatchEvent(new Event("itinera-library-changed"));
+                } catch {
+                  setOfflineError(
+                    "Spazio insufficiente. Libera un vecchio pacchetto da Salvati e riprova.",
+                  );
+                }
               }}
             >
               {copied === "offline" ? (
@@ -304,7 +359,8 @@ export function RouteSummary() {
                       selected.tolls.currencyCode ?? "EUR",
                     )}
                   </span>{" "}
-                  (stima ufficiale API; può variare per classe veicolo / Telepass).
+                  (stima ufficiale API; può variare per classe veicolo /
+                  Telepass).
                 </p>
               ) : selected.tolls?.hasTolls ? (
                 <p>
@@ -429,7 +485,7 @@ export function RouteSummary() {
             </div>
           ) : selected.isConformant === true ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900">
-              Nessuna violazione hard verificata su questo percorso.
+              Nessuna violazione rilevata delle esclusioni obbligatorie.
             </div>
           ) : null}
 
@@ -534,6 +590,25 @@ function ShareActions({
   const setSelectedRoute = useTripStore((s) => s.setSelectedRoute);
   const [showPreview, setShowPreview] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMessage, setShareMessage] = useState("");
+  const [expiryDays, setExpiryDays] = useState("7");
+  const [links, setLinks] = useState<
+    Array<{ token: string; tripId: string; expiresAt: string | null }>
+  >([]);
+  useEffect(() => {
+    try {
+      setLinks(
+        JSON.parse(localStorage.getItem("itinera.shareLinks.v1") ?? "[]"),
+      );
+    } catch {
+      setLinks([]);
+    }
+  }, []);
+  function rememberLinks(next: typeof links) {
+    localStorage.setItem("itinera.shareLinks.v1", JSON.stringify(next));
+    setLinks(next);
+  }
 
   if (!trip.origin || !trip.destination) {
     return (
@@ -691,7 +766,7 @@ function ShareActions({
           onClick={() => onCopy("share", buildShareTripUrl(trip.meta.id))}
         >
           <Share2 className="h-3.5 w-3.5" />
-          URL viaggio
+          Riapri su questo dispositivo
         </Button>
         <Button
           type="button"
@@ -711,34 +786,119 @@ function ShareActions({
           <Route className="h-3.5 w-3.5" />
           Copia indicazioni
         </Button>
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          Scadenza link
+          <select
+            aria-label="Scadenza link pubblico"
+            className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2"
+            value={expiryDays}
+            onChange={(event) => setExpiryDays(event.target.value)}
+          >
+            <option value="1">1 giorno</option>
+            <option value="7">7 giorni</option>
+            <option value="30">30 giorni</option>
+          </select>
+        </label>
         <Button
-          type="button"
           variant="outline"
           size="sm"
+          disabled={shareBusy}
           onClick={() => {
+            setShareBusy(true);
+            setShareMessage("");
             void (async () => {
-              await persistTrip();
-              const repo = getTripRepository();
-              if (!repo.createShare) return;
-              const share = await repo.createShare(trip.meta.id);
-              setShareToken(share.token);
-              const url = `${window.location.origin}${share.urlPath}`;
-              onCopy("public", url);
+              try {
+                await persistTrip();
+                const repo = getTripRepository();
+                if (!repo.createShare)
+                  throw new Error("Condivisione non disponibile.");
+                const share = await repo.createShare(
+                  trip.meta.id,
+                  new Date(
+                    Date.now() + Number(expiryDays) * 86_400_000,
+                  ).toISOString(),
+                );
+                rememberLinks([
+                  ...links,
+                  {
+                    token: share.token,
+                    tripId: trip.meta.id,
+                    expiresAt: share.expiresAt,
+                  },
+                ]);
+                setShareToken(share.token);
+                onCopy("public", `${window.location.origin}${share.urlPath}`);
+                setShareMessage(
+                  "Link pubblico verificato, in sola lettura. Puoi revocarlo qui sotto.",
+                );
+              } catch (error) {
+                setShareMessage(
+                  error instanceof Error
+                    ? error.message
+                    : "Condivisione non riuscita.",
+                );
+              } finally {
+                setShareBusy(false);
+              }
             })();
           }}
         >
-          Link pubblico
+          {shareBusy ? "Verifica link…" : "Crea link pubblico"}
         </Button>
       </div>
-
-      {shareToken ? (
-        <p className="text-[11px] text-[var(--ink-muted)]">
-          Link pubblico creato (sola lettura):{" "}
-          <code className="rounded bg-[var(--surface-2)] px-1">
-            /share/{shareToken}
-          </code>
-        </p>
-      ) : null}
+      <p className="text-xs text-[var(--ink-muted)]">
+        “Riapri su questo dispositivo” richiede i tuoi dati locali. Per inviare
+        il viaggio a un’altra persona usa “Crea link pubblico”.
+      </p>
+      <p role="status" className="text-sm">
+        {shareMessage}
+      </p>
+      {shareToken && (
+        <a
+          className="block break-all text-sm text-[var(--brand)] underline"
+          href={`/share/${shareToken}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Apri il link pubblico verificato
+        </a>
+      )}
+      {links
+        .filter((link) => link.tripId === trip.meta.id)
+        .map((link) => (
+          <div
+            key={link.token}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--surface-2)] p-3 text-sm"
+          >
+            <span>
+              Link ·{" "}
+              {link.expiresAt
+                ? `scade ${new Date(link.expiresAt).toLocaleDateString("it-IT")}`
+                : "senza scadenza"}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={shareBusy}
+              onClick={() => {
+                setShareBusy(true);
+                void getTripRepository()
+                  .revokeShare?.(link.token)
+                  .then(() => {
+                    rememberLinks(
+                      links.filter((item) => item.token !== link.token),
+                    );
+                    if (shareToken === link.token) setShareToken(null);
+                    setShareMessage("Link revocato.");
+                  })
+                  .catch((error) => setShareMessage(error.message))
+                  .finally(() => setShareBusy(false));
+              }}
+            >
+              Revoca
+            </Button>
+          </div>
+        ))}
 
       {mapsLink.segments && mapsLink.segments.length > 1 ? (
         <div className="space-y-1.5">

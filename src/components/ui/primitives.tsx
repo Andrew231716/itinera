@@ -6,6 +6,7 @@ export function cn(...inputs: Array<string | false | null | undefined>) {
 }
 
 export function Button({
+  type = "button",
   variant = "primary",
   size = "md",
   className,
@@ -16,10 +17,11 @@ export function Button({
 }) {
   return (
     <button
+      type={type}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-200 disabled:pointer-events-none disabled:opacity-45",
-        size === "sm" && "h-8 px-3 text-xs",
-        size === "md" && "h-10 px-4 text-sm",
+        size === "sm" && "min-h-10 px-3 text-sm",
+        size === "md" && "min-h-11 px-4 text-sm",
         size === "lg" && "h-11 px-5 text-sm",
         variant === "primary" &&
           "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm hover:brightness-105 active:scale-[0.98]",
@@ -131,7 +133,7 @@ export function ToggleRow({
           {label}
           {soft ? (
             <span className="rounded-md bg-[var(--surface-3)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-              soft
+              preferenza
             </span>
           ) : null}
         </div>

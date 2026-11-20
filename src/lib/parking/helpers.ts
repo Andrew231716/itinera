@@ -9,7 +9,11 @@ import {
   type ParkingPricing,
 } from "@/lib/parking/types";
 
-export function mapsSearchUrl(lat: number, lng: number, label?: string): string {
+export function mapsSearchUrl(
+  lat: number,
+  lng: number,
+  label?: string,
+): string {
   const q = label
     ? encodeURIComponent(`${label} @${lat},${lng}`)
     : `${lat},${lng}`;
@@ -31,8 +35,7 @@ export function easyParkPublicSearch(params: {
     available: true,
     searchUrl: `https://www.google.com/maps/search/?api=1&query=${mapsQ}`,
     feesDocumentUrl: EASYPARK_FEES_PDF_IT,
-    note:
-      "Ricerca gratuita (senza API EasyPark a pagamento). Apri la ricerca Maps o il PDF ufficiale commissioni; conferma codice area e tariffa nell’app EasyPark.",
+    note: "Ricerca gratuita (senza API EasyPark a pagamento). Apri la ricerca Maps o il PDF ufficiale commissioni; conferma codice area e tariffa nell’app EasyPark.",
   };
 }
 
@@ -45,7 +48,9 @@ export function easyParkPortalLinks() {
 }
 
 /** Detect EasyPark hints from free-text tags / names. */
-export function mentionsEasyPark(...parts: Array<string | undefined | null>): boolean {
+export function mentionsEasyPark(
+  ...parts: Array<string | undefined | null>
+): boolean {
   return parts.some((p) => /easy\s*park|easypark/i.test(p ?? ""));
 }
 
@@ -73,9 +78,7 @@ export function classifyFee(tags: {
   }
 
   if (fee === "yes" || fee === "customers" || charge) {
-    const summary = charge
-      ? normalizeChargeText(charge)
-      : "A pagamento";
+    const summary = charge ? normalizeChargeText(charge) : "A pagamento";
     return {
       pricing: "paid",
       summary,
@@ -98,10 +101,7 @@ export function sortByDistance(spots: ParkingSpot[]): ParkingSpot[] {
   return [...spots].sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
-export function withDistance(
-  location: LatLng,
-  center: LatLng,
-): number {
+export function withDistance(location: LatLng, center: LatLng): number {
   return Math.round(haversineMeters(center, location));
 }
 
@@ -114,22 +114,18 @@ export function mergeSpots(spots: ParkingSpot[]): ParkingSpot[] {
       byKey.set(key, spot);
       continue;
     }
-    const sources = Array.from(
-      new Set([...existing.sources, ...spot.sources]),
-    );
+    const sources = Array.from(new Set([...existing.sources, ...spot.sources]));
     byKey.set(key, {
       ...existing,
       ...spot,
       name:
         existing.name.length >= spot.name.length ? existing.name : spot.name,
       sources,
-      pricing:
-        existing.pricing !== "unknown"
-          ? existing.pricing
-          : spot.pricing,
-      cost: existing.cost?.raw || existing.cost?.summary
-        ? existing.cost
-        : spot.cost,
+      pricing: existing.pricing !== "unknown" ? existing.pricing : spot.pricing,
+      cost:
+        existing.cost?.raw || existing.cost?.summary
+          ? existing.cost
+          : spot.cost,
       easyPark: existing.easyPark?.available
         ? existing.easyPark
         : spot.easyPark,
@@ -143,4 +139,24 @@ export function mergeSpots(spots: ParkingSpot[]): ParkingSpot[] {
     });
   }
   return sortByDistance(Array.from(byKey.values()));
+}
+
+export function parkingMatchesQuery(spot: ParkingSpot, query: string): boolean {
+  const text = [
+    spot.name,
+    spot.address,
+    spot.operator,
+    spot.parkingType,
+    spot.cost?.summary,
+    spot.easyPark?.available ? "easypark" : "",
+    ...(spot.notes ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase();
+  return query
+    .trim()
+    .toLocaleLowerCase()
+    .split(/\s+/)
+    .every((word) => text.includes(word));
 }

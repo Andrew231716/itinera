@@ -48,3 +48,6 @@ next-env.d.ts
 
 LEGGIMI_PER_CHATGPT.txt
 itinera-per-chatgpt.zip
+
+/public/offline-assets.json
+/public/sw.js

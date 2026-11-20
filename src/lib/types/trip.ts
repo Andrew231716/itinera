@@ -93,6 +93,8 @@ export interface TripDraft {
   destination: PlaceRef | null;
   stops: TripStop[];
   departureAt: string | null;
+  arrivalBy?: string | null;
+  costs?: { consumptionLitersPer100Km: number; fuelPricePerLiter: number };
   travelMode: TravelMode;
   preferences: RoadPreferences;
   exclusions: CustomExclusion[];

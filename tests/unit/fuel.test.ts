@@ -225,3 +225,14 @@ describe("fuel helpers", () => {
     expect(merged[0].sources).toContain("osservaprezzi");
   });
 });
+
+describe('query by service', () => {
+  it('matches GPL and AdBlue without requiring them in the station name', async () => {
+    const { stationMatchesQuery } = await import('@/lib/fuel/helpers');
+    const station = { name: 'Q8', brand: 'Q8', amenities: { adblue: 'yes', lpg: 'yes' } } as import('@/lib/fuel/types').FuelStation;
+    expect(stationMatchesQuery(station, 'Q8 GPL')).toBe(true);
+    expect(stationMatchesQuery(station, 'AdBlue')).toBe(true);
+    station.amenities.adblue = 'unknown';
+    expect(stationMatchesQuery(station, 'AdBlue')).toBe(false);
+  });
+});

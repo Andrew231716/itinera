@@ -15,7 +15,10 @@ import {
 } from "@/components/ui/primitives";
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { PlaceSearch, MapPickHint } from "@/components/trip/PlaceSearch";
-import { createExclusionFromLabel, createPointExclusion } from "@/lib/routing/exclusion-helpers";
+import {
+  createExclusionFromLabel,
+  createPointExclusion,
+} from "@/lib/routing/exclusion-helpers";
 
 function exclusionKindLabel(kind: CustomExclusion["kind"]): string {
   switch (kind) {
@@ -59,7 +62,7 @@ export function ExclusionsPanel() {
     <div className="space-y-4">
       <SectionTitle
         title="Strade e zone da evitare"
-        subtitle="Vincoli obbligatori (hard) separati dalle semplici preferenze"
+        subtitle="Indica le città, le strade o le zone da evitare."
         action={
           <PanelResetButton
             disabled={
@@ -133,8 +136,8 @@ export function ExclusionsPanel() {
           }}
         />
         <p className="text-[11px] text-[var(--ink-muted)]">
-          Per un paese (es. «Svizzera») usa il pulsante sopra: viene applicato un
-          poligono sul territorio, non un singolo punto sulla mappa.
+          Per un paese (es. «Svizzera») usa il pulsante sopra: viene applicato
+          un poligono sul territorio, non un singolo punto sulla mappa.
         </p>
       </div>
 
@@ -144,7 +147,9 @@ export function ExclusionsPanel() {
           <Button
             type="button"
             size="sm"
-            variant={mapPickTarget === "exclusion_point" ? "primary" : "outline"}
+            variant={
+              mapPickTarget === "exclusion_point" ? "primary" : "outline"
+            }
             onClick={() =>
               setMapPickTarget(
                 mapPickTarget === "exclusion_point" ? null : "exclusion_point",
@@ -180,8 +185,8 @@ export function ExclusionsPanel() {
         {mapPickTarget === "exclusion_zone" ? (
           <div className="space-y-2">
             <p className="text-xs text-[var(--ink-muted)]">
-              Tocca almeno 3 punti sulla mappa per chiudere un poligono.
-              Punti: {exclusionDraftPoints.length}
+              Tocca almeno 3 punti sulla mappa per chiudere un poligono. Punti:{" "}
+              {exclusionDraftPoints.length}
             </p>
             <Input
               value={zoneLabel}
@@ -213,8 +218,8 @@ export function ExclusionsPanel() {
       <div className="space-y-2">
         {exclusions.length === 0 ? (
           <EmptyHint>
-            Nessuna esclusione. Le zone hard vengono verificate sul percorso
-            calcolato; se non c’è alternativa valida, lo segnaleremo.
+            Nessuna esclusione. Le zone obbligatorie vengono verificate sul
+            percorso calcolato; se non c’è alternativa valida, lo segnaleremo.
           </EmptyHint>
         ) : (
           exclusions.map((ex) => (
@@ -230,7 +235,7 @@ export function ExclusionsPanel() {
                     </p>
                     <Badge>{exclusionKindLabel(ex.kind)}</Badge>
                     <Badge tone={ex.strength === "hard" ? "warn" : "neutral"}>
-                      {ex.strength}
+                      {ex.strength === "hard" ? "Obbligatoria" : "Preferenza"}
                     </Badge>
                   </div>
                 </div>
@@ -248,15 +253,17 @@ export function ExclusionsPanel() {
                   Forza
                   <select
                     className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
-                    value={ex.strength}
+                    value={
+                      ex.strength === "hard" ? "Obbligatoria" : "Preferenza"
+                    }
                     onChange={(e) =>
                       updateExclusion(ex.id, {
                         strength: e.target.value as "hard" | "soft",
                       })
                     }
                   >
-                    <option value="hard">hard</option>
-                    <option value="soft">soft</option>
+                    <option value="hard">Obbligatoria</option>
+                    <option value="soft">Preferenza</option>
                   </select>
                 </label>
                 {ex.kind === "city" ||
@@ -272,7 +279,10 @@ export function ExclusionsPanel() {
                       value={ex.radiusMeters}
                       onChange={(e) =>
                         updateExclusion(ex.id, {
-                          radiusMeters: Math.max(50, Number(e.target.value) || 50),
+                          radiusMeters: Math.max(
+                            50,
+                            Number(e.target.value) || 50,
+                          ),
                         } as Partial<PointExclusion>)
                       }
                     />
@@ -289,7 +299,10 @@ export function ExclusionsPanel() {
                       value={ex.bufferMeters}
                       onChange={(e) =>
                         updateExclusion(ex.id, {
-                          bufferMeters: Math.max(10, Number(e.target.value) || 10),
+                          bufferMeters: Math.max(
+                            10,
+                            Number(e.target.value) || 10,
+                          ),
                         })
                       }
                     />
