@@ -400,7 +400,11 @@ export class HybridTripRepository implements TripRepository {
     const remote = this.remote();
     const pending = readQueue();
     updateSyncState({ pending: pending.length });
-    if (!remote || (typeof navigator !== "undefined" && !navigator.onLine))
+    if (
+      !remote ||
+      pending.length === 0 ||
+      (typeof navigator !== "undefined" && !navigator.onLine)
+    )
       return;
     flushing = (async () => {
       updateSyncState({ running: true, error: null });
@@ -438,6 +442,10 @@ export class HybridTripRepository implements TripRepository {
     if (remote && (typeof navigator === "undefined" || navigator.onLine)) {
       try {
         const cloud = await remote.list();
+        updateSyncState({
+          lastSyncedAt: new Date().toISOString(),
+          error: null,
+        });
         const blocked = new Set(readQueue().map((item) => item.id));
         const map = new Map(
           (await this.local.list()).map((trip) => [trip.meta.id, trip]),

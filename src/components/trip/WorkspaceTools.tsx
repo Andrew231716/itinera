@@ -107,9 +107,11 @@ export function WorkspaceTools() {
           ? "Sincronizzazione in corso…"
           : sync.pending
             ? `${sync.pending} modifiche salvate qui, in attesa del cloud.`
-            : sync.lastSyncedAt
-              ? "Cloud aggiornato."
-              : "I dati vengono conservati prima sul dispositivo."}
+            : sync.error
+              ? "Cloud da verificare. I dati locali sono disponibili."
+              : sync.lastSyncedAt
+                ? "Cloud aggiornato."
+                : "I dati vengono conservati prima sul dispositivo."}
       </p>
       {sync.error?.startsWith("Conflitto:") && (
         <Button
