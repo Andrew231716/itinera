@@ -1,4 +1,5 @@
 "use client";
+import { placeSchema } from "@/lib/storage/data-validation";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -162,6 +163,33 @@ export function GiroPanel() {
   const [showRemoved, setShowRemoved] = useState(false);
   const [fixingStopId, setFixingStopId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [draftReady, setDraftReady] = useState(false);
+  useEffect(() => {
+    try {
+      if (!useTripStore.getState().giroSeed) {
+        const raw = localStorage.getItem('itinera.giroDraft.v1');
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (draft.start === null || placeSchema.safeParse(draft.start).success) setStart(draft.start);
+          if (typeof draft.listText === 'string') setListText(draft.listText);
+          if (typeof draft.departureLocal === 'string') setDepartureLocal(draft.departureLocal);
+          if (typeof draft.saveTitle === 'string') setSaveTitle(draft.saveTitle);
+          if (Array.isArray(draft.stops) && draft.stops.every((stop: GiroStop) => stop && typeof stop.id === 'string' && placeSchema.safeParse(stop.place).success && typeof stop.dwellMinutes === 'number')) setStops(draft.stops);
+          setSaveMessage('Bozza del giro recuperata sul dispositivo.');
+        }
+      }
+    } catch { setSaveMessage('Bozza precedente non disponibile.'); }
+    setDraftReady(true);
+  }, []);
+  useEffect(() => {
+    if (!draftReady) return;
+    const timer = setTimeout(() => {
+      try { localStorage.setItem('itinera.giroDraft.v1', JSON.stringify({ start, departureLocal, listText, stops, saveTitle })); }
+      catch { setSaveMessage('Memoria piena: salva il giro ed esporta un backup.'); }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [draftReady, start, departureLocal, listText, stops, saveTitle]);
 
   const lineCount = useMemo(
     () => parseAddressLines(listText).length,
@@ -882,6 +910,11 @@ export function GiroPanel() {
         }
       />
 
+      <ol className="grid grid-cols-3 gap-2 text-center text-xs" aria-label="Preparazione del giro">
+        <li className="rounded-xl bg-[var(--surface-2)] p-2">Importa o incolla</li>
+        <li className={`rounded-xl p-2 ${stops.length || unresolvedAddresses.length ? 'bg-[var(--brand-soft)]' : 'bg-[var(--surface-2)]'}`}>Controlla le fermate</li>
+        <li className={`rounded-xl p-2 ${schedule ? 'bg-[var(--brand-soft)]' : 'bg-[var(--surface-2)]'}`}>Orari e percorso</li>
+      </ol>
       <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
         <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)] uppercase">
           <FileUp className="h-3.5 w-3.5" />

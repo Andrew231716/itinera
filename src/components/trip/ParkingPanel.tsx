@@ -28,6 +28,7 @@ import {
   Input,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PlaceSearch } from "@/components/trip/PlaceSearch";
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 type PricingFilter = "all" | "free" | "paid" | "unknown";
@@ -50,6 +51,7 @@ export function ParkingPanel() {
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
   const clearParkingResults = useTripStore((s) => s.clearParkingResults);
 
+  const [sort, setSort] = useState("distance");
   const [filter, setFilter] = useState<PricingFilter>("all");
   const [radius, setRadius] = useState(1200);
   const [query, setQuery] = useState("");
@@ -146,9 +148,10 @@ export function ParkingPanel() {
   }
 
   const spots = useMemo(() => {
-    if (filter === "all") return parkingSpots;
-    return parkingSpots.filter((s) => s.pricing === filter);
-  }, [parkingSpots, filter]);
+    const matches = parkingSpots.filter(spot => (filter === 'all' || spot.pricing === filter) && (!query.trim() || `${spot.name} ${spot.address ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
+    const price = (spot: ParkingSpot) => spot.pricing === 'free' ? 0 : spot.cost?.hourlyEstimate ?? Infinity;
+    return matches.sort((a, b) => sort === 'price' ? price(a) - price(b) || a.distanceMeters - b.distanceMeters : a.distanceMeters - b.distanceMeters);
+  }, [parkingSpots, filter, query, sort]);
 
   const counts = useMemo(() => {
     return {
@@ -301,6 +304,8 @@ export function ParkingPanel() {
         </Button>
       </div>
 
+      <PlaceSearch label="Cerca parcheggi in una località" value={null} allowGps={false} onSelect={place => requestParkingNear({ ...place.location, label: place.label })}/>
+      <label className="flex items-center justify-between gap-2 text-sm">Ordina risultati<select aria-label="Ordina parcheggi" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2" value={sort} onChange={event => setSort(event.target.value)}><option value="distance">Più vicini</option><option value="price">Prezzo orario noto</option></select></label>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-[var(--ink-faint)]" />

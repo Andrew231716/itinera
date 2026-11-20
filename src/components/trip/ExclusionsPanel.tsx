@@ -59,7 +59,7 @@ export function ExclusionsPanel() {
     <div className="space-y-4">
       <SectionTitle
         title="Strade e zone da evitare"
-        subtitle="Vincoli obbligatori (hard) separati dalle semplici preferenze"
+        subtitle="Indica le città, le strade o le zone da evitare."
         action={
           <PanelResetButton
             disabled={
@@ -213,7 +213,7 @@ export function ExclusionsPanel() {
       <div className="space-y-2">
         {exclusions.length === 0 ? (
           <EmptyHint>
-            Nessuna esclusione. Le zone hard vengono verificate sul percorso
+            Nessuna esclusione. Le zone obbligatorie vengono verificate sul percorso
             calcolato; se non c’è alternativa valida, lo segnaleremo.
           </EmptyHint>
         ) : (

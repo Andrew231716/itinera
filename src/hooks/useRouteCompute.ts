@@ -1,6 +1,8 @@
 "use client";
 
-import { useRef } from "react";
+import { routingSignature } from "@/lib/routing/trip-signature";
+
+let latestRequest = 0;
 import { useTripStore } from "@/lib/store/trip-store";
 import { toUserErrorMessage } from "@/lib/utils/errors";
 import type { PlaceRef } from "@/lib/types/trip";
@@ -29,7 +31,6 @@ export function useRouteCompute() {
   const applyOptimizedStopOrder = useTripStore(
     (s) => s.applyOptimizedStopOrder,
   );
-  const requestIdRef = useRef(0);
 
   async function computeRoute(
     overrides?: ComputeOverrides,
@@ -47,12 +48,18 @@ export function useRouteCompute() {
       return { ok: false };
     }
 
-    const requestId = ++requestIdRef.current;
+    const requestId = ++latestRequest;
+    const signature = routingSignature(trip);
+    const isCurrent = () =>
+      requestId === latestRequest &&
+      useTripStore.getState().trip.meta.id === trip.meta.id &&
+      routingSignature(useTripStore.getState().trip) === signature;
     setRouteLoading();
     try {
       const res = await fetch("/api/routes/compute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(60_000),
         body: JSON.stringify({
           origin,
           destination,
@@ -65,7 +72,7 @@ export function useRouteCompute() {
         }),
       });
       const data = await res.json();
-      if (requestId !== requestIdRef.current) return { ok: false };
+      if (!isCurrent()) return { ok: false };
       if (!res.ok) {
         setRouteError(data.error ?? "Calcolo percorso non riuscito.");
         return { ok: false };
@@ -83,7 +90,7 @@ export function useRouteCompute() {
       });
       return { ok: true, optimizedIntermediateOrder: optimized };
     } catch (error) {
-      if (requestId !== requestIdRef.current) return { ok: false };
+      if (!isCurrent()) return { ok: false };
       setRouteError(toUserErrorMessage(error));
       return { ok: false };
     }

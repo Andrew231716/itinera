@@ -407,8 +407,9 @@ export async function nativeShare(payload: {
     try {
       await navigator.share(payload);
       return "shared";
-    } catch {
-      // user cancelled or share failed — fall through
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return "unsupported";
+      // A failed share can still be copied explicitly.
     }
   }
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {

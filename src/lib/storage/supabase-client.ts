@@ -3,15 +3,28 @@ import { getSupabaseConfig } from "@/lib/config/env";
 
 export type ItineraSupabase = SupabaseClient;
 
+let browserClient: ItineraSupabase | null = null;
+
 export function createBrowserSupabaseClient(): ItineraSupabase | null {
   const cfg = getSupabaseConfig();
   if (!cfg) return null;
-  return createClient(cfg.url, cfg.anonKey, {
+  if (browserClient) return browserClient;
+  browserClient = createClient(cfg.url, cfg.anonKey, {
+    global: {
+      fetch: (input, init) =>
+        fetch(input, {
+          ...init,
+          signal: init?.signal
+            ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)])
+            : AbortSignal.timeout(15_000),
+        }),
+    },
     auth: {
       persistSession: true,
       autoRefreshToken: true,
     },
   });
+  return browserClient;
 }
 
 /**
@@ -40,7 +53,9 @@ export function getOrCreateClientOwnerKey(): string {
   if (typeof window === "undefined") return "";
   let key = localStorage.getItem(CLIENT_KEY);
   if (!key || key.length < 16) {
-    key = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    key =
+      crypto.randomUUID().replace(/-/g, "") +
+      crypto.randomUUID().replace(/-/g, "");
     localStorage.setItem(CLIENT_KEY, key);
   }
   return key;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlaceSuggestion } from "@/lib/types/route";
 import type { PlaceRef } from "@/lib/types/trip";
 
@@ -13,7 +13,11 @@ export function usePlaceSearch() {
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const sequence = useRef(0);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); abortRef.current?.abort(); sequence.current++; }, []);
+
   const search = useCallback((value: string) => {
+    const request = ++sequence.current;
     setQuery(value);
     setError(null);
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -35,6 +39,7 @@ export function usePlaceSearch() {
           { signal: controller.signal },
         );
         const data = await res.json();
+        if (request !== sequence.current) return;
         if (!res.ok) {
           setError(data.error ?? "Ricerca non disponibile.");
           setSuggestions([]);
@@ -44,16 +49,20 @@ export function usePlaceSearch() {
         setSuggestions(data.suggestions ?? []);
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
+        if (request !== sequence.current) return;
         setError("Errore di rete durante la ricerca.");
         setSuggestions([]);
       } finally {
-        setLoading(false);
+        if (request === sequence.current) setLoading(false);
       }
     }, 280);
   }, []);
 
   const resolvePlace = useCallback(
     async (suggestion: PlaceSuggestion): Promise<PlaceRef | null> => {
+      const request = ++sequence.current;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      abortRef.current?.abort();
       setLoading(true);
       setError(null);
       try {
@@ -71,23 +80,28 @@ export function usePlaceSearch() {
           `/api/places/details?placeId=${encodeURIComponent(suggestion.placeId)}`,
         );
         const data = await res.json();
+        if (request !== sequence.current) return null;
         if (!res.ok) {
           setError(data.error ?? "Dettagli località non disponibili.");
           return null;
         }
         return data.place as PlaceRef;
       } catch {
+        if (request !== sequence.current) return null;
         setError("Impossibile risolvere la località.");
         return null;
       } finally {
-        setLoading(false);
-        setSuggestions([]);
+        if (request === sequence.current) { setLoading(false); setSuggestions([]); }
       }
     },
     [],
   );
 
   const clear = useCallback(() => {
+    sequence.current++;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    abortRef.current?.abort();
+    setLoading(false);
     setQuery("");
     setSuggestions([]);
     setError(null);

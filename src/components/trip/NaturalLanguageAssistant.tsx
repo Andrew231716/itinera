@@ -1,5 +1,6 @@
 "use client";
 
+import { useDraftText } from "@/hooks/useDraftText";
 import { useState } from "react";
 import { Loader2, Sparkles, Check, X } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -18,7 +19,7 @@ import { createExclusionFromLabel } from "@/lib/routing/exclusion-helpers";
 import { SiriGuide } from "@/components/trip/SiriGuide";
 
 export function NaturalLanguageAssistant() {
-  const [utterance, setUtterance] = useState("");
+  const [utterance, setUtterance] = useDraftText("itinera.assistantDraft.v1");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AssistantParseResult | null>(null);
   const [pending, setPending] = useState<AssistantParseResult | null>(null);
@@ -198,7 +199,7 @@ export function NaturalLanguageAssistant() {
         }
       />
 
-      <SiriGuide />
+      <div className="flex flex-wrap gap-2" aria-label="Esempi di richieste">{['Da Milano a Como senza pedaggi', 'Cerca parcheggi a Firenze', 'Cerca GPL vicino a Monza'].map(example => <Button key={example} variant="secondary" size="sm" onClick={() => setUtterance(example)}>{example}</Button>)}</div>
 
       <TextArea
         rows={5}
@@ -222,6 +223,7 @@ export function NaturalLanguageAssistant() {
         Interpreta richiesta
       </Button>
 
+      <details className="workspace-card"><summary className="cursor-pointer font-semibold">Collega Siri</summary><div className="mt-3"><SiriGuide /></div></details>
       {!result ? (
         <EmptyHint>
           L’assistente usa Gemini gratis sulla stessa chiave Google Maps già

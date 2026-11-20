@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { routingSignature } from "@/lib/routing/trip-signature";
 import { nanoid } from "nanoid";
 import {
   createEmptyTrip,
@@ -137,6 +138,10 @@ interface TripState {
   setMobilePanelOpen: (open: boolean) => void;
   setMapPickTarget: (target: MapPickTarget) => void;
   setTitle: (title: string) => void;
+  undoTripChange: () => void;
+  canUndo: boolean;
+  routeNeedsUpdate: boolean;
+  updateStopDetails: (id: string, patch: Partial<Pick<TripStop, "dwellMinutes" | "notes">>) => void;
   setOrigin: (place: PlaceRef | null) => void;
   setDestination: (place: PlaceRef | null) => void;
   swapOriginDestination: () => void;
@@ -168,6 +173,7 @@ interface TripState {
   /** Reorder intermediate stops to match an optimized index list. */
   applyOptimizedStopOrder: (order: number[]) => void;
   setDepartureAt: (iso: string | null) => void;
+  setPlanning: (patch: Pick<TripDraft, "arrivalBy" | "costs">) => void;
   setTravelMode: (mode: TravelMode) => void;
   setPreferences: (patch: Partial<RoadPreferences>) => void;
   setOptimizeStopOrder: (value: boolean) => void;
@@ -204,6 +210,8 @@ interface TripState {
   refreshSavedTrips: () => Promise<void>;
   duplicateCurrentTrip: () => Promise<void>;
   removeSavedTrip: (id: string) => Promise<void>;
+  lastRemovedTrip: TripDraft | null;
+  undoSavedTripDeletion: () => Promise<void>;
   refreshTripHistory: () => void;
   loadHistoryEntry: (entry: TripHistoryEntry) => void;
   /** Open a trip in the Giro editor (cronologia / salvati). */
@@ -280,6 +288,9 @@ function placeFromMapClick(lat: number, lng: number): PlaceRef {
   };
 }
 
+const undoHistory: TripDraft[] = [];
+let restoringUndo = false;
+
 export const useTripStore = create<TripState>((set, get) => ({
   trip: createEmptyTrip("Il mio itinerario"),
   routes: [],
@@ -294,6 +305,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   mobilePanelOpen: true,
   exclusionDraftPoints: [],
   savedTrips: [],
+  lastRemovedTrip: null,
   tripHistory: [],
   giroSeed: null,
   parkingSpots: [],
@@ -314,6 +326,18 @@ export const useTripStore = create<TripState>((set, get) => ({
       exclusionDraftPoints:
         target === "exclusion_zone" ? get().exclusionDraftPoints : [],
     }),
+
+  canUndo: false,
+  routeNeedsUpdate: false,
+  undoTripChange: () => {
+    const previous = undoHistory.pop();
+    if (previous) {
+      restoringUndo = true;
+      set({ trip: touch(previous), canUndo: undoHistory.length > 0 });
+      restoringUndo = false;
+    }
+  },
+  updateStopDetails: (id, patch) => set(s => ({ trip: touch({ ...s.trip, stops: s.trip.stops.map(stop => stop.id === id ? { ...stop, ...patch } : stop) }) })),
 
   setTitle: (title) =>
     set((s) => ({ trip: touch({ ...s.trip, meta: { ...s.trip.meta, title } }) })),
@@ -509,6 +533,8 @@ export const useTripStore = create<TripState>((set, get) => ({
       };
     }),
 
+  setPlanning: (patch) => set(s => ({ trip: touch({ ...s.trip, ...patch }) })),
+
   setDepartureAt: (iso) =>
     set((s) => ({ trip: touch({ ...s.trip, departureAt: iso }) })),
 
@@ -661,6 +687,7 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     set({
       routes,
+      routeNeedsUpdate: false,
       routeLimitations: limitations,
       routeMode: mode,
       routeError: null,
@@ -773,6 +800,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     }),
 
   resetTrip: () => {
+    const previous = structuredClone(get().trip);
     stopNavigationSpeech();
     set({
       trip: createEmptyTrip("Il mio itinerario"),
@@ -791,12 +819,15 @@ export const useTripStore = create<TripState>((set, get) => ({
       navigation: { ...IDLE_NAVIGATION },
       giroSeed: null,
     });
+    undoHistory.push(previous);
+    set({ canUndo: true });
   },
 
   persistTrip: async () => {
     const repo = getTripRepository();
-    const saved = await repo.save(get().trip);
-    set({ trip: saved });
+    const draft = get().trip;
+    const saved = await repo.save(draft);
+    if (get().trip === draft) set({ trip: saved });
     await get().refreshSavedTrips();
   },
 
@@ -816,9 +847,19 @@ export const useTripStore = create<TripState>((set, get) => ({
     }
   },
 
+  undoSavedTripDeletion: async () => {
+    const trip = get().lastRemovedTrip;
+    if (!trip) return;
+    await getTripRepository().save(trip);
+    set({ lastRemovedTrip: null });
+    await get().refreshSavedTrips();
+  },
+
   removeSavedTrip: async (id) => {
     const repo = getTripRepository();
+    const removed = await repo.get(id);
     await repo.remove(id);
+    set({ lastRemovedTrip: removed });
     if (get().trip.meta.id === id) {
       get().resetTrip();
     }
@@ -1137,3 +1178,31 @@ export const useTripStore = create<TripState>((set, get) => ({
       },
     })),
 }));
+
+
+// A single guard covers all editors, map picks and programmatic trip changes.
+useTripStore.subscribe((state, previous) => {
+  if (state.trip === previous.trip) return;
+  const changed = routingSignature(state.trip) !== routingSignature(previous.trip);
+  const switchedTrip = state.trip.meta.id !== previous.trip.meta.id;
+  const planningChanged = JSON.stringify([state.trip.meta.title, state.trip.arrivalBy, state.trip.costs]) !== JSON.stringify([previous.trip.meta.title, previous.trip.arrivalBy, previous.trip.costs]);
+  if (!changed && !switchedTrip && !planningChanged) return;
+  if (!restoringUndo && !switchedTrip) {
+    undoHistory.push(structuredClone(previous.trip));
+    if (undoHistory.length > 20) undoHistory.shift();
+  } else if (switchedTrip) {
+    undoHistory.length = 0;
+  }
+  // A loaded offline pack or successful reroute brings its own matching routes.
+  const freshRoutes = state.routes !== previous.routes && state.routes.length > 0;
+  const invalidate = !freshRoutes && (changed || switchedTrip);
+  if (invalidate) stopNavigationSpeech();
+  useTripStore.setState({
+    canUndo: undoHistory.length > 0,
+    ...(invalidate ? {
+      routes: [], routeMode: "idle", routeError: null, routeLimitations: [],
+      routeNeedsUpdate: !switchedTrip && (previous.routes.length > 0 || previous.routeNeedsUpdate || previous.routeMode === "loading"),
+      navigation: { ...IDLE_NAVIGATION },
+    } : {}),
+  });
+});

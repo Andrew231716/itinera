@@ -1,15 +1,19 @@
 "use client";
 
-import { ArrowDownUp, CalendarClock, Car, CircleParking, Fuel } from "lucide-react";
+import {
+  ArrowDownUp,
+  CalendarClock,
+  Car,
+  CircleParking,
+  Fuel,
+} from "lucide-react";
 import { useTripStore } from "@/lib/store/trip-store";
 import type { TravelMode } from "@/lib/types/trip";
-import {
-  formatDateTimeLocal,
-  localInputToIso,
-} from "@/lib/utils/format";
+import { formatDateTimeLocal, localInputToIso } from "@/lib/utils/format";
 import { Button, Input, Label, SectionTitle } from "@/components/ui/primitives";
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 import { PlaceSearch, MapPickHint } from "@/components/trip/PlaceSearch";
+import { TravelOptions } from "@/components/trip/TravelOptions";
 import { StopList } from "@/components/trip/StopList";
 
 const MODES: Array<{ value: TravelMode; label: string }> = [
@@ -36,18 +40,18 @@ export function TripForm() {
   const resetTrip = useTripStore((s) => s.resetTrip);
   const canReset = Boolean(
     trip.origin ||
-      trip.destination ||
-      trip.stops.length > 0 ||
-      trip.departureAt ||
-      trip.exclusions.length > 0 ||
-      trip.meta.title !== "Il mio itinerario",
+    trip.destination ||
+    trip.stops.length > 0 ||
+    trip.departureAt ||
+    trip.exclusions.length > 0 ||
+    trip.meta.title !== "Il mio itinerario",
   );
 
   return (
     <div className="space-y-5">
       <SectionTitle
         title="Itinerario"
-        subtitle="Partenza → tappe → destinazione finale (l’ultima tappa aggiunta)"
+        subtitle="Scegli partenza e arrivo, poi aggiungi le fermate."
         action={
           <PanelResetButton
             disabled={!canReset}
@@ -56,15 +60,6 @@ export function TripForm() {
           />
         }
       />
-
-      <div>
-        <Label>Titolo viaggio</Label>
-        <Input
-          value={trip.meta.title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Es. Weekend Toscana"
-        />
-      </div>
 
       <PlaceSearch
         label="Partenza"
@@ -151,42 +146,60 @@ export function TripForm() {
       />
 
       <div>
-        <SectionTitle title="Tappe" subtitle="Illimitate nei limiti API" />
+        <SectionTitle title="Fermate intermedie" />
         <StopList />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <Label>
-            <span className="inline-flex items-center gap-1">
-              <CalendarClock className="h-3 w-3" /> Data e ora partenza
-            </span>
-          </Label>
-          <Input
-            type="datetime-local"
-            value={formatDateTimeLocal(trip.departureAt)}
-            onChange={(e) => setDepartureAt(localInputToIso(e.target.value))}
-          />
+      <details className="workspace-card">
+        <summary className="cursor-pointer font-semibold">
+          Nome, partenza e mezzo
+        </summary>
+        <div className="mt-4 space-y-4">
+          <div>
+            <Label>Titolo viaggio</Label>
+            <Input
+              value={trip.meta.title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Es. Weekend Toscana"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label>
+                <span className="inline-flex items-center gap-1">
+                  <CalendarClock className="h-3 w-3" /> Data e ora partenza
+                </span>
+              </Label>
+              <Input
+                type="datetime-local"
+                value={formatDateTimeLocal(trip.departureAt)}
+                onChange={(e) =>
+                  setDepartureAt(localInputToIso(e.target.value))
+                }
+              />
+            </div>
+            <div>
+              <Label>
+                <span className="inline-flex items-center gap-1">
+                  <Car className="h-3 w-3" /> Mezzo
+                </span>
+              </Label>
+              <select
+                className="h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
+                value={trip.travelMode}
+                onChange={(e) => setTravelMode(e.target.value as TravelMode)}
+              >
+                {MODES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
-        <div>
-          <Label>
-            <span className="inline-flex items-center gap-1">
-              <Car className="h-3 w-3" /> Mezzo
-            </span>
-          </Label>
-          <select
-            className="h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
-            value={trip.travelMode}
-            onChange={(e) => setTravelMode(e.target.value as TravelMode)}
-          >
-            {MODES.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      </details>
+      <TravelOptions />
     </div>
   );
 }

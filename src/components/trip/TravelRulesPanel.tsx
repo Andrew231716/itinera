@@ -1,4 +1,5 @@
 "use client";
+import { ExclusionsPanel } from "@/components/trip/ExclusionsPanel";
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, ShieldAlert } from "lucide-react";
@@ -211,6 +212,7 @@ export function TravelRulesPanel() {
           </div>
         ) : null}
       </div>
+      <details className="workspace-card"><summary className="cursor-pointer font-semibold">Strade e zone da evitare</summary><div className="mt-4"><ExclusionsPanel /></div></details>
     </div>
   );
 }

@@ -20,7 +20,7 @@ import { GripVertical, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTripStore } from "@/lib/store/trip-store";
 import type { PlaceRef, TripStop } from "@/lib/types/trip";
-import { Button, EmptyHint } from "@/components/ui/primitives";
+import { Button, EmptyHint, Input } from "@/components/ui/primitives";
 import { PlaceSearch } from "@/components/trip/PlaceSearch";
 
 function SortableStop({
@@ -34,8 +34,14 @@ function SortableStop({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: stop.id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stop.id });
 
   return (
     <div
@@ -93,6 +99,9 @@ function SortableStop({
 export function StopList() {
   const stops = useTripStore((s) => s.trip.stops);
   const destination = useTripStore((s) => s.trip.destination);
+  const addStop = useTripStore((s) => s.addStop);
+  const updateStopDetails = useTripStore((s) => s.updateStopDetails);
+  const [extendTrip, setExtendTrip] = useState(false);
   const pushStopAsDestination = useTripStore((s) => s.pushStopAsDestination);
   const updateStop = useTripStore((s) => s.updateStop);
   const removeStop = useTripStore((s) => s.removeStop);
@@ -127,7 +136,8 @@ export function StopList() {
     } else {
       // Last inserted place becomes the final destination; previous
       // destination (if any) is demoted to the next intermediate stop.
-      pushStopAsDestination(place);
+      if (extendTrip || !destination) pushStopAsDestination(place);
+      else addStop(place);
     }
     setAdding(false);
   }
@@ -137,7 +147,6 @@ export function StopList() {
       <div className="flex items-center justify-between">
         <p className="text-xs text-[var(--ink-muted)]">
           Trascina per riordinare · {stops.length} tappe
-          {destination ? " · ultima = destinazione" : ""}
         </p>
         <Button
           type="button"
@@ -154,9 +163,8 @@ export function StopList() {
 
       {stops.length === 0 && !adding ? (
         <EmptyHint>
-          Aggiungi una tappa: la destinazione attuale diventa la prima tappa e
-          il nuovo punto diventa la destinazione finale. Oppure seleziona sulla
-          mappa.
+          Aggiungi le fermate da visitare prima dell’arrivo. Puoi riordinarle
+          trascinandole.
         </EmptyHint>
       ) : null}
 
@@ -171,16 +179,37 @@ export function StopList() {
         >
           <div className="space-y-2">
             {stops.map((stop, index) => (
-              <SortableStop
-                key={stop.id}
-                stop={stop}
-                index={index}
-                onEdit={() => {
-                  setEditingId(stop.id);
-                  setAdding(true);
-                }}
-                onRemove={() => removeStop(stop.id)}
-              />
+              <div key={stop.id}>
+                <SortableStop
+                  key={stop.id}
+                  stop={stop}
+                  index={index}
+                  onEdit={() => {
+                    setEditingId(stop.id);
+                    setAdding(true);
+                  }}
+                  onRemove={() => removeStop(stop.id)}
+                />
+                <label className="mt-1 flex items-center gap-2 px-2 text-xs text-[var(--ink-muted)]">
+                  Sosta (min)
+                  <Input
+                    aria-label={`Durata sosta ${index + 1} in minuti`}
+                    className="max-w-24"
+                    type="number"
+                    min="0"
+                    max="1440"
+                    value={stop.dwellMinutes ?? 0}
+                    onChange={(event) =>
+                      updateStopDetails(stop.id, {
+                        dwellMinutes: Math.min(
+                          1440,
+                          Math.max(0, Number(event.target.value)),
+                        ),
+                      })
+                    }
+                  />
+                </label>
+              </div>
             ))}
           </div>
         </SortableContext>
@@ -188,17 +217,31 @@ export function StopList() {
 
       {adding ? (
         <div className="rounded-xl border border-[var(--brand)]/25 bg-[var(--brand-soft)]/40 p-3 animate-[fadeSlide_180ms_ease]">
+          {!editingId && destination && (
+            <label className="mb-3 flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={extendTrip}
+                onChange={(event) => setExtendTrip(event.target.checked)}
+              />
+              Prosegui oltre l’arrivo attuale
+            </label>
+          )}
           <PlaceSearch
             label={
               editingId
                 ? "Modifica tappa"
-                : destination
-                  ? "Nuova destinazione (la precedente diventa tappa)"
-                  : "Nuova destinazione"
+                : destination && !extendTrip
+                  ? "Fermata intermedia"
+                  : destination
+                    ? "Nuova destinazione"
+                    : "Nuova destinazione"
             }
             value={null}
             onSelect={handleAdd}
-            onPickFromMap={() => setMapPickTarget("stop")}
+            onPickFromMap={
+              extendTrip ? () => setMapPickTarget("stop") : undefined
+            }
             pickingFromMap={mapPickTarget === "stop"}
           />
           <div className="mt-2 flex justify-end">
@@ -227,9 +270,9 @@ export function StopList() {
             onChange={(e) => setOptimizeStopOrder(e.target.checked)}
           />
           <span>
-            Consenti l’ottimizzazione dell’ordine delle tappe al calcolo
-            (solo con il tuo consenso esplicito). Con ottimizzazione attiva
-            Google usa traffico standard invece di TRAFFIC_AWARE_OPTIMAL.
+            Consenti l’ottimizzazione dell’ordine delle tappe al calcolo per
+            ridurre il tragitto. Gli orari vengono stimati con traffico
+            standard.
           </span>
         </label>
       ) : null}

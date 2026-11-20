@@ -1,3 +1,4 @@
+import { updateSyncState } from "@/lib/storage/sync-state";
 import type { TripDraft } from "@/lib/types/trip";
 import {
   createBrowserSupabaseClient,
@@ -73,6 +74,10 @@ export class LocalTripRepository implements TripRepository {
     return readAll().find((t) => t.meta.id === id) ?? null;
   }
 
+  cache(trip: TripDraft): void {
+    writeAll([...readAll().filter((t) => t.meta.id !== trip.meta.id), trip]);
+  }
+
   async save(trip: TripDraft): Promise<TripDraft> {
     const next = {
       ...trip,
@@ -106,10 +111,15 @@ export class LocalTripRepository implements TripRepository {
     writeShares(readShares().filter((s) => s.tripId !== id));
   }
 
-  async createShare(tripId: string, expiresAt: string | null = null): Promise<ShareRecord> {
+  async createShare(
+    tripId: string,
+    expiresAt: string | null = null,
+  ): Promise<ShareRecord> {
     const trip = await this.get(tripId);
     if (!trip) throw new Error("Viaggio non trovato.");
-    const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    const token =
+      crypto.randomUUID().replace(/-/g, "") +
+      crypto.randomUUID().replace(/-/g, "");
     const record: ShareRecord = {
       token,
       tripId,
@@ -156,31 +166,54 @@ export class LocalTripRepository implements TripRepository {
  * Browser Supabase repository for authenticated users (RLS).
  * Anonymous cloud sync uses /api/trips with optional service role.
  */
+let anonymousSession: Promise<void> | null = null;
+
 export class SupabaseTripRepository implements TripRepository {
   constructor(private readonly clientOwnerKey?: string) {}
 
-  private client() {
+  private async client() {
     const c = createBrowserSupabaseClient();
     if (!c) {
       throw new Error(
         "Supabase non configurato. Imposta NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY.",
       );
     }
+    const {
+      data: { session },
+    } = await c.auth.getSession();
+    if (!session) {
+      if (!anonymousSession)
+        anonymousSession = (async () => {
+          const { error } = await c.auth.signInAnonymously();
+          if (error)
+            throw new Error(
+              "Accesso cloud non disponibile. Il viaggio resta su questo dispositivo. " +
+                error.message,
+            );
+        })();
+      try {
+        await anonymousSession;
+      } finally {
+        anonymousSession = null;
+      }
+    }
     return c;
   }
 
   async list(): Promise<TripDraft[]> {
-    const supabase = this.client();
+    const supabase = await this.client();
     const { data, error } = await supabase
       .from("trips")
       .select("trip_data")
       .order("updated_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return (data as { trip_data: TripDraft }[] | null)?.map((r) => r.trip_data) ?? [];
+    return (
+      (data as { trip_data: TripDraft }[] | null)?.map((r) => r.trip_data) ?? []
+    );
   }
 
   async get(id: string): Promise<TripDraft | null> {
-    const supabase = this.client();
+    const supabase = await this.client();
     const { data, error } = await supabase
       .from("trips")
       .select("trip_data")
@@ -191,11 +224,8 @@ export class SupabaseTripRepository implements TripRepository {
   }
 
   async save(trip: TripDraft): Promise<TripDraft> {
-    const supabase = this.client();
-    const next = {
-      ...trip,
-      meta: { ...trip.meta, updatedAt: new Date().toISOString() },
-    };
+    const supabase = await this.client();
+    const next = trip;
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -205,12 +235,42 @@ export class SupabaseTripRepository implements TripRepository {
       title: next.meta.title,
       trip_data: next,
       owner_id: user?.id ?? null,
-      client_owner_key: user ? null : this.clientOwnerKey ?? getOrCreateClientOwnerKey(),
+      client_owner_key: user
+        ? null
+        : (this.clientOwnerKey ?? getOrCreateClientOwnerKey()),
       updated_at: next.meta.updatedAt,
     };
 
-    const { error } = await supabase.from("trips").upsert(row, { onConflict: "id" });
-    if (error) throw new Error(error.message);
+    const { data: current, error: readError } = await supabase
+      .from("trips")
+      .select("trip_data,updated_at")
+      .eq("id", next.meta.id)
+      .maybeSingle();
+    if (readError) throw new Error(readError.message);
+    if (
+      current &&
+      (current.trip_data as TripDraft).meta.updatedAt > next.meta.updatedAt
+    ) {
+      throw new Error(
+        "Conflitto: esiste una versione cloud più recente. Usa “Conserva entrambe” in Backup e sincronizzazione.",
+      );
+    }
+    if (current) {
+      const { data, error } = await supabase
+        .from("trips")
+        .update(row)
+        .eq("id", next.meta.id)
+        .eq("updated_at", current.updated_at)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if (!data?.length)
+        throw new Error(
+          "Il viaggio cloud è cambiato durante il salvataggio. Riprova.",
+        );
+    } else {
+      const { error } = await supabase.from("trips").insert(row);
+      if (error) throw new Error(error.message);
+    }
     return next;
   }
 
@@ -232,13 +292,16 @@ export class SupabaseTripRepository implements TripRepository {
   }
 
   async remove(id: string): Promise<void> {
-    const supabase = this.client();
+    const supabase = await this.client();
     const { error } = await supabase.from("trips").delete().eq("id", id);
     if (error) throw new Error(error.message);
   }
 
-  async createShare(tripId: string, expiresAt: string | null = null): Promise<ShareRecord> {
-    const supabase = this.client();
+  async createShare(
+    tripId: string,
+    expiresAt: string | null = null,
+  ): Promise<ShareRecord> {
+    const supabase = await this.client();
     const { data, error } = await supabase
       .from("shared_trips")
       .insert({
@@ -246,7 +309,9 @@ export class SupabaseTripRepository implements TripRepository {
         permission: "read",
         expires_at: expiresAt,
       })
-      .select("share_token, trip_id, permission, created_at, expires_at, revoked_at")
+      .select(
+        "share_token, trip_id, permission, created_at, expires_at, revoked_at",
+      )
       .single();
     if (error) throw new Error(error.message);
     const row = data as {
@@ -269,7 +334,7 @@ export class SupabaseTripRepository implements TripRepository {
   }
 
   async revokeShare(token: string): Promise<void> {
-    const supabase = this.client();
+    const supabase = await this.client();
     const { error } = await supabase
       .from("shared_trips")
       .update({ revoked_at: new Date().toISOString() })
@@ -278,7 +343,7 @@ export class SupabaseTripRepository implements TripRepository {
   }
 
   async getByShareToken(token: string): Promise<TripDraft | null> {
-    const supabase = this.client();
+    const supabase = await this.client();
     const { data, error } = await supabase.rpc("get_shared_trip", {
       p_token: token,
     });
@@ -293,118 +358,199 @@ export class SupabaseTripRepository implements TripRepository {
  * Writes to local first, then best-effort sync to Supabase when configured.
  * Local remains source of offline truth.
  */
+type PendingChange = { id: string; version: string; trip: TripDraft | null };
+const QUEUE_KEY = "itinera.pendingSync.v1";
+function readQueue(): PendingChange[] {
+  try {
+    return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function writeQueue(queue: PendingChange[]) {
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  updateSyncState({ pending: queue.length });
+}
+function enqueue(id: string, trip: TripDraft | null) {
+  writeQueue([
+    ...readQueue().filter((item) => item.id !== id),
+    { id, trip, version: crypto.randomUUID() },
+  ]);
+}
+let flushing: Promise<void> | null = null;
+
 export class HybridTripRepository implements TripRepository {
   private local = new LocalTripRepository();
-
   private remote(): SupabaseTripRepository | null {
-    if (!isSupabaseConfigured()) return null;
-    return new SupabaseTripRepository(getOrCreateClientOwnerKey());
+    return isSupabaseConfigured()
+      ? new SupabaseTripRepository(getOrCreateClientOwnerKey())
+      : null;
+  }
+
+  async sync(): Promise<void> {
+    if (flushing) return flushing;
+    const remote = this.remote();
+    const pending = readQueue();
+    updateSyncState({ pending: pending.length });
+    if (!remote || (typeof navigator !== "undefined" && !navigator.onLine))
+      return;
+    flushing = (async () => {
+      updateSyncState({ running: true, error: null });
+      try {
+        for (const change of pending) {
+          if (change.trip) await remote.save(change.trip);
+          else await remote.remove(change.id);
+          // A newer local edit must remain queued while an older write finishes.
+          writeQueue(
+            readQueue().filter((item) => item.version !== change.version),
+          );
+        }
+        updateSyncState({ lastSyncedAt: new Date().toISOString() });
+      } catch (error) {
+        updateSyncState({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Sincronizzazione da riprovare",
+        });
+      } finally {
+        updateSyncState({ running: false });
+      }
+    })();
+    try {
+      await flushing;
+    } finally {
+      flushing = null;
+    }
   }
 
   async list(): Promise<TripDraft[]> {
+    await this.sync();
     const remote = this.remote();
-    if (remote) {
+    if (remote && (typeof navigator === "undefined" || navigator.onLine)) {
       try {
         const cloud = await remote.list();
-        // Merge: cloud wins on same id by updatedAt
-        const map = new Map<string, TripDraft>();
-        for (const t of await this.local.list()) map.set(t.meta.id, t);
-        for (const t of cloud) {
-          const existing = map.get(t.meta.id);
-          if (!existing || t.meta.updatedAt >= existing.meta.updatedAt) {
-            map.set(t.meta.id, t);
-            await this.local.save(t);
+        const blocked = new Set(readQueue().map((item) => item.id));
+        const map = new Map(
+          (await this.local.list()).map((trip) => [trip.meta.id, trip]),
+        );
+        for (const trip of cloud) {
+          if (blocked.has(trip.meta.id)) continue;
+          const existing = map.get(trip.meta.id);
+          if (!existing || trip.meta.updatedAt > existing.meta.updatedAt) {
+            map.set(trip.meta.id, trip);
+            this.local.cache(trip);
           }
         }
         return [...map.values()].sort((a, b) =>
           b.meta.updatedAt.localeCompare(a.meta.updatedAt),
         );
-      } catch {
-        return this.local.list();
+      } catch (error) {
+        updateSyncState({
+          error:
+            error instanceof Error ? error.message : "Cloud non raggiungibile",
+        });
       }
     }
     return this.local.list();
   }
 
   async get(id: string): Promise<TripDraft | null> {
+    const queued = readQueue().find((item) => item.id === id);
+    if (queued) return queued.trip;
     return (await this.local.get(id)) ?? (await this.remote()?.get(id)) ?? null;
   }
 
   async save(trip: TripDraft): Promise<TripDraft> {
     const saved = await this.local.save(trip);
-    const remote = this.remote();
-    if (remote) {
-      try {
-        await remote.save(saved);
-      } catch {
-        // Keep local save; surface sync issues via UI separately if needed
-      }
-    }
+    if (this.remote()) enqueue(saved.meta.id, saved);
     return saved;
   }
 
   async duplicate(id: string): Promise<TripDraft | null> {
     const copy = await this.local.duplicate(id);
-    if (!copy) return null;
-    const remote = this.remote();
-    if (remote) {
-      try {
-        await remote.save(copy);
-      } catch {
-        /* local copy remains */
-      }
-    }
-    return copy;
+    return copy ? this.save(copy) : null;
   }
 
   async remove(id: string): Promise<void> {
+    // Queue the tombstone before deleting, so a failed remote delete cannot revive it.
+    if (this.remote()) enqueue(id, null);
     await this.local.remove(id);
-    const remote = this.remote();
-    if (remote) {
-      try {
-        await remote.remove(id);
-      } catch {
-        /* ignore */
-      }
-    }
+    await this.sync();
   }
 
-  async createShare(tripId: string, expiresAt?: string | null): Promise<ShareRecord> {
+  async createShare(
+    tripId: string,
+    expiresAt?: string | null,
+  ): Promise<ShareRecord> {
     const remote = this.remote();
-    if (remote) {
-      try {
-        return await remote.createShare(tripId, expiresAt ?? null);
-      } catch {
-        /* fall through to local share */
-      }
+    if (!remote)
+      throw new Error(
+        "La condivisione richiede il cloud. Puoi esportare il viaggio dal backup.",
+      );
+    await this.sync();
+    if (readQueue().some((item) => item.id === tripId))
+      throw new Error(
+        "Il viaggio è salvato qui ma il cloud è in attesa. Riprova la sincronizzazione prima di condividerlo.",
+      );
+    const record = await remote.createShare(tripId, expiresAt ?? null);
+    const response = await fetch(
+      record.urlPath.replace("/share/", "/api/share/"),
+      { cache: "no-store" },
+    );
+    if (!response.ok || !(await response.json()).trip) {
+      await remote.revokeShare(record.token);
+      throw new Error(
+        "Il link non è raggiungibile. Nessun link pubblico è stato confermato.",
+      );
     }
-    return this.local.createShare(tripId, expiresAt ?? null);
+    return record;
   }
 
   async revokeShare(token: string): Promise<void> {
-    await this.local.revokeShare(token);
     const remote = this.remote();
-    if (remote) {
-      try {
-        await remote.revokeShare(token);
-      } catch {
-        /* ignore */
-      }
-    }
+    if (!remote) throw new Error("Connettiti al cloud per revocare il link.");
+    await remote.revokeShare(token);
   }
 
   async getByShareToken(token: string): Promise<TripDraft | null> {
-    const remote = this.remote();
-    if (remote) {
-      try {
-        const cloud = await remote.getByShareToken(token);
-        if (cloud) return cloud;
-      } catch {
-        /* fall back */
-      }
-    }
-    return this.local.getByShareToken(token);
+    return (await this.remote()?.getByShareToken(token)) ?? null;
   }
+}
+
+export async function preserveSyncConflicts(): Promise<Map<string, TripDraft>> {
+  if (flushing) await flushing;
+  const remote = new SupabaseTripRepository(getOrCreateClientOwnerKey());
+  const local = new LocalTripRepository();
+  const copies = new Map<string, TripDraft>();
+  for (const change of readQueue()) {
+    if (!change.trip) continue;
+    const cloud = await remote.get(change.id);
+    if (!cloud || cloud.meta.updatedAt <= change.trip.meta.updatedAt) continue;
+    const now = new Date().toISOString();
+    const copy: TripDraft = {
+      ...structuredClone(change.trip),
+      meta: {
+        ...change.trip.meta,
+        id: crypto.randomUUID(),
+        title: `${change.trip.meta.title} (copia locale)`,
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
+    local.cache(copy);
+    enqueue(copy.meta.id, copy);
+    // Replace the colliding local record only after its copy is durable.
+    local.cache(cloud);
+    writeQueue(readQueue().filter((item) => item.version !== change.version));
+    copies.set(change.id, copy);
+  }
+  await syncPendingTrips();
+  return copies;
+}
+
+export async function syncPendingTrips(): Promise<void> {
+  await new HybridTripRepository().sync();
 }
 
 export function getTripRepository(): TripRepository {

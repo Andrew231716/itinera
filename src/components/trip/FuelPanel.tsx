@@ -44,6 +44,7 @@ import {
   Input,
   SectionTitle,
 } from "@/components/ui/primitives";
+import { PlaceSearch } from "@/components/trip/PlaceSearch";
 import { PanelResetButton } from "@/components/ui/PanelResetButton";
 
 const EXAMPLE_FUEL_CENTER = {
@@ -70,6 +71,8 @@ export function FuelPanel() {
   const [truck, setTruck] = useState(false);
   const [brand, setBrand] = useState("");
   const [radius, setRadius] = useState(8000);
+  const [sort, setSort] = useState('distance');
+  const [fuelProduct, setFuelProduct] = useState('benzina');
   const [query, setQuery] = useState("");
   const [alongRoute, setAlongRoute] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -274,6 +277,10 @@ export function FuelPanel() {
     );
   }
 
+  const visibleStations = useMemo(() => {
+    const price = (station: FuelStation) => Math.min(...(station.prices ?? []).filter(quote => quote.fuel.toLocaleLowerCase().includes(fuelProduct) && quote.isSelf).map(quote => quote.price), Infinity);
+    return [...fuelStations].filter(station => !query.trim() || `${station.name} ${station.brand ?? ''} ${station.address ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).sort((a, b) => sort === 'price' ? price(a) - price(b) || a.distanceMeters - b.distanceMeters : a.distanceMeters - b.distanceMeters);
+  }, [fuelStations, sort, fuelProduct, query]);
   const selected =
     fuelStations.find((s) => s.id === selectedFuelId) ?? null;
 
@@ -458,6 +465,9 @@ export function FuelPanel() {
         </Button>
       </div>
 
+      <PlaceSearch label="Cerca benzinai in una località" value={null} allowGps={false} onSelect={place => requestFuelNear({ ...place.location, label: place.label })}/>
+      <div className="flex flex-wrap items-center gap-2"><label className="text-sm">Ordina <select aria-label="Ordina benzinai" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2" value={sort} onChange={event => setSort(event.target.value)}><option value="distance">Più vicini</option><option value="price">Prezzo self noto</option></select></label>{sort === 'price' && <select aria-label="Carburante per confronto prezzi" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2" value={fuelProduct} onChange={event => setFuelProduct(event.target.value)}><option value="benzina">Benzina</option><option value="gasolio">Gasolio</option><option value="gpl">GPL</option></select>}</div>
+      <p className="text-xs text-[var(--ink-muted)]">Le distanze indicano la vicinanza alla zona cercata. I prezzi non disponibili restano in fondo al confronto.</p>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-[var(--ink-faint)]" />
@@ -593,7 +603,7 @@ export function FuelPanel() {
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
           Distributori da provare
         </p>
-        {fuelStations.map((station, index) => (
+        {visibleStations.map((station, index) => (
           <FuelCard
             key={station.id}
             index={index + 1}
