@@ -189,21 +189,33 @@ export function NaturalLanguageAssistant() {
         subtitle="Testo o microfono flottante: «Portami in Via…» usa GPS e calcola i percorsi"
         action={
           <PanelResetButton
-            disabled={
-              loading ||
-              (!utterance.trim() && !result && !pending)
-            }
+            disabled={loading || (!utterance.trim() && !result && !pending)}
             onClick={handleReset}
             label="Reset"
           />
         }
       />
 
-      <div className="flex flex-wrap gap-2" aria-label="Esempi di richieste">{['Da Milano a Como senza pedaggi', 'Cerca parcheggi a Firenze', 'Cerca GPL vicino a Monza'].map(example => <Button key={example} variant="secondary" size="sm" onClick={() => setUtterance(example)}>{example}</Button>)}</div>
+      <div className="flex flex-wrap gap-2" aria-label="Esempi di richieste">
+        {[
+          "Da Milano a Como senza pedaggi",
+          "Cerca parcheggi a Firenze",
+          "Cerca GPL vicino a Monza",
+        ].map((example) => (
+          <Button
+            key={example}
+            variant="secondary"
+            size="sm"
+            onClick={() => setUtterance(example)}
+          >
+            {example}
+          </Button>
+        ))}
+      </div>
 
       <TextArea
         rows={5}
-        placeholder='Es. “Parti da Rozzano…”, “cerca parcheggi a Como”, “AdBlue tra Melegnano e San Giuliano”'
+        placeholder="Es. “Parti da Rozzano…”, “cerca parcheggi a Como”, “AdBlue tra Melegnano e San Giuliano”"
         value={utterance}
         onChange={(e) => setUtterance(e.target.value)}
         aria-label="Richiesta in linguaggio naturale"
@@ -223,14 +235,16 @@ export function NaturalLanguageAssistant() {
         Interpreta richiesta
       </Button>
 
-      <details className="workspace-card"><summary className="cursor-pointer font-semibold">Collega Siri</summary><div className="mt-3"><SiriGuide /></div></details>
+      <details className="workspace-card">
+        <summary className="cursor-pointer font-semibold">Collega Siri</summary>
+        <div className="mt-3">
+          <SiriGuide />
+        </div>
+      </details>
       {!result ? (
         <EmptyHint>
-          L’assistente usa Gemini gratis sulla stessa chiave Google Maps già
-          configurata (basta abilitare Generative Language API sul progetto —
-          nessuna nuova chiave da incollare). OpenAI resta fallback. Le località
-          sono risolte via Places; il trip store si aggiorna solo dopo la tua
-          conferma.
+          Descrivi dove vuoi andare e le tue preferenze. Prima di modificare il
+          viaggio vedrai una proposta da confermare.
         </EmptyHint>
       ) : (
         <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
@@ -244,7 +258,15 @@ export function NaturalLanguageAssistant() {
                     : "demo"
               }
             >
-              {result.status}
+              {
+                {
+                  ok: "Proposta pronta",
+                  needs_clarification: "Servono dettagli",
+                  unavailable: "Servizio non disponibile",
+                  impossible: "Richiesta da rivedere",
+                  unsupported: "Richiesta da rivedere",
+                }[result.status]
+              }
             </Badge>
             {result.provider ? (
               <Badge tone="neutral">
@@ -301,7 +323,11 @@ export function NaturalLanguageAssistant() {
             ) : null}
           </ul>
           <div className="flex gap-2">
-            <Button type="button" size="sm" onClick={() => void confirmPreview()}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void confirmPreview()}
+            >
               <Check className="h-3.5 w-3.5" />
               {pending.preview.parkingSearch
                 ? "Conferma e cerca parcheggi"
@@ -309,7 +335,12 @@ export function NaturalLanguageAssistant() {
                   ? "Conferma e cerca benzinai"
                   : "Conferma e calcola"}
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={cancelPreview}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={cancelPreview}
+            >
               <X className="h-3.5 w-3.5" />
               Annulla
             </Button>

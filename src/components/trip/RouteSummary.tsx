@@ -71,6 +71,7 @@ export function RouteSummary() {
   }, [trip, selected]);
 
   const [copied, setCopied] = useState<string | null>(null);
+  const [offlineError, setOfflineError] = useState("");
 
   async function copyText(key: string, text: string) {
     try {
@@ -98,6 +99,11 @@ export function RouteSummary() {
         }
       />
       <TravelRulesChip />
+      {offlineError && (
+        <p role="alert" className="workspace-card text-sm">
+          {offlineError}
+        </p>
+      )}
 
       {routeMode === "loading" ? (
         <EmptyHint>Calcolo del percorso in corso…</EmptyHint>
@@ -186,12 +192,12 @@ export function RouteSummary() {
                   {route.tolls?.hasTolls || route.tolls?.michelin ? (
                     <span>
                       {route.tolls.estimatedPrice != null
-                        ? `Pedaggi ${formatCurrency(
+                        ? `Pedaggi${route.tolls.source === "michelin" ? " stimati" : ""} ${formatCurrency(
                             route.tolls.estimatedPrice,
                             route.tolls.currencyCode ?? "EUR",
                           )}`
                         : route.tolls.michelin?.estimatedPrice != null
-                          ? `Pedaggi VM ${formatCurrency(
+                          ? `Stima indipendente ${formatCurrency(
                               route.tolls.michelin.estimatedPrice,
                               route.tolls.michelin.currencyCode ?? "EUR",
                             )}`
@@ -314,14 +320,21 @@ export function RouteSummary() {
               variant="outline"
               className="w-full"
               onClick={() => {
-                const pack = saveOfflineTrip({
-                  trip,
-                  routes,
-                  selectedRouteId: trip.selectedRouteId,
-                });
-                setCopied("offline");
-                setTimeout(() => setCopied(null), 2000);
-                void pack;
+                try {
+                  saveOfflineTrip({
+                    trip,
+                    routes,
+                    selectedRouteId: trip.selectedRouteId,
+                  });
+                  setCopied("offline");
+                  setTimeout(() => setCopied(null), 2000);
+                  setOfflineError("");
+                  window.dispatchEvent(new Event("itinera-library-changed"));
+                } catch {
+                  setOfflineError(
+                    "Spazio insufficiente. Libera un vecchio pacchetto da Salvati e riprova.",
+                  );
+                }
               }}
             >
               {copied === "offline" ? (
@@ -472,7 +485,7 @@ export function RouteSummary() {
             </div>
           ) : selected.isConformant === true ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900">
-              Nessuna violazione hard verificata su questo percorso.
+              Nessuna violazione rilevata delle esclusioni obbligatorie.
             </div>
           ) : null}
 

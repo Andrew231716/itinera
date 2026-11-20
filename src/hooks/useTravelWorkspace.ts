@@ -10,6 +10,7 @@ export function useTravelWorkspace() {
   const [resume, setResume] = useState<OfflineTripPack | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
+  const [offlineReady, setOfflineReady] = useState(false);
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
@@ -23,6 +24,7 @@ export function useTravelWorkspace() {
     } catch {
       setStorageError("Impossibile recuperare la sessione precedente.");
     }
+    let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const save = () => {
       const state = useTripStore.getState();
@@ -73,12 +75,17 @@ export function useTravelWorkspace() {
     if ("serviceWorker" in navigator)
       void navigator.serviceWorker
         .register("/sw.js")
+        .then(() => navigator.serviceWorker.ready)
+        .then(() => {
+          if (!cancelled) setOfflineReady(true);
+        })
         .catch(() =>
           setStorageError(
             "Installazione offline non riuscita. Riprova alla prossima apertura.",
           ),
         );
     return () => {
+      cancelled = true;
       unsubscribe();
       clearTimeout(timer);
       clearInterval(retry);
@@ -92,6 +99,7 @@ export function useTravelWorkspace() {
     resume,
     storageError,
     offline,
+    offlineReady,
     dismissResume: () => setResume(null),
   };
 }

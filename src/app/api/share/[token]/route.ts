@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from "@/lib/storage/supabase-client";
 import { apiErrorResponse } from "@/lib/utils/errors";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(
   _request: Request,
@@ -42,7 +43,7 @@ export async function GET(
       mode: "live",
       trip,
       permission: "read",
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const body = apiErrorResponse(error);
     return NextResponse.json(body, { status: body.status });

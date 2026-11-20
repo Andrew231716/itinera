@@ -27,8 +27,9 @@ export function WorkspaceTools() {
       for (const trip of await repo.list()) await repo.save(trip);
       await useTripStore.getState().refreshSavedTrips();
       useTripStore.getState().refreshTripHistory();
+      window.dispatchEvent(new Event("itinera-library-changed"));
       setMessage(
-        `${count} elementi importati. Viaggi disponibili in Salvati. Riapri la sezione per aggiornare giri e preferiti.`,
+        `${count} elementi importati. Viaggi, giri e preferiti aggiornati.`,
       );
     } catch (error) {
       setMessage(
@@ -47,7 +48,8 @@ export function WorkspaceTools() {
       <h3 className="font-semibold">Backup e sincronizzazione</h3>
       <p className="text-sm text-[var(--ink-muted)]">
         Conserva viaggi, giri, cronologia, preferiti e profili in un file
-        personale.
+        personale. Sul nuovo dispositivo puoi scaricare di nuovo le indicazioni
+        offline.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button

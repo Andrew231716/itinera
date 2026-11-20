@@ -19,7 +19,7 @@ import {
   Settings2,
   Sun,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useTravelWorkspace } from "@/hooks/useTravelWorkspace";
 import { useSyncState } from "@/hooks/useSyncState";
@@ -38,16 +38,128 @@ import {
 } from "@/lib/utils/format";
 import { Button, cn } from "@/components/ui/primitives";
 import { TripForm } from "@/components/trip/TripForm";
-const GiroPanel = dynamic(() => import("@/components/trip/GiroPanel").then(module => module.GiroPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const TravelRulesPanel = dynamic(() => import("@/components/trip/TravelRulesPanel").then(module => module.TravelRulesPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const ExclusionsPanel = dynamic(() => import("@/components/trip/ExclusionsPanel").then(module => module.ExclusionsPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const RouteSummary = dynamic(() => import("@/components/trip/RouteSummary").then(module => module.RouteSummary), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const NaturalLanguageAssistant = dynamic(() => import("@/components/trip/NaturalLanguageAssistant").then(module => module.NaturalLanguageAssistant), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const SetupPanel = dynamic(() => import("@/components/trip/SetupPanel").then(module => module.SetupPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const SavedPanel = dynamic(() => import("@/components/trip/SavedPanel").then(module => module.SavedPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const ParkingPanel = dynamic(() => import("@/components/trip/ParkingPanel").then(module => module.ParkingPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const FuelPanel = dynamic(() => import("@/components/trip/FuelPanel").then(module => module.FuelPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
-const NavigatorPanel = dynamic(() => import("@/components/trip/NavigatorPanel").then(module => module.NavigatorPanel), { loading: () => <p role="status" className="py-4 text-sm">Apertura sezione…</p> });
+const GiroPanel = dynamic(
+  () =>
+    import("@/components/trip/GiroPanel").then((module) => module.GiroPanel),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const TravelRulesPanel = dynamic(
+  () =>
+    import("@/components/trip/TravelRulesPanel").then(
+      (module) => module.TravelRulesPanel,
+    ),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const ExclusionsPanel = dynamic(
+  () =>
+    import("@/components/trip/ExclusionsPanel").then(
+      (module) => module.ExclusionsPanel,
+    ),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const RouteSummary = dynamic(
+  () =>
+    import("@/components/trip/RouteSummary").then(
+      (module) => module.RouteSummary,
+    ),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const NaturalLanguageAssistant = dynamic(
+  () =>
+    import("@/components/trip/NaturalLanguageAssistant").then(
+      (module) => module.NaturalLanguageAssistant,
+    ),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const SetupPanel = dynamic(
+  () =>
+    import("@/components/trip/SetupPanel").then((module) => module.SetupPanel),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const SavedPanel = dynamic(
+  () =>
+    import("@/components/trip/SavedPanel").then((module) => module.SavedPanel),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const ParkingPanel = dynamic(
+  () =>
+    import("@/components/trip/ParkingPanel").then(
+      (module) => module.ParkingPanel,
+    ),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const FuelPanel = dynamic(
+  () =>
+    import("@/components/trip/FuelPanel").then((module) => module.FuelPanel),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
+const NavigatorPanel = dynamic(
+  () =>
+    import("@/components/trip/NavigatorPanel").then(
+      (module) => module.NavigatorPanel,
+    ),
+  {
+    loading: () => (
+      <p role="status" className="py-4 text-sm">
+        Apertura sezione…
+      </p>
+    ),
+  },
+);
 import { DrivingHud } from "@/components/trip/DrivingHud";
 import { VoiceGoControl } from "@/components/trip/VoiceGoControl";
 import { MapCanvas } from "@/components/map/MapCanvas";
@@ -69,6 +181,9 @@ const TABS: Array<{ id: PanelTab; label: string; icon: typeof Route }> = [
 
 export function AppShell() {
   const workspace = useTravelWorkspace();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollPositions = useRef<Partial<Record<PanelTab, number>>>({});
+  const mapElement = useMemo(() => <MapCanvas />, []);
   const sync = useSyncState();
   const canUndo = useTripStore((s) => s.canUndo);
   const undoTripChange = useTripStore((s) => s.undoTripChange);
@@ -152,29 +267,36 @@ export function AppShell() {
     setMobilePanelOpen(true);
     setMoreOpen(false);
   }
-  const panels = {
-    itinerary: <TripForm />,
-    giro: <GiroPanel />,
-    preferences: <TravelRulesPanel />,
-    exclusions: <ExclusionsPanel />,
-    summary: <RouteSummary />,
-    parking: <ParkingPanel />,
-    fuel: <FuelPanel />,
-    navigate: <NavigatorPanel />,
-    assistant: <NaturalLanguageAssistant />,
-    saved: (
-      <>
-        <SavedPanel />
-        <WorkspaceTools />
-      </>
-    ),
-    setup: (
-      <>
-        <SetupPanel />
-        <WorkspaceTools />
-      </>
-    ),
-  };
+  useLayoutEffect(() => {
+    if (scrollRef.current)
+      scrollRef.current.scrollTop = scrollPositions.current[activePanel] ?? 0;
+  }, [activePanel]);
+  const panels = useMemo(
+    () => ({
+      itinerary: <TripForm />,
+      giro: <GiroPanel />,
+      preferences: <TravelRulesPanel />,
+      exclusions: <ExclusionsPanel />,
+      summary: <RouteSummary />,
+      parking: <ParkingPanel />,
+      fuel: <FuelPanel />,
+      navigate: <NavigatorPanel />,
+      assistant: <NaturalLanguageAssistant />,
+      saved: (
+        <>
+          <SavedPanel />
+          <WorkspaceTools />
+        </>
+      ),
+      setup: (
+        <>
+          <SetupPanel />
+          <WorkspaceTools />
+        </>
+      ),
+    }),
+    [],
+  );
   const recentHistory = tripHistory.slice(0, 4);
   const sidePanel = isDesktop || isLandscapeMobile;
 
@@ -193,7 +315,7 @@ export function AppShell() {
             : "",
         )}
       >
-        <MapCanvas />
+        {mapElement}
         {!driving ? <StatusBanner /> : null}
         {driving ? <DrivingHud /> : null}
         {!driving ? <VoiceGoControl /> : null}
@@ -382,7 +504,21 @@ export function AppShell() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-8 lg:px-5">
+        <div
+          ref={scrollRef}
+          onScroll={(event) => {
+            scrollPositions.current[activePanel] =
+              event.currentTarget.scrollTop;
+          }}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-8 lg:px-5"
+        >
+          {activePanel === "saved" && (
+            <p className="mb-3 text-sm text-[var(--ink-muted)]" role="status">
+              {workspace.offlineReady
+                ? "App pronta ad aprirsi senza rete. Scarica dal Riepilogo le indicazioni dei percorsi da portare con te."
+                : "Preparazione dell’app per l’apertura senza rete…"}
+            </p>
+          )}
           {workspace.storageError && (
             <p role="alert" className="workspace-card mb-3 text-sm">
               {workspace.storageError}
@@ -544,7 +680,10 @@ export function AppShell() {
                   variant="outline"
                   className="w-full"
                   disabled={
-                    routeMode === "loading" || !trip.origin || !trip.destination
+                    workspace.offline ||
+                    routeMode === "loading" ||
+                    !trip.origin ||
+                    !trip.destination
                   }
                   onClick={() => {
                     void computeRoute();
@@ -553,7 +692,11 @@ export function AppShell() {
                   }}
                 >
                   <Route className="h-3.5 w-3.5" />
-                  {routeMode === "loading" ? "Calcolo…" : "Ricalcola percorso"}
+                  {routeMode === "loading"
+                    ? "Calcolo…"
+                    : workspace.offline
+                      ? "Ricalcolo disponibile con Internet"
+                      : "Ricalcola percorso"}
                 </Button>
               </div>
             ) : (
@@ -562,7 +705,10 @@ export function AppShell() {
                 size="lg"
                 className="w-full"
                 disabled={
-                  routeMode === "loading" || !trip.origin || !trip.destination
+                  workspace.offline ||
+                  routeMode === "loading" ||
+                  !trip.origin ||
+                  !trip.destination
                 }
                 onClick={() => {
                   void computeRoute();

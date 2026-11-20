@@ -187,8 +187,10 @@ export class SupabaseTripRepository implements TripRepository {
           const { error } = await c.auth.signInAnonymously();
           if (error)
             throw new Error(
-              "Accesso cloud non disponibile. Il viaggio resta su questo dispositivo. " +
-                error.message,
+              error.message.includes("Anonymous sign-ins are disabled")
+                ? "Accesso ospite al cloud disattivato nella configurazione Supabase. Il viaggio è salvato sul dispositivo."
+                : "Accesso cloud non disponibile. Il viaggio resta su questo dispositivo. " +
+                    error.message,
             );
         })();
       try {

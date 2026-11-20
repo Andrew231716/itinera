@@ -14,7 +14,14 @@ export function usePlaceSearch() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sequence = useRef(0);
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); abortRef.current?.abort(); sequence.current++; }, []);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      abortRef.current?.abort();
+      sequence.current++;
+    },
+    [],
+  );
 
   const search = useCallback((value: string) => {
     const request = ++sequence.current;
@@ -91,7 +98,10 @@ export function usePlaceSearch() {
         setError("Impossibile risolvere la località.");
         return null;
       } finally {
-        if (request === sequence.current) { setLoading(false); setSuggestions([]); }
+        if (request === sequence.current) {
+          setLoading(false);
+          setSuggestions([]);
+        }
       }
     },
     [],

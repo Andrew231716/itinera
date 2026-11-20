@@ -1,3 +1,4 @@
+import { distancePointToSegmentMeters } from "@/lib/utils/geometry";
 import type { TripDraft } from "@/lib/types/trip";
 import type { ComputedRoute } from "@/lib/types/route";
 export function tollEstimate(
@@ -46,4 +47,19 @@ export function travelPlan(trip: TripDraft, route: ComputedRoute) {
     total:
       fuel !== null && tolls?.currency === "EUR" ? fuel + tolls.amount : null,
   };
+}
+
+/** Geometric proximity only; it does not estimate extra road distance. */
+export function distanceToRouteMeters(
+  point: import("@/lib/types/trip").LatLng,
+  path: import("@/lib/types/trip").LatLng[],
+): number {
+  let best = Infinity;
+  for (let index = 1; index < path.length; index++) {
+    best = Math.min(
+      best,
+      distancePointToSegmentMeters(point, path[index - 1], path[index]),
+    );
+  }
+  return best;
 }

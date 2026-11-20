@@ -1,4 +1,5 @@
 "use client";
+import { distanceToRouteMeters } from "@/lib/routing/planning";
 
 import {
   CircleParking,
@@ -41,6 +42,10 @@ const EXAMPLE_PARKING_CENTER = {
 
 export function ParkingPanel() {
   const trip = useTripStore((s) => s.trip);
+  const routes = useTripStore((s) => s.routes);
+  const routePath = (
+    routes.find((route) => route.id === trip.selectedRouteId) ?? routes[0]
+  )?.decodedPath;
   const parkingCenter = useTripStore((s) => s.parkingCenter);
   const parkingSearchNonce = useTripStore((s) => s.parkingSearchNonce);
   const parkingSpots = useTripStore((s) => s.parkingSpots);
@@ -148,10 +153,25 @@ export function ParkingPanel() {
   }
 
   const spots = useMemo(() => {
-    const matches = parkingSpots.filter(spot => (filter === 'all' || spot.pricing === filter) && (!query.trim() || `${spot.name} ${spot.address ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
-    const price = (spot: ParkingSpot) => spot.pricing === 'free' ? 0 : spot.cost?.hourlyEstimate ?? Infinity;
-    return matches.sort((a, b) => sort === 'price' ? price(a) - price(b) || a.distanceMeters - b.distanceMeters : a.distanceMeters - b.distanceMeters);
-  }, [parkingSpots, filter, query, sort]);
+    const matches = parkingSpots.filter(
+      (spot) =>
+        (filter === "all" || spot.pricing === filter) &&
+        (!query.trim() ||
+          `${spot.name} ${spot.address ?? ""}`
+            .toLocaleLowerCase()
+            .includes(query.toLocaleLowerCase())),
+    );
+    const price = (spot: ParkingSpot) =>
+      spot.pricing === "free" ? 0 : (spot.cost?.hourlyEstimate ?? Infinity);
+    return matches.sort((a, b) =>
+      sort === "route" && routePath
+        ? distanceToRouteMeters(a.location, routePath) -
+          distanceToRouteMeters(b.location, routePath)
+        : sort === "price"
+          ? price(a) - price(b) || a.distanceMeters - b.distanceMeters
+          : a.distanceMeters - b.distanceMeters,
+    );
+  }, [parkingSpots, filter, query, sort, routePath]);
 
   const counts = useMemo(() => {
     return {
@@ -224,7 +244,9 @@ export function ParkingPanel() {
         {center ? (
           <>
             Centro:{" "}
-            <span className="font-medium text-[var(--ink)]">{center.label}</span>
+            <span className="font-medium text-[var(--ink)]">
+              {center.label}
+            </span>
             <span className="text-[var(--ink-faint)]"> · {center.kind}</span>
           </>
         ) : (
@@ -299,13 +321,36 @@ export function ParkingPanel() {
           disabled={loading || parkingSpots.length === 0}
           onClick={() => void load()}
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+          />
           Aggiorna
         </Button>
       </div>
 
-      <PlaceSearch label="Cerca parcheggi in una località" value={null} allowGps={false} onSelect={place => requestParkingNear({ ...place.location, label: place.label })}/>
-      <label className="flex items-center justify-between gap-2 text-sm">Ordina risultati<select aria-label="Ordina parcheggi" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2" value={sort} onChange={event => setSort(event.target.value)}><option value="distance">Più vicini</option><option value="price">Prezzo orario noto</option></select></label>
+      <PlaceSearch
+        label="Cerca parcheggi in una località"
+        value={null}
+        allowGps={false}
+        onSelect={(place) =>
+          requestParkingNear({ ...place.location, label: place.label })
+        }
+      />
+      <label className="flex items-center justify-between gap-2 text-sm">
+        Ordina risultati
+        <select
+          aria-label="Ordina parcheggi"
+          className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2"
+          value={sort}
+          onChange={(event) => setSort(event.target.value)}
+        >
+          <option value="distance">Più vicini</option>
+          <option value="price">Prezzo orario noto</option>
+          {routePath && routePath.length > 1 && (
+            <option value="route">Vicini al percorso (linea d’aria)</option>
+          )}
+        </select>
+      </label>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-[var(--ink-faint)]" />
@@ -410,7 +455,9 @@ export function ParkingPanel() {
               }
             >
               <span>
-                <span className="font-medium text-[var(--ink)]">{fav.label}</span>
+                <span className="font-medium text-[var(--ink)]">
+                  {fav.label}
+                </span>
                 {fav.note ? (
                   <span className="mt-0.5 block text-[11px] text-[var(--ink-muted)]">
                     {fav.note}

@@ -15,15 +15,20 @@ export function TravelOptions() {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   useEffect(() => {
-    try {
-      setProfiles(
-        z
-          .array(profileSchema)
-          .parse(JSON.parse(localStorage.getItem(KEY) ?? "[]")),
-      );
-    } catch {
-      setMessage("Profili non disponibili.");
-    }
+    const reload = () => {
+      try {
+        setProfiles(
+          z
+            .array(profileSchema)
+            .parse(JSON.parse(localStorage.getItem(KEY) ?? "[]")),
+        );
+      } catch {
+        setMessage("Profili non disponibili.");
+      }
+    };
+    reload();
+    window.addEventListener("itinera-library-changed", reload);
+    return () => window.removeEventListener("itinera-library-changed", reload);
   }, []);
   const motor =
     trip.travelMode === "DRIVE" || trip.travelMode === "TWO_WHEELER";

@@ -31,7 +31,7 @@ describe("navigation platform", () => {
 
   it("uses browser geolocation on web", async () => {
     delete (window as Window & { Capacitor?: unknown }).Capacitor;
-    const watchPosition = vi.fn((_ok, _err, _opts) => 42);
+    const watchPosition = vi.fn(() => 42);
     const clearWatch = vi.fn();
     Object.defineProperty(navigator, "geolocation", {
       value: { watchPosition, clearWatch },

@@ -38,8 +38,7 @@ export function TravelRulesPanel() {
   const canCompute = Boolean(origin && destination);
   const needsRefresh = canCompute && routes.length === 0;
   const prefsDirty = Object.entries(DEFAULT_ROAD_PREFERENCES).some(
-    ([key, value]) =>
-      preferences[key as keyof typeof preferences] !== value,
+    ([key, value]) => preferences[key as keyof typeof preferences] !== value,
   );
 
   async function refreshRoute() {
@@ -187,7 +186,7 @@ export function TravelRulesPanel() {
             />
             <ToggleRow
               label="Strade panoramiche"
-              description="Preferenza soft."
+              description="Il motore cercherà di rispettare questa preferenza."
               checked={preferences.preferScenic}
               onChange={(preferScenic) => setPreferences({ preferScenic })}
               soft
@@ -212,7 +211,14 @@ export function TravelRulesPanel() {
           </div>
         ) : null}
       </div>
-      <details className="workspace-card"><summary className="cursor-pointer font-semibold">Strade e zone da evitare</summary><div className="mt-4"><ExclusionsPanel /></div></details>
+      <details className="workspace-card">
+        <summary className="cursor-pointer font-semibold">
+          Strade e zone da evitare
+        </summary>
+        <div className="mt-4">
+          <ExclusionsPanel />
+        </div>
+      </details>
     </div>
   );
 }
