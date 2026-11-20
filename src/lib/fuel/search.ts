@@ -1,3 +1,4 @@
+import { stationMatchesQuery } from "@/lib/fuel/helpers";
 import { getServerGoogleMapsKey } from "@/lib/config/env";
 import { brandLabel, stationMatchesBrand } from "@/lib/fuel/brands";
 import { searchGoogleFuel } from "@/lib/fuel/google-fuel";
@@ -10,7 +11,11 @@ import {
   rankStations,
   stationHasLpg,
 } from "@/lib/fuel/helpers";
-import type { FuelSearchResult, FuelSource, FuelStation } from "@/lib/fuel/types";
+import type {
+  FuelSearchResult,
+  FuelSource,
+  FuelStation,
+} from "@/lib/fuel/types";
 import type { LatLng } from "@/lib/types/trip";
 
 export async function searchNearbyFuel(params: {
@@ -155,15 +160,10 @@ export async function searchNearbyFuel(params: {
     stations = stations.filter((s) => stationMatchesBrand(s, filters.brand!));
   }
 
-  if (params.query?.trim()) {
-    const q = params.query.trim().toLowerCase();
-    stations = stations.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.brand?.toLowerCase().includes(q) ||
-        s.address?.toLowerCase().includes(q),
+  if (params.query?.trim())
+    stations = stations.filter((station) =>
+      stationMatchesQuery(station, params.query!),
     );
-  }
 
   if (filters.adblue) {
     const confirmed = stations.filter((s) => s.amenities.adblue === "yes");
@@ -220,10 +220,7 @@ export async function searchNearbyFuel(params: {
         ? `Ho trovato ${stations.length} distributori${where}${
             relaxedAdBlue ? ", ma nessuno con AdBlue confermato online" : ""
           }${relaxedLpg ? ", ma nessuno con GPL confermato online" : ""}. Ti consiglio di verificare prima di fare rifornimento.`
-        : filters.adblue ||
-            filters.lpg ||
-            adblueCount > 0 ||
-            lpgCount > 0
+        : filters.adblue || filters.lpg || adblueCount > 0 || lpgCount > 0
           ? `Ho trovato ${stations.length} opzioni interessanti${where}${
               adblueCount ? ` (${adblueCount} con AdBlue)` : ""
             }${lpgCount ? ` (${lpgCount} con GPL)` : ""}${

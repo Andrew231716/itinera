@@ -1,4 +1,5 @@
 "use client";
+import { stationMatchesQuery } from "@/lib/fuel/helpers";
 import { distanceToRouteMeters } from "@/lib/routing/planning";
 
 import {
@@ -220,8 +221,11 @@ export function FuelPanel() {
 
   useEffect(() => {
     const ac = new AbortController();
-    void load(ac.signal);
-    return () => ac.abort();
+    const timer = setTimeout(() => void load(ac.signal), 350);
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
   }, [load, fuelSearchNonce]);
 
   function useGps() {
@@ -295,13 +299,7 @@ export function FuelPanel() {
         Infinity,
       );
     return [...fuelStations]
-      .filter(
-        (station) =>
-          !query.trim() ||
-          `${station.name} ${station.brand ?? ""} ${station.address ?? ""}`
-            .toLocaleLowerCase()
-            .includes(query.toLocaleLowerCase()),
-      )
+      .filter((station) => stationMatchesQuery(station, query))
       .sort((a, b) =>
         sort === "route" && routePath
           ? distanceToRouteMeters(a.location, routePath) -

@@ -44,3 +44,10 @@ describe('trip edits and route integrity', () => {
     trip.travelMode = 'WALK'; expect(travelPlan(trip, route).fuel).toBeNull();
   });
 });
+
+it('invalidates a Place ID change even when coordinates are identical', () => {
+  ready();
+  const previous = useTripStore.getState().trip.origin!;
+  useTripStore.getState().setOrigin({ ...previous, placeId: 'new-entrance' });
+  expect(useTripStore.getState().routes).toHaveLength(0);
+});

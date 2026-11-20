@@ -1,4 +1,5 @@
 "use client";
+import { parkingMatchesQuery } from "@/lib/parking/helpers";
 import { distanceToRouteMeters } from "@/lib/routing/planning";
 
 import {
@@ -11,7 +12,7 @@ import {
   Search,
   Star,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTripStore } from "@/lib/store/trip-store";
 import type { ParkingSearchResult, ParkingSpot } from "@/lib/parking/types";
 import { parkingSpotToPlaceRef } from "@/lib/parking/place-ref";
@@ -56,6 +57,7 @@ export function ParkingPanel() {
   const requestParkingNear = useTripStore((s) => s.requestParkingNear);
   const clearParkingResults = useTripStore((s) => s.clearParkingResults);
 
+  const requestId = useRef(0);
   const [sort, setSort] = useState("distance");
   const [filter, setFilter] = useState<PricingFilter>("all");
   const [radius, setRadius] = useState(1200);
@@ -101,6 +103,7 @@ export function ParkingPanel() {
       setLoading(false);
       return;
     }
+    const request = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
@@ -111,28 +114,41 @@ export function ParkingPanel() {
         label: center.label,
       });
       if (query.trim()) params.set("q", query.trim());
-      const res = await fetch(`/api/parking/nearby?${params.toString()}`);
+      const res = await fetch(`/api/parking/nearby?${params.toString()}`, {
+        signal: AbortSignal.timeout(25_000),
+      });
       const data = (await res.json()) as ParkingSearchResult & {
         error?: string;
       };
+      if (request !== requestId.current) return;
       if (!res.ok) {
         throw new Error(data.error ?? "Ricerca parcheggi non riuscita.");
       }
       setParkingSpots(data.spots);
       setLimitations(data.limitations ?? []);
     } catch (err) {
+      if (request !== requestId.current) return;
       setParkingSpots([]);
       setError(err instanceof Error ? err.message : "Errore di ricerca.");
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }, [center, radius, query, setParkingSpots]);
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(
+    () => () => {
+      requestId.current++;
+    },
+    [],
+  );
 
   // Search only when the user explicitly triggers it (nonce bump or Aggiorna).
   useEffect(() => {
     if (parkingSearchNonce === 0) return;
-    void load();
-  }, [load, parkingSearchNonce]);
+    void loadRef.current();
+  }, [parkingSearchNonce]);
 
   function useGps() {
     if (!navigator.geolocation) {
@@ -156,10 +172,7 @@ export function ParkingPanel() {
     const matches = parkingSpots.filter(
       (spot) =>
         (filter === "all" || spot.pricing === filter) &&
-        (!query.trim() ||
-          `${spot.name} ${spot.address ?? ""}`
-            .toLocaleLowerCase()
-            .includes(query.toLocaleLowerCase())),
+        parkingMatchesQuery(spot, query),
     );
     const price = (spot: ParkingSpot) =>
       spot.pricing === "free" ? 0 : (spot.cost?.hourlyEstimate ?? Infinity);
@@ -212,6 +225,8 @@ export function ParkingPanel() {
   }
 
   function handleReset() {
+    requestId.current++;
+    setLoading(false);
     clearParkingResults();
     setFilter("all");
     setRadius(1200);

@@ -1,3 +1,4 @@
+import { tripSchema } from "@/lib/storage/data-validation";
 import { updateSyncState } from "@/lib/storage/sync-state";
 import type { TripDraft } from "@/lib/types/trip";
 import {
@@ -37,7 +38,12 @@ function readAll(): TripDraft[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as TripDraft[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed)
+      ? parsed.flatMap((item) => {
+          const result = tripSchema.safeParse(item);
+          return result.success ? [result.data] : [];
+        })
+      : [];
   } catch {
     return [];
   }

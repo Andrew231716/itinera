@@ -7,7 +7,11 @@ import type {
   FuelStation,
 } from "@/lib/fuel/types";
 
-export function mapsSearchUrl(lat: number, lng: number, label?: string): string {
+export function mapsSearchUrl(
+  lat: number,
+  lng: number,
+  label?: string,
+): string {
   const q = label
     ? encodeURIComponent(`${label} @${lat},${lng}`)
     : `${lat},${lng}`;
@@ -155,10 +159,7 @@ export function mergeStations(stations: FuelStation[]): FuelStation[] {
       prices,
       notes: Array.from(new Set([...existing.notes, ...station.notes])),
       verifyByPhone: existing.verifyByPhone || station.verifyByPhone,
-      distanceMeters: Math.min(
-        existing.distanceMeters,
-        station.distanceMeters,
-      ),
+      distanceMeters: Math.min(existing.distanceMeters, station.distanceMeters),
     });
   }
   return rankStations(Array.from(byKey.values()));
@@ -200,13 +201,44 @@ export function pickHighlightPrices(
       prices.find((p) => p.fuel === label && p.isSelf) ??
       prices.find((p) => p.fuel === label) ??
       prices.find(
-        (p) =>
-          p.fuel.toLowerCase().includes(label.toLowerCase()) && p.isSelf,
+        (p) => p.fuel.toLowerCase().includes(label.toLowerCase()) && p.isSelf,
       ) ??
-      prices.find((p) =>
-        p.fuel.toLowerCase().includes(label.toLowerCase()),
-      );
+      prices.find((p) => p.fuel.toLowerCase().includes(label.toLowerCase()));
     if (match) out.push(match);
   }
   return out;
+}
+
+export function stationMatchesQuery(
+  station: FuelStation,
+  query: string,
+): boolean {
+  const labels: Partial<Record<FuelAmenityKey, string>> = {
+    adblue: "adblue",
+    lpg: "gpl",
+    diesel: "gasolio diesel",
+    petrol: "benzina",
+    cng: "metano",
+    electric: "ricarica elettrica",
+    truck: "camion",
+    open24h: "h24",
+  };
+  const services = Object.entries(station.amenities)
+    .filter(([, signal]) => signal === "yes")
+    .map(([key]) => labels[key as FuelAmenityKey] ?? key);
+  const text = [
+    station.name,
+    station.brand,
+    station.address,
+    ...services,
+    ...(station.prices ?? []).map((quote) => quote.fuel),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase();
+  return query
+    .trim()
+    .toLocaleLowerCase()
+    .split(/\s+/)
+    .every((word) => text.includes(word));
 }
